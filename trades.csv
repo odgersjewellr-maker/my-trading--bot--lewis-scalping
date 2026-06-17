@@ -1,2 +1,10 @@
 Date,Time (UTC),Exchange,Symbol,Side,Quantity,Price,Total USD,Fee (est.),Net Amount,Order ID,Mode,Notes
 ,,,,,,,,,,,"NOTE","Hey, if you're at this stage of the video, you must be enjoying it... perhaps you could hit subscribe now? :)"
+2026-06-17,20:44:18,BitGet,BTCUSDT,,,64250.00,,,,BLOCKED,BLOCKED,"Failed: RSI(3) above 70 (reversal setup in downtrend)"
+2026-06-17,20:44:24,BitGet,BTCUSDT,,,64250.00,,,,BLOCKED,BLOCKED,"Failed: RSI(3) above 70 (reversal setup in downtrend)"
+2026-06-17,20:47:31,BitGet,BTCUSDT,,,64285.99,,,,BLOCKED,BLOCKED,"Failed: RSI(3) above 70 (reversal setup in downtrend)"
+2026-06-17,20:47:43,BitGet,BTCUSDT,,,64286.00,,,,BLOCKED,BLOCKED,"Failed: RSI(3) above 70 (reversal setup in downtrend)"
+2026-06-17,20:47:53,BitGet,BTCUSDT,,,64285.99,,,,BLOCKED,BLOCKED,"Failed: RSI(3) above 70 (reversal setup in downtrend)"
+2026-06-17,20:49:20,BitGet,BTCUSDT,,,64318.00,,,,BLOCKED,BLOCKED,"Failed: Market bias"
+2026-06-17,20:50:09,BitGet,BTCUSDT,,,64316.01,,,,BLOCKED,BLOCKED,"Failed: Market bias"
+2026-06-17,20:51:02,BitGet,BTCUSDT,,,64330.01,,,,BLOCKED,BLOCKED,"Failed: Market bias"

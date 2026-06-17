@@ -1,0 +1,57 @@
+name: Run trading bot
+
+on:
+  schedule:
+    - cron: "0 */4 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: run-bot
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - run: npm install
+
+      - name: Write .env
+        run: |
+          cat <<EOF > .env
+          BITGET_API_KEY=${{ secrets.BITGET_API_KEY }}
+          BITGET_SECRET_KEY=${{ secrets.BITGET_SECRET_KEY }}
+          BITGET_PASSPHRASE=${{ secrets.BITGET_PASSPHRASE }}
+          BITGET_BASE_URL=https://api.bitget.com
+          TRADE_MODE=spot
+          PORTFOLIO_VALUE_USD=640
+          MAX_TRADE_SIZE_USD=6
+          MAX_TRADES_PER_DAY=3
+          SYMBOL=BTCUSDT
+          TIMEFRAME=4H
+          STOP_LOSS_PCT=0.3
+          TRAILING_STOP_PCT=0.5
+          PAPER_TRADING=true
+          EOF
+
+      - name: Run bot
+        run: node bot.js
+
+      - name: Persist state back to repo
+        run: |
+          rm -f .env
+          git config user.name "trading-bot"
+          git config user.email "actions@users.noreply.github.com"
+          for f in position.json trades.csv safety-check-log.json; do
+            [ -f "$f" ] && git add "$f"
+          done
+          git diff --cached --quiet || git commit -m "Bot run $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push

@@ -79,6 +79,8 @@ const CONFIG = {
   maxTradesPerDay: parseInt(process.env.MAX_TRADES_PER_DAY || "3"),
   paperTrading: process.env.PAPER_TRADING !== "false",
   tradeMode: process.env.TRADE_MODE || "spot",
+  stopLossPct: parseFloat(process.env.STOP_LOSS_PCT || "0.3"),
+  trailingStopPct: parseFloat(process.env.TRAILING_STOP_PCT || "0.5"),
   bitget: {
     apiKey: process.env.BITGET_API_KEY,
     secretKey: process.env.BITGET_SECRET_KEY,
@@ -88,6 +90,7 @@ const CONFIG = {
 };
 
 const LOG_FILE = "safety-check-log.json";
+const POSITION_FILE = "position.json";
 
 // ─── Logging ────────────────────────────────────────────────────────────────
 
@@ -103,8 +106,20 @@ function saveLog(log) {
 function countTodaysTrades(log) {
   const today = new Date().toISOString().slice(0, 10);
   return log.trades.filter(
-    (t) => t.timestamp.startsWith(today) && t.orderPlaced,
+    (t) => t.type === "entry" && t.timestamp.startsWith(today) && t.orderPlaced,
   ).length;
+}
+
+// ─── Position State (persisted between cron runs) ───────────────────────────
+
+function loadPosition() {
+  if (!existsSync(POSITION_FILE)) return null;
+  const raw = JSON.parse(readFileSync(POSITION_FILE, "utf8"));
+  return raw === null ? null : raw;
+}
+
+function savePosition(position) {
+  writeFileSync(POSITION_FILE, JSON.stringify(position, null, 2));
 }
 
 // ─── Market Data (Binance public API — free, no auth) ───────────────────────
@@ -180,7 +195,7 @@ function calcVWAP(candles) {
   return cumVol === 0 ? null : cumTPV / cumVol;
 }
 
-// ─── Safety Check ───────────────────────────────────────────────────────────
+// ─── Safety Check (entries) ─────────────────────────────────────────────────
 
 function runSafetyCheck(price, ema8, vwap, rsi3, rules) {
   const results = [];
@@ -197,11 +212,12 @@ function runSafetyCheck(price, ema8, vwap, rsi3, rules) {
   // Determine bias first
   const bullishBias = price > vwap && price > ema8;
   const bearishBias = price < vwap && price < ema8;
+  let bias = "neutral";
 
   if (bullishBias) {
+    bias = "bullish";
     console.log("  Bias: BULLISH — checking long entry conditions\n");
 
-    // 1. Price above VWAP
     check(
       "Price above VWAP (buyers in control)",
       `> ${vwap.toFixed(2)}`,
@@ -209,7 +225,6 @@ function runSafetyCheck(price, ema8, vwap, rsi3, rules) {
       price > vwap,
     );
 
-    // 2. Price above EMA(8)
     check(
       "Price above EMA(8) (uptrend confirmed)",
       `> ${ema8.toFixed(2)}`,
@@ -217,7 +232,6 @@ function runSafetyCheck(price, ema8, vwap, rsi3, rules) {
       price > ema8,
     );
 
-    // 3. RSI(3) pullback
     check(
       "RSI(3) below 30 (snap-back setup in uptrend)",
       "< 30",
@@ -225,7 +239,6 @@ function runSafetyCheck(price, ema8, vwap, rsi3, rules) {
       rsi3 < 30,
     );
 
-    // 4. Not overextended from VWAP
     const distFromVWAP = Math.abs((price - vwap) / vwap) * 100;
     check(
       "Price within 1.5% of VWAP (not overextended)",
@@ -234,6 +247,7 @@ function runSafetyCheck(price, ema8, vwap, rsi3, rules) {
       distFromVWAP < 1.5,
     );
   } else if (bearishBias) {
+    bias = "bearish";
     console.log("  Bias: BEARISH — checking short entry conditions\n");
 
     check(
@@ -275,7 +289,54 @@ function runSafetyCheck(price, ema8, vwap, rsi3, rules) {
   }
 
   const allPass = results.every((r) => r.pass);
-  return { results, allPass };
+  return { results, allPass, bias };
+}
+
+// ─── Exit Check (open positions: trailing stop + fixed stop loss) ──────────
+
+function checkExitConditions(position, price) {
+  console.log("\n── Position Management ──────────────────────────────────\n");
+  console.log(`  Side: ${position.side.toUpperCase()} | Entry: $${position.entryPrice.toFixed(2)} | Current: $${price.toFixed(2)}`);
+
+  let stopPrice;
+  let trailingStopPrice;
+  let stopLossPrice;
+
+  if (position.side === "long") {
+    if (price > position.extremePrice) position.extremePrice = price;
+    trailingStopPrice = position.extremePrice * (1 - CONFIG.trailingStopPct / 100);
+    stopLossPrice = position.entryPrice * (1 - CONFIG.stopLossPct / 100);
+    // Trailing stop only takes over once it has ratcheted above the fixed stop loss
+    stopPrice = Math.max(trailingStopPrice, stopLossPrice);
+    var shouldExit = price <= stopPrice;
+  } else {
+    if (price < position.extremePrice) position.extremePrice = price;
+    trailingStopPrice = position.extremePrice * (1 + CONFIG.trailingStopPct / 100);
+    stopLossPrice = position.entryPrice * (1 + CONFIG.stopLossPct / 100);
+    stopPrice = Math.min(trailingStopPrice, stopLossPrice);
+    var shouldExit = price >= stopPrice;
+  }
+
+  const pnlUSD =
+    position.side === "long"
+      ? (price - position.entryPrice) * position.quantity
+      : (position.entryPrice - price) * position.quantity;
+  const pnlPct = (pnlUSD / position.sizeUSD) * 100;
+
+  console.log(`  Stop loss:     $${stopLossPrice.toFixed(2)} (fixed, ${CONFIG.stopLossPct}% from entry)`);
+  console.log(`  Trailing stop: $${trailingStopPrice.toFixed(2)} (${CONFIG.trailingStopPct}% from best price $${position.extremePrice.toFixed(2)})`);
+  console.log(`  Unrealized P&L: $${pnlUSD.toFixed(2)} (${pnlPct.toFixed(2)}%)`);
+
+  if (shouldExit) {
+    const reason = position.side === "long"
+      ? (price <= trailingStopPrice && trailingStopPrice > stopLossPrice ? "Trailing stop hit" : "Stop loss hit")
+      : (price >= trailingStopPrice && trailingStopPrice < stopLossPrice ? "Trailing stop hit" : "Stop loss hit");
+    console.log(`  🚫 ${reason} — closing position`);
+    return { shouldExit: true, reason, pnlUSD, pnlPct };
+  }
+
+  console.log("  ✅ Within stop levels — holding position");
+  return { shouldExit: false, pnlUSD, pnlPct };
 }
 
 // ─── Trade Limits ────────────────────────────────────────────────────────────
@@ -325,8 +386,8 @@ function signBitGet(timestamp, method, path, body = "") {
     .digest("base64");
 }
 
-async function placeBitGetOrder(symbol, side, sizeUSD, price) {
-  const quantity = (sizeUSD / price).toFixed(6);
+async function placeBitGetOrder(symbol, side, quantity) {
+  const qty = parseFloat(quantity).toFixed(6);
   const timestamp = Date.now().toString();
   const path =
     CONFIG.tradeMode === "spot"
@@ -337,7 +398,7 @@ async function placeBitGetOrder(symbol, side, sizeUSD, price) {
     symbol,
     side,
     orderType: "market",
-    quantity,
+    quantity: qty,
     ...(CONFIG.tradeMode === "futures" && {
       productType: "USDT-FUTURES",
       marginMode: "isolated",
@@ -365,6 +426,16 @@ async function placeBitGetOrder(symbol, side, sizeUSD, price) {
   }
 
   return data.data;
+}
+
+// Executes (or, in paper mode, simulates) a single order. Used for both
+// opening and closing positions — `side` is "buy" or "sell".
+async function executeOrder(side, quantity) {
+  if (CONFIG.paperTrading) {
+    return { orderId: `PAPER-${Date.now()}`, paper: true };
+  }
+  const order = await placeBitGetOrder(CONFIG.symbol, side, quantity);
+  return { orderId: order.orderId, paper: false };
 }
 
 // ─── Tax CSV Logging ─────────────────────────────────────────────────────────
@@ -397,56 +468,23 @@ const CSV_HEADERS = [
   "Notes",
 ].join(",");
 
-function writeTradeCsv(logEntry) {
-  const now = new Date(logEntry.timestamp);
+function writeCsvRow({ side = "", quantity = "", price, totalUSD = "", orderId = "", mode, notes = "" }) {
+  const now = new Date();
   const date = now.toISOString().slice(0, 10);
   const time = now.toISOString().slice(11, 19);
 
-  let side = "";
-  let quantity = "";
-  let totalUSD = "";
-  let fee = "";
-  let netAmount = "";
-  let orderId = "";
-  let mode = "";
-  let notes = "";
-
-  if (!logEntry.allPass) {
-    const failed = logEntry.conditions
-      .filter((c) => !c.pass)
-      .map((c) => c.label)
-      .join("; ");
-    mode = "BLOCKED";
-    orderId = "BLOCKED";
-    notes = `Failed: ${failed}`;
-  } else if (logEntry.paperTrading) {
-    side = "BUY";
-    quantity = (logEntry.tradeSize / logEntry.price).toFixed(6);
-    totalUSD = logEntry.tradeSize.toFixed(2);
-    fee = (logEntry.tradeSize * 0.001).toFixed(4);
-    netAmount = (logEntry.tradeSize - parseFloat(fee)).toFixed(2);
-    orderId = logEntry.orderId || "";
-    mode = "PAPER";
-    notes = "All conditions met";
-  } else {
-    side = "BUY";
-    quantity = (logEntry.tradeSize / logEntry.price).toFixed(6);
-    totalUSD = logEntry.tradeSize.toFixed(2);
-    fee = (logEntry.tradeSize * 0.001).toFixed(4);
-    netAmount = (logEntry.tradeSize - parseFloat(fee)).toFixed(2);
-    orderId = logEntry.orderId || "";
-    mode = "LIVE";
-    notes = logEntry.error ? `Error: ${logEntry.error}` : "All conditions met";
-  }
+  const fee = totalUSD !== "" ? (parseFloat(totalUSD) * 0.001).toFixed(4) : "";
+  const netAmount =
+    totalUSD !== "" && fee !== "" ? (parseFloat(totalUSD) - parseFloat(fee)).toFixed(2) : "";
 
   const row = [
     date,
     time,
     "BitGet",
-    logEntry.symbol,
+    CONFIG.symbol,
     side,
     quantity,
-    logEntry.price.toFixed(2),
+    price !== undefined ? price.toFixed(2) : "",
     totalUSD,
     fee,
     netAmount,
@@ -509,14 +547,6 @@ async function run() {
   console.log(`\nStrategy: ${rules.strategy.name}`);
   console.log(`Symbol: ${CONFIG.symbol} | Timeframe: ${CONFIG.timeframe}`);
 
-  // Load log and check daily limits
-  const log = loadLog();
-  const withinLimits = checkTradeLimits(log);
-  if (!withinLimits) {
-    console.log("\nBot stopping — trade limits reached for today.");
-    return;
-  }
-
   // Fetch candle data — need enough for EMA(8) + full session for VWAP
   console.log("\n── Fetching market data from Binance ───────────────────\n");
   const candles = await fetchCandles(CONFIG.symbol, CONFIG.timeframe, 500);
@@ -524,7 +554,6 @@ async function run() {
   const price = closes[closes.length - 1];
   console.log(`  Current price: $${price.toFixed(2)}`);
 
-  // Calculate indicators
   const ema8 = calcEMA(closes, 8);
   const vwap = calcVWAP(candles);
   const rsi3 = calcRSI(closes, 3);
@@ -538,80 +567,208 @@ async function run() {
     return;
   }
 
-  // Run safety check
-  const { results, allPass } = runSafetyCheck(price, ema8, vwap, rsi3, rules);
+  const log = loadLog();
+  let position = loadPosition();
 
-  // Calculate position size
-  const tradeSize = Math.min(
-    CONFIG.portfolioValue * 0.01,
-    CONFIG.maxTradeSizeUSD,
-  );
+  // ── Manage an existing open position first — exits always take priority ──
+  if (position) {
+    const exit = checkExitConditions(position, price);
 
-  // Decision
-  console.log("\n── Decision ─────────────────────────────────────────────\n");
-
-  const logEntry = {
-    timestamp: new Date().toISOString(),
-    symbol: CONFIG.symbol,
-    timeframe: CONFIG.timeframe,
-    price,
-    indicators: { ema8, vwap, rsi3 },
-    conditions: results,
-    allPass,
-    tradeSize,
-    orderPlaced: false,
-    orderId: null,
-    paperTrading: CONFIG.paperTrading,
-    limits: {
-      maxTradeSizeUSD: CONFIG.maxTradeSizeUSD,
-      maxTradesPerDay: CONFIG.maxTradesPerDay,
-      tradesToday: countTodaysTrades(log),
-    },
-  };
-
-  if (!allPass) {
-    const failed = results.filter((r) => !r.pass).map((r) => r.label);
-    console.log(`🚫 TRADE BLOCKED`);
-    console.log(`   Failed conditions:`);
-    failed.forEach((f) => console.log(`   - ${f}`));
-  } else {
-    console.log(`✅ ALL CONDITIONS MET`);
-
-    if (CONFIG.paperTrading) {
+    if (exit.shouldExit) {
+      const closeSide = position.side === "long" ? "sell" : "buy";
       console.log(
-        `\n📋 PAPER TRADE — would buy ${CONFIG.symbol} ~$${tradeSize.toFixed(2)} at market`,
+        `\n${CONFIG.paperTrading ? "📋 PAPER" : "🔴 LIVE"} CLOSE — ${closeSide.toUpperCase()} ${position.quantity} ${CONFIG.symbol} at ~$${price.toFixed(2)}`,
       );
-      console.log(`   (Set PAPER_TRADING=false in .env to place real orders)`);
-      logEntry.orderPlaced = true;
-      logEntry.orderId = `PAPER-${Date.now()}`;
-    } else {
-      console.log(
-        `\n🔴 PLACING LIVE ORDER — $${tradeSize.toFixed(2)} BUY ${CONFIG.symbol}`,
-      );
+
+      let order;
       try {
-        const order = await placeBitGetOrder(
-          CONFIG.symbol,
-          "buy",
-          tradeSize,
-          price,
-        );
-        logEntry.orderPlaced = true;
-        logEntry.orderId = order.orderId;
-        console.log(`✅ ORDER PLACED — ${order.orderId}`);
+        order = await executeOrder(closeSide, position.quantity);
       } catch (err) {
-        console.log(`❌ ORDER FAILED — ${err.message}`);
-        logEntry.error = err.message;
+        console.log(`❌ CLOSE FAILED — ${err.message}`);
+        log.trades.push({
+          timestamp: new Date().toISOString(),
+          type: "exit",
+          symbol: CONFIG.symbol,
+          side: closeSide,
+          orderPlaced: false,
+          error: err.message,
+          paperTrading: CONFIG.paperTrading,
+        });
+        saveLog(log);
+        return;
       }
+
+      log.trades.push({
+        timestamp: new Date().toISOString(),
+        type: "exit",
+        symbol: CONFIG.symbol,
+        side: closeSide,
+        quantity: position.quantity,
+        price,
+        sizeUSD: position.sizeUSD,
+        pnlUSD: exit.pnlUSD,
+        pnlPct: exit.pnlPct,
+        reason: exit.reason,
+        orderPlaced: true,
+        orderId: order.orderId,
+        paperTrading: CONFIG.paperTrading,
+      });
+      saveLog(log);
+
+      writeCsvRow({
+        side: closeSide.toUpperCase(),
+        quantity: position.quantity,
+        price,
+        totalUSD: position.sizeUSD,
+        orderId: order.orderId,
+        mode: CONFIG.paperTrading ? "PAPER" : "LIVE",
+        notes: `Exit (${exit.reason}) — P&L $${exit.pnlUSD.toFixed(2)} (${exit.pnlPct.toFixed(2)}%)`,
+      });
+
+      savePosition(null);
+      console.log(`\n✅ Position closed — ${exit.reason}`);
+    } else {
+      savePosition(position);
+      console.log("\nHolding position — no new entries while a position is open.");
     }
+
+    console.log("═══════════════════════════════════════════════════════════\n");
+    return;
   }
 
-  // Save decision log
-  log.trades.push(logEntry);
-  saveLog(log);
-  console.log(`\nDecision log saved → ${LOG_FILE}`);
+  // ── No open position — look for a new entry ──
+  const withinLimits = checkTradeLimits(log);
+  if (!withinLimits) {
+    console.log("\nBot stopping — trade limits reached for today.");
+    console.log("═══════════════════════════════════════════════════════════\n");
+    return;
+  }
 
-  // Write tax CSV row for every run (executed, paper, or blocked)
-  writeTradeCsv(logEntry);
+  const { results, allPass, bias } = runSafetyCheck(price, ema8, vwap, rsi3, rules);
+  const tradeSize = Math.min(CONFIG.portfolioValue * 0.01, CONFIG.maxTradeSizeUSD);
+
+  console.log("\n── Decision ─────────────────────────────────────────────\n");
+
+  const canShort = CONFIG.tradeMode === "futures";
+  const blockedShort = allPass && bias === "bearish" && !canShort;
+
+  if (!allPass || blockedShort) {
+    const failed = results.filter((r) => !r.pass).map((r) => r.label);
+    if (blockedShort) {
+      console.log("🚫 TRADE BLOCKED — bearish setup confirmed, but spot mode can't open short positions.");
+      console.log("   Set TRADE_MODE=futures in .env to enable shorting.");
+    } else {
+      console.log(`🚫 TRADE BLOCKED`);
+      console.log(`   Failed conditions:`);
+      failed.forEach((f) => console.log(`   - ${f}`));
+    }
+
+    log.trades.push({
+      timestamp: new Date().toISOString(),
+      type: "entry",
+      symbol: CONFIG.symbol,
+      price,
+      indicators: { ema8, vwap, rsi3 },
+      conditions: results,
+      bias,
+      allPass: false,
+      orderPlaced: false,
+      paperTrading: CONFIG.paperTrading,
+    });
+    saveLog(log);
+
+    writeCsvRow({
+      price,
+      orderId: "BLOCKED",
+      mode: "BLOCKED",
+      notes: blockedShort
+        ? "Bearish signal — shorting unavailable in spot mode"
+        : `Failed: ${failed.join("; ")}`,
+    });
+  } else {
+    console.log(`✅ ALL CONDITIONS MET — ${bias.toUpperCase()} setup`);
+
+    const side = bias === "bullish" ? "buy" : "sell";
+    const positionSide = bias === "bullish" ? "long" : "short";
+    const quantity = parseFloat((tradeSize / price).toFixed(6));
+
+    console.log(
+      `\n${CONFIG.paperTrading ? "📋 PAPER TRADE" : "🔴 PLACING LIVE ORDER"} — ${side.toUpperCase()} ~$${tradeSize.toFixed(2)} ${CONFIG.symbol} (opening ${positionSide})`,
+    );
+    if (CONFIG.paperTrading) {
+      console.log(`   (Set PAPER_TRADING=false in .env to place real orders)`);
+    }
+
+    let order;
+    let orderFailed = false;
+    try {
+      order = await executeOrder(side, quantity);
+    } catch (err) {
+      console.log(`❌ ORDER FAILED — ${err.message}`);
+      orderFailed = true;
+      log.trades.push({
+        timestamp: new Date().toISOString(),
+        type: "entry",
+        symbol: CONFIG.symbol,
+        price,
+        bias,
+        allPass: true,
+        orderPlaced: false,
+        error: err.message,
+        paperTrading: CONFIG.paperTrading,
+      });
+      saveLog(log);
+      writeCsvRow({
+        price,
+        orderId: "FAILED",
+        mode: "BLOCKED",
+        notes: `Order failed: ${err.message}`,
+      });
+    }
+
+    if (!orderFailed) {
+      const newPosition = {
+        side: positionSide,
+        entryPrice: price,
+        quantity,
+        sizeUSD: tradeSize,
+        extremePrice: price,
+        openedAt: new Date().toISOString(),
+        orderId: order.orderId,
+      };
+      savePosition(newPosition);
+
+      log.trades.push({
+        timestamp: new Date().toISOString(),
+        type: "entry",
+        symbol: CONFIG.symbol,
+        side,
+        quantity,
+        price,
+        sizeUSD: tradeSize,
+        indicators: { ema8, vwap, rsi3 },
+        conditions: results,
+        bias,
+        allPass: true,
+        orderPlaced: true,
+        orderId: order.orderId,
+        paperTrading: CONFIG.paperTrading,
+      });
+      saveLog(log);
+
+      writeCsvRow({
+        side: side.toUpperCase(),
+        quantity,
+        price,
+        totalUSD: tradeSize,
+        orderId: order.orderId,
+        mode: CONFIG.paperTrading ? "PAPER" : "LIVE",
+        notes: `Opened ${positionSide} — all conditions met`,
+      });
+
+      console.log(`✅ Position opened — ${positionSide}, stop loss ${CONFIG.stopLossPct}%, trailing stop ${CONFIG.trailingStopPct}%`);
+    }
+  }
 
   console.log("═══════════════════════════════════════════════════════════\n");
 }

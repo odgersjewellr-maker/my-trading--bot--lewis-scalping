@@ -1,0 +1,278 @@
+{
+  "trades": [
+    {
+      "timestamp": "2026-06-17T20:44:18.756Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "price": 64250,
+      "indicators": {
+        "ema8": 65101.19750336997,
+        "vwap": 65218.56242652659,
+        "rsi3": 38.54312006186599
+      },
+      "conditions": [
+        {
+          "label": "Price below VWAP (sellers in control)",
+          "required": "< 65218.56",
+          "actual": "64250.00",
+          "pass": true
+        },
+        {
+          "label": "Price below EMA(8) (downtrend confirmed)",
+          "required": "< 65101.20",
+          "actual": "64250.00",
+          "pass": true
+        },
+        {
+          "label": "RSI(3) above 70 (reversal setup in downtrend)",
+          "required": "> 70",
+          "actual": "38.54",
+          "pass": false
+        },
+        {
+          "label": "Price within 1.5% of VWAP (not overextended)",
+          "required": "< 1.5%",
+          "actual": "1.49%",
+          "pass": true
+        }
+      ],
+      "bias": "bearish",
+      "allPass": false,
+      "orderPlaced": false,
+      "paperTrading": true
+    },
+    {
+      "timestamp": "2026-06-17T20:44:24.620Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "price": 64250,
+      "indicators": {
+        "ema8": 65101.19750336997,
+        "vwap": 65218.560460666304,
+        "rsi3": 38.54312006186599
+      },
+      "conditions": [
+        {
+          "label": "Price below VWAP (sellers in control)",
+          "required": "< 65218.56",
+          "actual": "64250.00",
+          "pass": true
+        },
+        {
+          "label": "Price below EMA(8) (downtrend confirmed)",
+          "required": "< 65101.20",
+          "actual": "64250.00",
+          "pass": true
+        },
+        {
+          "label": "RSI(3) above 70 (reversal setup in downtrend)",
+          "required": "> 70",
+          "actual": "38.54",
+          "pass": false
+        },
+        {
+          "label": "Price within 1.5% of VWAP (not overextended)",
+          "required": "< 1.5%",
+          "actual": "1.49%",
+          "pass": true
+        }
+      ],
+      "bias": "bearish",
+      "allPass": false,
+      "orderPlaced": false,
+      "paperTrading": true
+    },
+    {
+      "timestamp": "2026-06-17T20:47:31.762Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "price": 64285.99,
+      "indicators": {
+        "ema8": 65109.195281147746,
+        "vwap": 65217.05740406567,
+        "rsi3": 39.119186046511544
+      },
+      "conditions": [
+        {
+          "label": "Price below VWAP (sellers in control)",
+          "required": "< 65217.06",
+          "actual": "64285.99",
+          "pass": true
+        },
+        {
+          "label": "Price below EMA(8) (downtrend confirmed)",
+          "required": "< 65109.20",
+          "actual": "64285.99",
+          "pass": true
+        },
+        {
+          "label": "RSI(3) above 70 (reversal setup in downtrend)",
+          "required": "> 70",
+          "actual": "39.12",
+          "pass": false
+        },
+        {
+          "label": "Price within 1.5% of VWAP (not overextended)",
+          "required": "< 1.5%",
+          "actual": "1.43%",
+          "pass": true
+        }
+      ],
+      "bias": "bearish",
+      "allPass": false,
+      "orderPlaced": false,
+      "paperTrading": true
+    },
+    {
+      "timestamp": "2026-06-17T20:47:43.344Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "price": 64286,
+      "indicators": {
+        "ema8": 65109.19750336997,
+        "vwap": 65217.04780535492,
+        "rsi3": 39.11934850227778
+      },
+      "conditions": [
+        {
+          "label": "Price below VWAP (sellers in control)",
+          "required": "< 65217.05",
+          "actual": "64286.00",
+          "pass": true
+        },
+        {
+          "label": "Price below EMA(8) (downtrend confirmed)",
+          "required": "< 65109.20",
+          "actual": "64286.00",
+          "pass": true
+        },
+        {
+          "label": "RSI(3) above 70 (reversal setup in downtrend)",
+          "required": "> 70",
+          "actual": "39.12",
+          "pass": false
+        },
+        {
+          "label": "Price within 1.5% of VWAP (not overextended)",
+          "required": "< 1.5%",
+          "actual": "1.43%",
+          "pass": true
+        }
+      ],
+      "bias": "bearish",
+      "allPass": false,
+      "orderPlaced": false,
+      "paperTrading": true
+    },
+    {
+      "timestamp": "2026-06-17T20:47:53.964Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "price": 64285.99,
+      "indicators": {
+        "ema8": 65109.195281147746,
+        "vwap": 65217.04723141473,
+        "rsi3": 39.119186046511544
+      },
+      "conditions": [
+        {
+          "label": "Price below VWAP (sellers in control)",
+          "required": "< 65217.05",
+          "actual": "64285.99",
+          "pass": true
+        },
+        {
+          "label": "Price below EMA(8) (downtrend confirmed)",
+          "required": "< 65109.20",
+          "actual": "64285.99",
+          "pass": true
+        },
+        {
+          "label": "RSI(3) above 70 (reversal setup in downtrend)",
+          "required": "> 70",
+          "actual": "39.12",
+          "pass": false
+        },
+        {
+          "label": "Price within 1.5% of VWAP (not overextended)",
+          "required": "< 1.5%",
+          "actual": "1.43%",
+          "pass": true
+        }
+      ],
+      "bias": "bearish",
+      "allPass": false,
+      "orderPlaced": false,
+      "paperTrading": true
+    },
+    {
+      "timestamp": "2026-06-17T20:49:20.772Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "price": 64318,
+      "indicators": {
+        "ema8": 64303.56706305714,
+        "vwap": 65247.860532712526,
+        "rsi3": 100
+      },
+      "conditions": [
+        {
+          "label": "Market bias",
+          "required": "Bullish or bearish",
+          "actual": "Neutral",
+          "pass": false
+        }
+      ],
+      "bias": "neutral",
+      "allPass": false,
+      "orderPlaced": false,
+      "paperTrading": true
+    },
+    {
+      "timestamp": "2026-06-17T20:50:09.476Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "price": 64316.01,
+      "indicators": {
+        "ema8": 64306.683024353086,
+        "vwap": 65250.34673777581,
+        "rsi3": 84.56813819578706
+      },
+      "conditions": [
+        {
+          "label": "Market bias",
+          "required": "Bullish or bearish",
+          "actual": "Neutral",
+          "pass": false
+        }
+      ],
+      "bias": "neutral",
+      "allPass": false,
+      "orderPlaced": false,
+      "paperTrading": true
+    },
+    {
+      "timestamp": "2026-06-17T20:51:02.720Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "price": 64330.01,
+      "indicators": {
+        "ema8": 64314.30037696598,
+        "vwap": 65250.46028224415,
+        "rsi3": 99.73492379060805
+      },
+      "conditions": [
+        {
+          "label": "Market bias",
+          "required": "Bullish or bearish",
+          "actual": "Neutral",
+          "pass": false
+        }
+      ],
+      "bias": "neutral",
+      "allPass": false,
+      "orderPlaced": false,
+      "paperTrading": true
+    }
+  ]
+}
