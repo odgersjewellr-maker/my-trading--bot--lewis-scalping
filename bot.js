@@ -346,10 +346,11 @@ function checkExitConditions(position, price) {
 
 function checkTradeLimits(log) {
   const todayCount = countTodaysTrades(log);
+  const noDailyLimit = CONFIG.maxTradesPerDay <= 0;
 
   console.log("\n── Trade Limits ─────────────────────────────────────────\n");
 
-  if (todayCount >= CONFIG.maxTradesPerDay) {
+  if (!noDailyLimit && todayCount >= CONFIG.maxTradesPerDay) {
     console.log(
       `🚫 Max trades per day reached: ${todayCount}/${CONFIG.maxTradesPerDay}`,
     );
@@ -357,7 +358,9 @@ function checkTradeLimits(log) {
   }
 
   console.log(
-    `✅ Trades today: ${todayCount}/${CONFIG.maxTradesPerDay} — within limit`,
+    noDailyLimit
+      ? `✅ Trades today: ${todayCount} — no daily limit set`
+      : `✅ Trades today: ${todayCount}/${CONFIG.maxTradesPerDay} — within limit`,
   );
 
   const tradeSize = Math.min(

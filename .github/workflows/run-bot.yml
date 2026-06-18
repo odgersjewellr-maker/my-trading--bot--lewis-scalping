@@ -34,7 +34,7 @@ jobs:
           TRADE_MODE=spot
           PORTFOLIO_VALUE_USD=640
           MAX_TRADE_SIZE_USD=6
-          MAX_TRADES_PER_DAY=3
+          MAX_TRADES_PER_DAY=0
           SYMBOL=BTCUSDT
           TIMEFRAME=4H
           STOP_LOSS_PCT=0.3
