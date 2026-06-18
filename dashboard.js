@@ -6,7 +6,7 @@
 
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { execSync } from "child_process";
-import { CONFIG, signBitGet, fetchCandles, loadPosition, CSV_FILE } from "./bot.js";
+import { CONFIG, signBitGet, fetchCandles, loadPosition, CSV_FILE, LOG_FILE } from "./bot.js";
 
 async function fetchBalance() {
   const timestamp = Date.now().toString();
@@ -45,6 +45,28 @@ function summarizeSpotBalance(assets) {
   return { usdtTotal, otherHoldings };
 }
 
+function computePerformanceStats() {
+  if (!existsSync(LOG_FILE)) {
+    return { entryCount: 0, exitCount: 0, winRate: null, totalPnlUSD: 0, tradesPerDay: null };
+  }
+  const log = JSON.parse(readFileSync(LOG_FILE, "utf8"));
+  const entries = log.trades.filter((t) => t.type === "entry" && t.orderPlaced);
+  const exits = log.trades.filter((t) => t.type === "exit" && t.orderPlaced);
+
+  const wins = exits.filter((e) => e.pnlUSD > 0).length;
+  const winRate = exits.length > 0 ? (wins / exits.length) * 100 : null;
+  const totalPnlUSD = exits.reduce((sum, e) => sum + e.pnlUSD, 0);
+
+  let tradesPerDay = null;
+  if (entries.length > 0) {
+    const firstTs = new Date(entries[0].timestamp).getTime();
+    const daysActive = Math.max((Date.now() - firstTs) / 86400000, 1 / 24);
+    tradesPerDay = entries.length / daysActive;
+  }
+
+  return { entryCount: entries.length, exitCount: exits.length, wins, winRate, totalPnlUSD, tradesPerDay };
+}
+
 function readRecentTrades(limit = 10) {
   if (!existsSync(CSV_FILE)) return [];
   const lines = readFileSync(CSV_FILE, "utf8").trim().split("\n");
@@ -61,6 +83,8 @@ function escapeHtml(s) {
 
 async function main() {
   console.log("Fetching live BitGet balance and current position...");
+
+  const stats = computePerformanceStats();
 
   let balanceHtml;
   try {
@@ -181,7 +205,10 @@ async function main() {
     ${balanceHtml}
     <div class="stat"><span>Configured portfolio value</span><strong>$${CONFIG.portfolioValue.toFixed(2)}</strong></div>
     <div class="stat"><span>Max trade size</span><strong>$${CONFIG.maxTradeSizeUSD.toFixed(2)}</strong></div>
-    <div class="stat"><span>Max trades / day</span><strong>${CONFIG.maxTradesPerDay}</strong></div>
+    <div class="stat"><span>Max trades / day</span><strong>${CONFIG.maxTradesPerDay === 0 ? "No limit" : CONFIG.maxTradesPerDay}</strong></div>
+    <div class="stat"><span>Trade frequency</span><strong>${stats.tradesPerDay !== null ? `${stats.tradesPerDay.toFixed(2)} / day (${stats.entryCount} opened total)` : "No trades opened yet"}</strong></div>
+    <div class="stat"><span>Total P&amp;L (closed trades)</span><strong class="${stats.totalPnlUSD >= 0 ? "pos" : "neg"}">${stats.exitCount > 0 ? `$${stats.totalPnlUSD.toFixed(2)}` : "No closed trades yet"}</strong></div>
+    <div class="stat"><span>Trade accuracy</span><strong>${stats.winRate !== null ? `${stats.winRate.toFixed(1)}% (${stats.wins}/${stats.exitCount} wins)` : "No closed trades yet"}</strong></div>
   </div>
 
   <div class="card">
