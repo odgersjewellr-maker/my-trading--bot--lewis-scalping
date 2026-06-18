@@ -1,12 +1,12 @@
 /**
  * Claude + TradingView MCP — Automated Trading Bot
  *
- * Cloud mode: runs on Railway on a schedule. Pulls candle data direct from
- * Binance (free, no auth), calculates all indicators, runs safety check,
- * executes via BitGet if everything lines up.
+ * Cloud mode: runs on a schedule (e.g. GitHub Actions). Pulls candle data
+ * from BitGet's public market-data endpoint (free, no auth — Binance's
+ * equivalent endpoint returns HTTP 451 from US-hosted CI runners), calculates
+ * all indicators, runs safety check, executes via BitGet if everything lines up.
  *
  * Local mode: run manually — node bot.js
- * Cloud mode: deploy to Railway, set env vars, Railway triggers on cron schedule
  */
 
 import "dotenv/config";
@@ -122,30 +122,32 @@ function savePosition(position) {
   writeFileSync(POSITION_FILE, JSON.stringify(position, null, 2));
 }
 
-// ─── Market Data (Binance public API — free, no auth) ───────────────────────
+// ─── Market Data (BitGet public API — free, no auth) ────────────────────────
 
 async function fetchCandles(symbol, interval, limit = 100) {
-  // Map our timeframe format to Binance interval format
-  const intervalMap = {
-    "1m": "1m",
-    "3m": "3m",
-    "5m": "5m",
-    "15m": "15m",
-    "30m": "30m",
+  // Map our timeframe format to BitGet granularity format
+  const granularityMap = {
+    "1m": "1min",
+    "3m": "3min",
+    "5m": "5min",
+    "15m": "15min",
+    "30m": "30min",
     "1H": "1h",
     "4H": "4h",
-    "1D": "1d",
-    "1W": "1w",
+    "1D": "1day",
+    "1W": "1week",
   };
-  const binanceInterval = intervalMap[interval] || "1m";
+  const granularity = granularityMap[interval] || "1min";
 
-  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${binanceInterval}&limit=${limit}`;
+  const url = `${CONFIG.bitget.baseUrl}/api/v2/spot/market/candles?symbol=${symbol}&granularity=${granularity}&limit=${limit}`;
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`Binance API error: ${res.status}`);
+  if (!res.ok) throw new Error(`BitGet candles API error: ${res.status}`);
   const data = await res.json();
+  if (data.code !== "00000") throw new Error(`BitGet candles API error: ${data.msg}`);
 
-  return data.map((k) => ({
-    time: k[0],
+  // BitGet returns oldest-first, same ordering Binance used — no resort needed
+  return data.data.map((k) => ({
+    time: parseInt(k[0]),
     open: parseFloat(k[1]),
     high: parseFloat(k[2]),
     low: parseFloat(k[3]),
@@ -548,7 +550,7 @@ async function run() {
   console.log(`Symbol: ${CONFIG.symbol} | Timeframe: ${CONFIG.timeframe}`);
 
   // Fetch candle data — need enough for EMA(8) + full session for VWAP
-  console.log("\n── Fetching market data from Binance ───────────────────\n");
+  console.log("\n── Fetching market data from BitGet ─────────────────────\n");
   const candles = await fetchCandles(CONFIG.symbol, CONFIG.timeframe, 500);
   const closes = candles.map((c) => c.close);
   const price = closes[closes.length - 1];
