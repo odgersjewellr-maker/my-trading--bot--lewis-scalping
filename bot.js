@@ -82,6 +82,9 @@ export const CONFIG = {
   tradeMode: process.env.TRADE_MODE || "spot",
   stopLossPct: parseFloat(process.env.STOP_LOSS_PCT || "0.3"),
   trailingStopPct: parseFloat(process.env.TRAILING_STOP_PCT || "0.5"),
+  atrPeriod: parseInt(process.env.ATR_PERIOD || "14"),
+  atrStopMult: parseFloat(process.env.ATR_STOP_MULT || "1.5"),
+  atrTrailingMult: parseFloat(process.env.ATR_TRAILING_MULT || "2.5"),
   bitget: {
     apiKey: process.env.BITGET_API_KEY,
     secretKey: process.env.BITGET_SECRET_KEY,
@@ -182,6 +185,25 @@ function calcRSI(closes, period = 14) {
   if (avgLoss === 0) return 100;
   const rs = avgGain / avgLoss;
   return 100 - 100 / (1 + rs);
+}
+
+// ATR — average true range, measures recent volatility in price terms
+function calcATR(candles, period = 14) {
+  if (candles.length < period + 1) return null;
+  const trueRanges = [];
+  for (let i = 1; i < candles.length; i++) {
+    const cur = candles[i];
+    const prev = candles[i - 1];
+    trueRanges.push(
+      Math.max(
+        cur.high - cur.low,
+        Math.abs(cur.high - prev.close),
+        Math.abs(cur.low - prev.close),
+      ),
+    );
+  }
+  const recent = trueRanges.slice(-period);
+  return recent.reduce((a, b) => a + b, 0) / recent.length;
 }
 
 // VWAP — session-based, resets at midnight UTC
@@ -297,9 +319,18 @@ function runSafetyCheck(price, ema8, vwap, rsi3, rules) {
 
 // ─── Exit Check (open positions: trailing stop + fixed stop loss) ──────────
 
-function checkExitConditions(position, price) {
+function checkExitConditions(position, price, atr) {
   console.log("\n── Position Management ──────────────────────────────────\n");
   console.log(`  Side: ${position.side.toUpperCase()} | Entry: $${position.entryPrice.toFixed(2)} | Current: $${price.toFixed(2)}`);
+
+  // Volatility-adjusted distances: the wider of "fixed %" and "ATR × multiplier"
+  // wins, so calm markets keep the tight fixed % stop, and choppy markets get
+  // more room instead of being stopped out by normal noise.
+  const atrStopDist = atr ? atr * CONFIG.atrStopMult : null;
+  const atrTrailingDist = atr ? atr * CONFIG.atrTrailingMult : null;
+  const fixedStopDist = position.entryPrice * (CONFIG.stopLossPct / 100);
+
+  const stopLossDist = atrStopDist ? Math.max(atrStopDist, fixedStopDist) : fixedStopDist;
 
   let stopPrice;
   let trailingStopPrice;
@@ -307,15 +338,19 @@ function checkExitConditions(position, price) {
 
   if (position.side === "long") {
     if (price > position.extremePrice) position.extremePrice = price;
-    trailingStopPrice = position.extremePrice * (1 - CONFIG.trailingStopPct / 100);
-    stopLossPrice = position.entryPrice * (1 - CONFIG.stopLossPct / 100);
+    const fixedTrailingDist = position.extremePrice * (CONFIG.trailingStopPct / 100);
+    const trailingDist = atrTrailingDist ? Math.max(atrTrailingDist, fixedTrailingDist) : fixedTrailingDist;
+    trailingStopPrice = position.extremePrice - trailingDist;
+    stopLossPrice = position.entryPrice - stopLossDist;
     // Trailing stop only takes over once it has ratcheted above the fixed stop loss
     stopPrice = Math.max(trailingStopPrice, stopLossPrice);
     var shouldExit = price <= stopPrice;
   } else {
     if (price < position.extremePrice) position.extremePrice = price;
-    trailingStopPrice = position.extremePrice * (1 + CONFIG.trailingStopPct / 100);
-    stopLossPrice = position.entryPrice * (1 + CONFIG.stopLossPct / 100);
+    const fixedTrailingDist = position.extremePrice * (CONFIG.trailingStopPct / 100);
+    const trailingDist = atrTrailingDist ? Math.max(atrTrailingDist, fixedTrailingDist) : fixedTrailingDist;
+    trailingStopPrice = position.extremePrice + trailingDist;
+    stopLossPrice = position.entryPrice + stopLossDist;
     stopPrice = Math.min(trailingStopPrice, stopLossPrice);
     var shouldExit = price >= stopPrice;
   }
@@ -326,8 +361,9 @@ function checkExitConditions(position, price) {
       : (position.entryPrice - price) * position.quantity;
   const pnlPct = (pnlUSD / position.sizeUSD) * 100;
 
-  console.log(`  Stop loss:     $${stopLossPrice.toFixed(2)} (fixed, ${CONFIG.stopLossPct}% from entry)`);
-  console.log(`  Trailing stop: $${trailingStopPrice.toFixed(2)} (${CONFIG.trailingStopPct}% from best price $${position.extremePrice.toFixed(2)})`);
+  console.log(`  ATR(${CONFIG.atrPeriod}): ${atr ? "$" + atr.toFixed(2) : "N/A — using fixed % only"}`);
+  console.log(`  Stop loss:     $${stopLossPrice.toFixed(2)} (${atrStopDist && atrStopDist > fixedStopDist ? "ATR-widened" : "fixed"}, $${stopLossDist.toFixed(2)} from entry)`);
+  console.log(`  Trailing stop: $${trailingStopPrice.toFixed(2)} (${atrTrailingDist && atrTrailingDist > position.entryPrice * (CONFIG.trailingStopPct / 100) ? "ATR-widened" : "fixed"}, from best price $${position.extremePrice.toFixed(2)})`);
   console.log(`  Unrealized P&L: $${pnlUSD.toFixed(2)} (${pnlPct.toFixed(2)}%)`);
 
   if (shouldExit) {
@@ -563,10 +599,12 @@ async function run() {
   const ema8 = calcEMA(closes, 8);
   const vwap = calcVWAP(candles);
   const rsi3 = calcRSI(closes, 3);
+  const atr = calcATR(candles, CONFIG.atrPeriod);
 
   console.log(`  EMA(8):  $${ema8.toFixed(2)}`);
   console.log(`  VWAP:    $${vwap ? vwap.toFixed(2) : "N/A"}`);
   console.log(`  RSI(3):  ${rsi3 ? rsi3.toFixed(2) : "N/A"}`);
+  console.log(`  ATR(${CONFIG.atrPeriod}): ${atr ? "$" + atr.toFixed(2) : "N/A"}`);
 
   if (!vwap || !rsi3) {
     console.log("\n⚠️  Not enough data to calculate indicators. Exiting.");
@@ -578,7 +616,7 @@ async function run() {
 
   // ── Manage an existing open position first — exits always take priority ──
   if (position) {
-    const exit = checkExitConditions(position, price);
+    const exit = checkExitConditions(position, price, atr);
 
     if (exit.shouldExit) {
       const closeSide = position.side === "long" ? "sell" : "buy";

@@ -39,6 +39,9 @@ jobs:
           TIMEFRAME=4H
           STOP_LOSS_PCT=0.3
           TRAILING_STOP_PCT=0.5
+          ATR_PERIOD=14
+          ATR_STOP_MULT=1.5
+          ATR_TRAILING_MULT=2.5
           PAPER_TRADING=true
           EOF
 
