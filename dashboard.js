@@ -198,12 +198,15 @@ async function main() {
 
   writeFileSync("dashboard.html", html);
   console.log("Dashboard written to dashboard.html");
-  try {
-    execSync("start dashboard.html");
-  } catch {
+
+  if (!process.argv.includes("--no-open")) {
     try {
-      execSync("open dashboard.html");
-    } catch {}
+      execSync("start dashboard.html");
+    } catch {
+      try {
+        execSync("open dashboard.html");
+      } catch {}
+    }
   }
 }
 
