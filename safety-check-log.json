@@ -680,6 +680,29 @@
       "allPass": false,
       "orderPlaced": false,
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-06-18T06:49:20.817Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "price": 64110,
+      "indicators": {
+        "ema8": 64036.87903400199,
+        "vwap": 64228.60431267291,
+        "rsi3": 100
+      },
+      "conditions": [
+        {
+          "label": "Market bias",
+          "required": "Bullish or bearish",
+          "actual": "Neutral",
+          "pass": false
+        }
+      ],
+      "bias": "neutral",
+      "allPass": false,
+      "orderPlaced": false,
+      "paperTrading": true
     }
   ]
 }

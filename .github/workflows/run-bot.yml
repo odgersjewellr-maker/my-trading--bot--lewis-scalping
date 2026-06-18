@@ -2,7 +2,7 @@ name: Run trading bot
 
 on:
   schedule:
-    - cron: "0 */4 * * *"
+    - cron: "*/15 * * * *"
   workflow_dispatch: {}
 
 permissions:
@@ -36,7 +36,7 @@ jobs:
           MAX_TRADE_SIZE_USD=6
           MAX_TRADES_PER_DAY=0
           SYMBOL=BTCUSDT
-          TIMEFRAME=4H
+          TIMEFRAME=15m
           STOP_LOSS_PCT=0.3
           TRAILING_STOP_PCT=0.5
           ATR_PERIOD=14
