@@ -437,6 +437,249 @@
       "allPass": false,
       "orderPlaced": false,
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-06-18T06:23:52.441Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "price": 63960,
+      "indicators": {
+        "ema8": 64740.30527654568,
+        "vwap": 64211.95352605062,
+        "rsi3": 27.684888311825887
+      },
+      "conditions": [
+        {
+          "label": "Price below VWAP (sellers in control)",
+          "required": "< 64211.95",
+          "actual": "63960.00",
+          "pass": true
+        },
+        {
+          "label": "Price below EMA(8) (downtrend confirmed)",
+          "required": "< 64740.31",
+          "actual": "63960.00",
+          "pass": true
+        },
+        {
+          "label": "RSI(3) above 70 (reversal setup in downtrend)",
+          "required": "> 70",
+          "actual": "27.68",
+          "pass": false
+        },
+        {
+          "label": "Price within 1.5% of VWAP (not overextended)",
+          "required": "< 1.5%",
+          "actual": "0.39%",
+          "pass": true
+        }
+      ],
+      "bias": "bearish",
+      "allPass": false,
+      "orderPlaced": false,
+      "paperTrading": true
+    },
+    {
+      "timestamp": "2026-06-18T06:24:58.838Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "price": 63932,
+      "indicators": {
+        "ema8": 63935.62957417367,
+        "vwap": 64253.77296547844,
+        "rsi3": 30.303030303030297
+      },
+      "conditions": [
+        {
+          "label": "Price below VWAP (sellers in control)",
+          "required": "< 64253.77",
+          "actual": "63932.00",
+          "pass": true
+        },
+        {
+          "label": "Price below EMA(8) (downtrend confirmed)",
+          "required": "< 63935.63",
+          "actual": "63932.00",
+          "pass": true
+        },
+        {
+          "label": "RSI(3) above 70 (reversal setup in downtrend)",
+          "required": "> 70",
+          "actual": "30.30",
+          "pass": false
+        },
+        {
+          "label": "Price within 1.5% of VWAP (not overextended)",
+          "required": "< 1.5%",
+          "actual": "0.50%",
+          "pass": true
+        }
+      ],
+      "bias": "bearish",
+      "allPass": false,
+      "orderPlaced": false,
+      "paperTrading": true
+    },
+    {
+      "timestamp": "2026-06-18T06:26:09.445Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "price": 63944.55,
+      "indicators": {
+        "ema8": 63937.42702635198,
+        "vwap": 64253.42377011193,
+        "rsi3": 39.39108600126391
+      },
+      "conditions": [
+        {
+          "label": "Market bias",
+          "required": "Bullish or bearish",
+          "actual": "Neutral",
+          "pass": false
+        }
+      ],
+      "bias": "neutral",
+      "allPass": false,
+      "orderPlaced": false,
+      "paperTrading": true
+    },
+    {
+      "timestamp": "2026-06-18T06:26:48.681Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "price": 63939.85,
+      "indicators": {
+        "ema8": 63936.38258190753,
+        "vwap": 64253.32394905498,
+        "rsi3": 28.90279823269381
+      },
+      "conditions": [
+        {
+          "label": "Market bias",
+          "required": "Bullish or bearish",
+          "actual": "Neutral",
+          "pass": false
+        }
+      ],
+      "bias": "neutral",
+      "allPass": false,
+      "orderPlaced": false,
+      "paperTrading": true
+    },
+    {
+      "timestamp": "2026-06-18T06:26:55.207Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "price": 63950,
+      "indicators": {
+        "ema8": 63938.63813746309,
+        "vwap": 64253.29502130511,
+        "rsi3": 48.24443848834394
+      },
+      "conditions": [
+        {
+          "label": "Market bias",
+          "required": "Bullish or bearish",
+          "actual": "Neutral",
+          "pass": false
+        }
+      ],
+      "bias": "neutral",
+      "allPass": false,
+      "orderPlaced": false,
+      "paperTrading": true
+    },
+    {
+      "timestamp": "2026-06-18T06:27:01.732Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "price": 63949.99,
+      "indicators": {
+        "ema8": 63941.15904518735,
+        "vwap": 64253.29158029032,
+        "rsi3": 100
+      },
+      "conditions": [
+        {
+          "label": "Market bias",
+          "required": "Bullish or bearish",
+          "actual": "Neutral",
+          "pass": false
+        }
+      ],
+      "bias": "neutral",
+      "allPass": false,
+      "orderPlaced": false,
+      "paperTrading": true
+    },
+    {
+      "timestamp": "2026-06-18T06:27:08.365Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "price": 63953.23,
+      "indicators": {
+        "ema8": 63941.87904518735,
+        "vwap": 64253.28597594127,
+        "rsi3": 100
+      },
+      "conditions": [
+        {
+          "label": "Market bias",
+          "required": "Bullish or bearish",
+          "actual": "Neutral",
+          "pass": false
+        }
+      ],
+      "bias": "neutral",
+      "allPass": false,
+      "orderPlaced": false,
+      "paperTrading": true
+    },
+    {
+      "timestamp": "2026-06-18T06:27:15.032Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "price": 63953.79,
+      "indicators": {
+        "ema8": 63942.00348963179,
+        "vwap": 64253.28247668543,
+        "rsi3": 100
+      },
+      "conditions": [
+        {
+          "label": "Market bias",
+          "required": "Bullish or bearish",
+          "actual": "Neutral",
+          "pass": false
+        }
+      ],
+      "bias": "neutral",
+      "allPass": false,
+      "orderPlaced": false,
+      "paperTrading": true
+    },
+    {
+      "timestamp": "2026-06-18T06:27:21.619Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "price": 63954.99,
+      "indicators": {
+        "ema8": 63942.27015629846,
+        "vwap": 64253.273941039886,
+        "rsi3": 100
+      },
+      "conditions": [
+        {
+          "label": "Market bias",
+          "required": "Bullish or bearish",
+          "actual": "Neutral",
+          "pass": false
+        }
+      ],
+      "bias": "neutral",
+      "allPass": false,
+      "orderPlaced": false,
+      "paperTrading": true
     }
   ]
 }
