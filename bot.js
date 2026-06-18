@@ -13,6 +13,7 @@ import "dotenv/config";
 import { readFileSync, writeFileSync, existsSync, appendFileSync } from "fs";
 import crypto from "crypto";
 import { execSync } from "child_process";
+import { pathToFileURL } from "url";
 
 // ─── Onboarding ───────────────────────────────────────────────────────────────
 
@@ -71,7 +72,7 @@ function checkOnboarding() {
 
 // ─── Config ────────────────────────────────────────────────────────────────
 
-const CONFIG = {
+export const CONFIG = {
   symbol: process.env.SYMBOL || "BTCUSDT",
   timeframe: process.env.TIMEFRAME || "4H",
   portfolioValue: parseFloat(process.env.PORTFOLIO_VALUE_USD || "1000"),
@@ -89,8 +90,8 @@ const CONFIG = {
   },
 };
 
-const LOG_FILE = "safety-check-log.json";
-const POSITION_FILE = "position.json";
+export const LOG_FILE = "safety-check-log.json";
+export const POSITION_FILE = "position.json";
 
 // ─── Logging ────────────────────────────────────────────────────────────────
 
@@ -112,7 +113,7 @@ function countTodaysTrades(log) {
 
 // ─── Position State (persisted between cron runs) ───────────────────────────
 
-function loadPosition() {
+export function loadPosition() {
   if (!existsSync(POSITION_FILE)) return null;
   const raw = JSON.parse(readFileSync(POSITION_FILE, "utf8"));
   return raw === null ? null : raw;
@@ -124,7 +125,7 @@ function savePosition(position) {
 
 // ─── Market Data (BitGet public API — free, no auth) ────────────────────────
 
-async function fetchCandles(symbol, interval, limit = 100) {
+export async function fetchCandles(symbol, interval, limit = 100) {
   // Map our timeframe format to BitGet granularity format
   const granularityMap = {
     "1m": "1min",
@@ -380,7 +381,7 @@ function checkTradeLimits(log) {
 
 // ─── BitGet Execution ────────────────────────────────────────────────────────
 
-function signBitGet(timestamp, method, path, body = "") {
+export function signBitGet(timestamp, method, path, body = "") {
   const message = `${timestamp}${method}${path}${body}`;
   return crypto
     .createHmac("sha256", CONFIG.bitget.secretKey)
@@ -442,7 +443,7 @@ async function executeOrder(side, quantity) {
 
 // ─── Tax CSV Logging ─────────────────────────────────────────────────────────
 
-const CSV_FILE = "trades.csv";
+export const CSV_FILE = "trades.csv";
 
 // Always ensure trades.csv exists with headers — open it in Excel/Sheets any time
 function initCsv() {
@@ -775,11 +776,16 @@ async function run() {
   console.log("═══════════════════════════════════════════════════════════\n");
 }
 
-if (process.argv.includes("--tax-summary")) {
-  generateTaxSummary();
-} else {
-  run().catch((err) => {
-    console.error("Bot error:", err);
-    process.exit(1);
-  });
+const isMainModule =
+  process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isMainModule) {
+  if (process.argv.includes("--tax-summary")) {
+    generateTaxSummary();
+  } else {
+    run().catch((err) => {
+      console.error("Bot error:", err);
+      process.exit(1);
+    });
+  }
 }
