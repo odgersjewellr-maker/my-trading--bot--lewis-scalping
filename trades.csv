@@ -22,3 +22,4 @@ Date,Time (UTC),Exchange,Symbol,Side,Quantity,Price,Total USD,Fee (est.),Net Amo
 2026-06-18,06:27:15,BitGet,BTCUSDT,,,63953.79,,,,BLOCKED,BLOCKED,"Failed: Market bias"
 2026-06-18,06:27:21,BitGet,BTCUSDT,,,63954.99,,,,BLOCKED,BLOCKED,"Failed: Market bias"
 2026-06-18,06:49:20,BitGet,BTCUSDT,,,64110.00,,,,BLOCKED,BLOCKED,"Failed: Market bias"
+2026-06-18,18:12:32,BitGet,BTCUSDT,,,62695.00,,,,BLOCKED,BLOCKED,"Failed: Price within 1.5% of VWAP (not overextended)"
