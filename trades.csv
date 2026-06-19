@@ -24,3 +24,4 @@ Date,Time (UTC),Exchange,Symbol,Side,Quantity,Price,Total USD,Fee (est.),Net Amo
 2026-06-18,06:49:20,BitGet,BTCUSDT,,,64110.00,,,,BLOCKED,BLOCKED,"Failed: Market bias"
 2026-06-18,18:12:32,BitGet,BTCUSDT,,,62695.00,,,,BLOCKED,BLOCKED,"Failed: Price within 1.5% of VWAP (not overextended)"
 2026-06-19,00:13:45,BitGet,BTCUSDT,,,62867.80,,,,BLOCKED,BLOCKED,"Failed: RSI(3) above 70 (reversal setup in downtrend)"
+2026-06-19,13:01:54,BitGet,BTCUSDT,,,62791.53,,,,BLOCKED,BLOCKED,"Failed: RSI(3) below 30 (snap-back setup in uptrend)"

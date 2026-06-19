@@ -785,6 +785,47 @@
       "allPass": false,
       "orderPlaced": false,
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-06-19T13:01:54.419Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "price": 62791.53,
+      "indicators": {
+        "ema8": 62660.49747652616,
+        "vwap": 62674.53833582758,
+        "rsi3": 78.77211238293451
+      },
+      "conditions": [
+        {
+          "label": "Price above VWAP (buyers in control)",
+          "required": "> 62674.54",
+          "actual": "62791.53",
+          "pass": true
+        },
+        {
+          "label": "Price above EMA(8) (uptrend confirmed)",
+          "required": "> 62660.50",
+          "actual": "62791.53",
+          "pass": true
+        },
+        {
+          "label": "RSI(3) below 30 (snap-back setup in uptrend)",
+          "required": "< 30",
+          "actual": "78.77",
+          "pass": false
+        },
+        {
+          "label": "Price within 1.5% of VWAP (not overextended)",
+          "required": "< 1.5%",
+          "actual": "0.19%",
+          "pass": true
+        }
+      ],
+      "bias": "bullish",
+      "allPass": false,
+      "orderPlaced": false,
+      "paperTrading": true
     }
   ]
 }
