@@ -95,6 +95,8 @@ export const CONFIG = {
 
 export const LOG_FILE = "safety-check-log.json";
 export const POSITION_FILE = "position.json";
+export const PORTFOLIO_FILE = "portfolio.json";
+export const STATE_FILE = "nkb-state.json";
 
 // ─── Logging ────────────────────────────────────────────────────────────────
 
@@ -124,6 +126,27 @@ export function loadPosition() {
 
 function savePosition(position) {
   writeFileSync(POSITION_FILE, JSON.stringify(position, null, 2));
+}
+
+function loadPortfolio() {
+  if (!existsSync(PORTFOLIO_FILE)) return CONFIG.portfolioValue;
+  return JSON.parse(readFileSync(PORTFOLIO_FILE, "utf8")).value;
+}
+
+function savePortfolio(value) {
+  writeFileSync(PORTFOLIO_FILE, JSON.stringify({ value, updatedAt: new Date().toISOString() }, null, 2));
+}
+
+// Persists the NKB band state (1=bullish, -1=bearish, 0=neutral) between runs
+// so Buy/Sell labels only fire on genuine bearish↔bullish transitions, exactly
+// matching what the Pine Script indicator shows on the chart.
+function loadNKBState() {
+  if (!existsSync(STATE_FILE)) return 0;
+  return JSON.parse(readFileSync(STATE_FILE, "utf8")).state ?? 0;
+}
+
+function saveNKBState(state) {
+  writeFileSync(STATE_FILE, JSON.stringify({ state, updatedAt: new Date().toISOString() }, null, 2));
 }
 
 // ─── Market Data (BitGet public API — free, no auth) ────────────────────────
@@ -160,161 +183,102 @@ export async function fetchCandles(symbol, interval, limit = 100) {
   }));
 }
 
-// ─── Indicator Calculations ──────────────────────────────────────────────────
+// ─── Neural Kernel Bands — Indicator Calculations ────────────────────────────
 
-function calcEMA(closes, period) {
-  const multiplier = 2 / (period + 1);
-  let ema = closes.slice(0, period).reduce((a, b) => a + b, 0) / period;
-  for (let i = period; i < closes.length; i++) {
-    ema = closes[i] * multiplier + ema * (1 - multiplier);
-  }
-  return ema;
-}
+const NKB = {
+  length:      parseInt(process.env.NKB_LENGTH      || "30"),
+  bandwidth:   parseFloat(process.env.NKB_BANDWIDTH  || "8.0"),
+  adaptive:    process.env.NKB_ADAPTIVE !== "false",
+  atrLen:      parseInt(process.env.NKB_ATR_LEN     || "14"),
+  smooth:      parseInt(process.env.NKB_SMOOTH       || "3"),
+  bandMult:    parseFloat(process.env.NKB_BAND_MULT  || "1.0"),
+  bandLen:     parseInt(process.env.NKB_BAND_LEN     || "24"),
+  bandSmooth:  parseInt(process.env.NKB_BAND_SMOOTH  || "5"),
+};
 
-function calcRSI(closes, period = 14) {
-  if (closes.length < period + 1) return null;
-  let gains = 0,
-    losses = 0;
-  for (let i = closes.length - period; i < closes.length; i++) {
-    const diff = closes[i] - closes[i - 1];
-    if (diff > 0) gains += diff;
-    else losses -= diff;
-  }
-  const avgGain = gains / period;
-  const avgLoss = losses / period;
-  if (avgLoss === 0) return 100;
-  const rs = avgGain / avgLoss;
-  return 100 - 100 / (1 + rs);
-}
-
-// ATR — average true range, measures recent volatility in price terms
 function calcATR(candles, period = 14) {
   if (candles.length < period + 1) return null;
-  const trueRanges = [];
+  const trs = [];
   for (let i = 1; i < candles.length; i++) {
-    const cur = candles[i];
-    const prev = candles[i - 1];
-    trueRanges.push(
-      Math.max(
-        cur.high - cur.low,
-        Math.abs(cur.high - prev.close),
-        Math.abs(cur.low - prev.close),
-      ),
-    );
+    const c = candles[i], p = candles[i - 1];
+    trs.push(Math.max(c.high - c.low, Math.abs(c.high - p.close), Math.abs(c.low - p.close)));
   }
-  const recent = trueRanges.slice(-period);
-  return recent.reduce((a, b) => a + b, 0) / recent.length;
+  return trs.slice(-period).reduce((a, b) => a + b, 0) / period;
 }
 
-// VWAP — session-based, resets at midnight UTC
-function calcVWAP(candles) {
-  const midnightUTC = new Date();
-  midnightUTC.setUTCHours(0, 0, 0, 0);
-  const sessionCandles = candles.filter((c) => c.time >= midnightUTC.getTime());
-  if (sessionCandles.length === 0) return null;
-  const cumTPV = sessionCandles.reduce(
-    (sum, c) => sum + ((c.high + c.low + c.close) / 3) * c.volume,
-    0,
-  );
-  const cumVol = sessionCandles.reduce((sum, c) => sum + c.volume, 0);
-  return cumVol === 0 ? null : cumTPV / cumVol;
+function calcEMAArr(values, period) {
+  const k = 2 / (period + 1);
+  const out = [];
+  let ema = values.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = 0; i < period; i++) out.push(null);
+  out.push(ema);
+  for (let i = period + 1; i < values.length; i++) {
+    ema = values[i] * k + ema * (1 - k);
+    out.push(ema);
+  }
+  return out;
 }
 
-// ─── Safety Check (entries) ─────────────────────────────────────────────────
+function calcStddev(values, period) {
+  if (values.length < period) return null;
+  const window = values.slice(-period);
+  const mean = window.reduce((a, b) => a + b, 0) / period;
+  const variance = window.reduce((s, v) => s + (v - mean) ** 2, 0) / period;
+  return Math.sqrt(variance);
+}
 
-function runSafetyCheck(price, ema8, vwap, rsi3, rules) {
-  const results = [];
+function calcNKB(candles) {
+  const closes = candles.map((c) => c.close);
+  const n = closes.length;
 
-  const check = (label, required, actual, pass) => {
-    results.push({ label, required, actual, pass });
-    const icon = pass ? "✅" : "🚫";
-    console.log(`  ${icon} ${label}`);
-    console.log(`     Required: ${required} | Actual: ${actual}`);
-  };
-
-  console.log("\n── Safety Check ─────────────────────────────────────────\n");
-
-  // Determine bias first
-  const bullishBias = price > vwap && price > ema8;
-  const bearishBias = price < vwap && price < ema8;
-  let bias = "neutral";
-
-  if (bullishBias) {
-    bias = "bullish";
-    console.log("  Bias: BULLISH — checking long entry conditions\n");
-
-    check(
-      "Price above VWAP (buyers in control)",
-      `> ${vwap.toFixed(2)}`,
-      price.toFixed(2),
-      price > vwap,
-    );
-
-    check(
-      "Price above EMA(8) (uptrend confirmed)",
-      `> ${ema8.toFixed(2)}`,
-      price.toFixed(2),
-      price > ema8,
-    );
-
-    check(
-      "RSI(3) below 30 (snap-back setup in uptrend)",
-      "< 30",
-      rsi3.toFixed(2),
-      rsi3 < 30,
-    );
-
-    const distFromVWAP = Math.abs((price - vwap) / vwap) * 100;
-    check(
-      "Price within 1.5% of VWAP (not overextended)",
-      "< 1.5%",
-      `${distFromVWAP.toFixed(2)}%`,
-      distFromVWAP < 1.5,
-    );
-  } else if (bearishBias) {
-    bias = "bearish";
-    console.log("  Bias: BEARISH — checking short entry conditions\n");
-
-    check(
-      "Price below VWAP (sellers in control)",
-      `< ${vwap.toFixed(2)}`,
-      price.toFixed(2),
-      price < vwap,
-    );
-
-    check(
-      "Price below EMA(8) (downtrend confirmed)",
-      `< ${ema8.toFixed(2)}`,
-      price.toFixed(2),
-      price < ema8,
-    );
-
-    check(
-      "RSI(3) above 70 (reversal setup in downtrend)",
-      "> 70",
-      rsi3.toFixed(2),
-      rsi3 > 70,
-    );
-
-    const distFromVWAP = Math.abs((price - vwap) / vwap) * 100;
-    check(
-      "Price within 1.5% of VWAP (not overextended)",
-      "< 1.5%",
-      `${distFromVWAP.toFixed(2)}%`,
-      distFromVWAP < 1.5,
-    );
-  } else {
-    console.log("  Bias: NEUTRAL — no clear direction. No trade.\n");
-    results.push({
-      label: "Market bias",
-      required: "Bullish or bearish",
-      actual: "Neutral",
-      pass: false,
-    });
+  // ATR series for adaptive bandwidth
+  const atrArr = [];
+  for (let i = 0; i < n; i++) {
+    if (i < NKB.atrLen) { atrArr.push(null); continue; }
+    const slice = candles.slice(i - NKB.atrLen + 1, i + 1);
+    atrArr.push(calcATR(slice.concat([candles[i]]), NKB.atrLen) ?? calcATR(candles.slice(0, i + 1), NKB.atrLen));
   }
 
-  const allPass = results.every((r) => r.pass);
-  return { results, allPass, bias };
+  // Nadaraya-Watson kernel regression (Gaussian) — computed at every bar
+  const nwRaw = [];
+  for (let i = 0; i < n; i++) {
+    const atrNorm = atrArr[i] != null ? atrArr[i] / closes[i] : 0;
+    const adaptScale = NKB.adaptive ? 1 + atrNorm * 200 : 1;
+    const h = NKB.bandwidth * adaptScale;
+
+    let sumW = 0, sumWC = 0;
+    const lookback = Math.min(NKB.length, i + 1);
+    for (let j = 0; j < lookback; j++) {
+      const kw = Math.exp(-(j * j) / (2 * h * h));
+      sumWC += kw * closes[i - j];
+      sumW  += kw;
+    }
+    nwRaw.push(sumW > 0 ? sumWC / sumW : closes[i]);
+  }
+
+  // EMA smooth the kernel output
+  const kernelArr = calcEMAArr(nwRaw, NKB.smooth);
+
+  // Residual σ bands
+  const residuals = closes.map((c, i) => kernelArr[i] != null ? c - kernelArr[i] : 0);
+  const sigmaRawArr = residuals.map((_, i) => {
+    if (i < NKB.bandLen) return null;
+    return calcStddev(residuals.slice(i - NKB.bandLen + 1, i + 1), NKB.bandLen);
+  });
+  const sigmaArr = calcEMAArr(sigmaRawArr.map((v) => v ?? 0), NKB.bandSmooth);
+
+  const last = n - 1;
+  const prev = n - 2;
+
+  const kernelMA  = kernelArr[last];
+  const sigma     = sigmaArr[last];
+  const upperBand = kernelMA + NKB.bandMult * sigma;
+  const lowerBand = kernelMA - NKB.bandMult * sigma;
+
+  // Current bar state — matches Pine Script lastState logic
+  const state = closes[last] > upperBand ? 1 : closes[last] < lowerBand ? -1 : 0;
+
+  return { kernelMA, sigma, upperBand, lowerBand, state };
 }
 
 // ─── Exit Check (open positions: trailing stop + fixed stop loss) ──────────
@@ -584,103 +548,89 @@ async function run() {
   );
   console.log("═══════════════════════════════════════════════════════════");
 
-  // Load strategy
-  const rules = JSON.parse(readFileSync("rules.json", "utf8"));
-  console.log(`\nStrategy: ${rules.strategy.name}`);
+  console.log(`\nStrategy: Neural Kernel Bands (NKB)`);
   console.log(`Symbol: ${CONFIG.symbol} | Timeframe: ${CONFIG.timeframe}`);
 
-  // Fetch candle data — need enough for EMA(8) + full session for VWAP
   console.log("\n── Fetching market data from BitGet ─────────────────────\n");
   const candles = await fetchCandles(CONFIG.symbol, CONFIG.timeframe, 500);
   const closes = candles.map((c) => c.close);
   const price = closes[closes.length - 1];
-  console.log(`  Current price: $${price.toFixed(2)}`);
-
-  const ema8 = calcEMA(closes, 8);
-  const vwap = calcVWAP(candles);
-  const rsi3 = calcRSI(closes, 3);
   const atr = calcATR(candles, CONFIG.atrPeriod);
 
-  console.log(`  EMA(8):  $${ema8.toFixed(2)}`);
-  console.log(`  VWAP:    $${vwap ? vwap.toFixed(2) : "N/A"}`);
-  console.log(`  RSI(3):  ${rsi3 ? rsi3.toFixed(2) : "N/A"}`);
-  console.log(`  ATR(${CONFIG.atrPeriod}): ${atr ? "$" + atr.toFixed(2) : "N/A"}`);
+  console.log(`  Current price: $${price.toFixed(2)}`);
 
-  if (!vwap || !rsi3) {
-    console.log("\n⚠️  Not enough data to calculate indicators. Exiting.");
-    return;
-  }
+  const nkb = calcNKB(candles);
+  console.log(`  Kernel MA:    $${nkb.kernelMA.toFixed(2)}`);
+  console.log(`  Upper Band:   $${nkb.upperBand.toFixed(2)}`);
+  console.log(`  Lower Band:   $${nkb.lowerBand.toFixed(2)}`);
+  console.log(`  Band σ:       $${nkb.sigma.toFixed(2)}`);
+  console.log(`  State:        ${nkb.state === 1 ? "BULLISH" : nkb.state === -1 ? "BEARISH" : "NEUTRAL"}`);
+  console.log(`  ATR(${CONFIG.atrPeriod}):      ${atr ? "$" + atr.toFixed(2) : "N/A"}`);
 
   const log = loadLog();
   let position = loadPosition();
+  let portfolioValue = loadPortfolio();
 
-  // ── Manage an existing open position first — exits always take priority ──
+  // Load the NKB state from the previous run so we can detect transitions.
+  // Buy fires only on bearish(-1)→bullish(1). Sell fires only on bullish(1)→bearish(-1).
+  // Neutral→bullish/bearish does NOT fire — matching the Pine Script label logic exactly.
+  const prevNKBState = loadNKBState();
+  const buySignal  = nkb.state === 1  && prevNKBState === -1;
+  const sellSignal = nkb.state === -1 && prevNKBState === 1;
+  saveNKBState(nkb.state);
+
+  const stateLabel = nkb.state === 1 ? "BULLISH" : nkb.state === -1 ? "BEARISH" : "NEUTRAL";
+  console.log(`\n  Portfolio value: $${portfolioValue.toFixed(2)}`);
+  console.log(`  NKB state: ${stateLabel} (prev: ${prevNKBState === 1 ? "BULLISH" : prevNKBState === -1 ? "BEARISH" : "NEUTRAL"})${buySignal ? " → 🟢 BUY SIGNAL" : sellSignal ? " → 🔴 SELL SIGNAL" : ""}`);
+
+  // ── Manage an existing open position — NKB reversal is the only exit ───────
   if (position) {
-    const exit = checkExitConditions(position, price, atr);
+    const crossExit = position.side === "long" ? sellSignal : buySignal;
 
-    if (exit.shouldExit) {
+    console.log("\n── Position Management ──────────────────────────────────\n");
+    console.log(`  Side: ${position.side.toUpperCase()} | Entry: $${position.entryPrice.toFixed(2)} | Current: $${price.toFixed(2)}`);
+
+    const pnlUSD = position.side === "long"
+      ? (price - position.entryPrice) * position.quantity
+      : (position.entryPrice - price) * position.quantity;
+    const pnlPct = (pnlUSD / position.sizeUSD) * 100;
+    console.log(`  Unrealized P&L: $${pnlUSD.toFixed(2)} (${pnlPct.toFixed(2)}%)`);
+
+    if (crossExit) {
       const closeSide = position.side === "long" ? "sell" : "buy";
-      console.log(
-        `\n${CONFIG.paperTrading ? "📋 PAPER" : "🔴 LIVE"} CLOSE — ${closeSide.toUpperCase()} ${position.quantity} ${CONFIG.symbol} at ~$${price.toFixed(2)}`,
-      );
+      console.log(`  NKB reversal signal — closing position`);
+      console.log(`\n${CONFIG.paperTrading ? "📋 PAPER" : "🔴 LIVE"} CLOSE — ${closeSide.toUpperCase()} ${position.quantity} ${CONFIG.symbol} at ~$${price.toFixed(2)}`);
 
       let order;
       try {
         order = await executeOrder(closeSide, position.quantity);
       } catch (err) {
         console.log(`❌ CLOSE FAILED — ${err.message}`);
-        log.trades.push({
-          timestamp: new Date().toISOString(),
-          type: "exit",
-          symbol: CONFIG.symbol,
-          side: closeSide,
-          orderPlaced: false,
-          error: err.message,
-          paperTrading: CONFIG.paperTrading,
-        });
+        log.trades.push({ timestamp: new Date().toISOString(), type: "exit", symbol: CONFIG.symbol, side: closeSide, orderPlaced: false, error: err.message, paperTrading: CONFIG.paperTrading });
         saveLog(log);
         return;
       }
 
-      log.trades.push({
-        timestamp: new Date().toISOString(),
-        type: "exit",
-        symbol: CONFIG.symbol,
-        side: closeSide,
-        quantity: position.quantity,
-        price,
-        sizeUSD: position.sizeUSD,
-        pnlUSD: exit.pnlUSD,
-        pnlPct: exit.pnlPct,
-        reason: exit.reason,
-        orderPlaced: true,
-        orderId: order.orderId,
-        paperTrading: CONFIG.paperTrading,
-      });
+      // Update portfolio value with realised P&L so next trade sizes correctly
+      portfolioValue = portfolioValue + pnlUSD;
+      savePortfolio(portfolioValue);
+      console.log(`  Portfolio updated: $${portfolioValue.toFixed(2)} (${pnlUSD >= 0 ? "+" : ""}$${pnlUSD.toFixed(2)})`);
+
+      log.trades.push({ timestamp: new Date().toISOString(), type: "exit", symbol: CONFIG.symbol, side: closeSide, quantity: position.quantity, price, sizeUSD: position.sizeUSD, pnlUSD, pnlPct, reason: "NKB reversal", orderPlaced: true, orderId: order.orderId, paperTrading: CONFIG.paperTrading });
       saveLog(log);
-
-      writeCsvRow({
-        side: closeSide.toUpperCase(),
-        quantity: position.quantity,
-        price,
-        totalUSD: position.sizeUSD,
-        orderId: order.orderId,
-        mode: CONFIG.paperTrading ? "PAPER" : "LIVE",
-        notes: `Exit (${exit.reason}) — P&L $${exit.pnlUSD.toFixed(2)} (${exit.pnlPct.toFixed(2)}%)`,
-      });
-
+      writeCsvRow({ side: closeSide.toUpperCase(), quantity: position.quantity, price, totalUSD: position.sizeUSD, orderId: order.orderId, mode: CONFIG.paperTrading ? "PAPER" : "LIVE", notes: `NKB reversal exit — P&L $${pnlUSD.toFixed(2)} (${pnlPct.toFixed(2)}%) | Portfolio: $${portfolioValue.toFixed(2)}` });
       savePosition(null);
-      console.log(`\n✅ Position closed — ${exit.reason}`);
+      console.log(`\n✅ Position closed — P&L $${pnlUSD.toFixed(2)}`);
     } else {
       savePosition(position);
-      console.log("\nHolding position — no new entries while a position is open.");
+      console.log("  ✅ Holding — waiting for NKB reversal signal");
     }
 
     console.log("═══════════════════════════════════════════════════════════\n");
     return;
   }
 
-  // ── No open position — look for a new entry ──
+  // ── No open position — look for a new NKB entry ───────────────────────────
   const withinLimits = checkTradeLimits(log);
   if (!withinLimits) {
     console.log("\nBot stopping — trade limits reached for today.");
@@ -688,130 +638,47 @@ async function run() {
     return;
   }
 
-  const { results, allPass, bias } = runSafetyCheck(price, ema8, vwap, rsi3, rules);
-  const tradeSize = Math.min(CONFIG.portfolioValue * 0.01, CONFIG.maxTradeSizeUSD);
-
-  console.log("\n── Decision ─────────────────────────────────────────────\n");
+  console.log("\n── NKB Signal ───────────────────────────────────────────\n");
 
   const canShort = CONFIG.tradeMode === "futures";
-  const blockedShort = allPass && bias === "bearish" && !canShort;
+  // 10% of current portfolio value, re-evaluated each trade
+  const tradeSize = portfolioValue * 0.10;
 
-  if (!allPass || blockedShort) {
-    const failed = results.filter((r) => !r.pass).map((r) => r.label);
-    if (blockedShort) {
-      console.log("🚫 TRADE BLOCKED — bearish setup confirmed, but spot mode can't open short positions.");
-      console.log("   Set TRADE_MODE=futures in .env to enable shorting.");
-    } else {
-      console.log(`🚫 TRADE BLOCKED`);
-      console.log(`   Failed conditions:`);
-      failed.forEach((f) => console.log(`   - ${f}`));
-    }
-
-    log.trades.push({
-      timestamp: new Date().toISOString(),
-      type: "entry",
-      symbol: CONFIG.symbol,
-      price,
-      indicators: { ema8, vwap, rsi3 },
-      conditions: results,
-      bias,
-      allPass: false,
-      orderPlaced: false,
-      paperTrading: CONFIG.paperTrading,
-    });
-    saveLog(log);
-
-    writeCsvRow({
-      price,
-      orderId: "BLOCKED",
-      mode: "BLOCKED",
-      notes: blockedShort
-        ? "Bearish signal — shorting unavailable in spot mode"
-        : `Failed: ${failed.join("; ")}`,
-    });
-  } else {
-    console.log(`✅ ALL CONDITIONS MET — ${bias.toUpperCase()} setup`);
-
-    const side = bias === "bullish" ? "buy" : "sell";
-    const positionSide = bias === "bullish" ? "long" : "short";
+  async function openPosition(side, positionSide, signalNote) {
     const quantity = parseFloat((tradeSize / price).toFixed(6));
-
-    console.log(
-      `\n${CONFIG.paperTrading ? "📋 PAPER TRADE" : "🔴 PLACING LIVE ORDER"} — ${side.toUpperCase()} ~$${tradeSize.toFixed(2)} ${CONFIG.symbol} (opening ${positionSide})`,
-    );
-    if (CONFIG.paperTrading) {
-      console.log(`   (Set PAPER_TRADING=false in .env to place real orders)`);
-    }
+    console.log(`✅ ${side.toUpperCase()} SIGNAL — ${signalNote}`);
+    console.log(`   Trade size: $${tradeSize.toFixed(2)} (10% of $${portfolioValue.toFixed(2)})`);
+    console.log(`\n${CONFIG.paperTrading ? "📋 PAPER TRADE" : "🔴 PLACING LIVE ORDER"} — ${side.toUpperCase()} ~$${tradeSize.toFixed(2)} ${CONFIG.symbol}`);
+    if (CONFIG.paperTrading) console.log(`   (Set PAPER_TRADING=false in .env to place real orders)`);
 
     let order;
-    let orderFailed = false;
     try {
       order = await executeOrder(side, quantity);
     } catch (err) {
       console.log(`❌ ORDER FAILED — ${err.message}`);
-      orderFailed = true;
-      log.trades.push({
-        timestamp: new Date().toISOString(),
-        type: "entry",
-        symbol: CONFIG.symbol,
-        price,
-        bias,
-        allPass: true,
-        orderPlaced: false,
-        error: err.message,
-        paperTrading: CONFIG.paperTrading,
-      });
+      log.trades.push({ timestamp: new Date().toISOString(), type: "entry", symbol: CONFIG.symbol, price, nkb, orderPlaced: false, error: err.message, paperTrading: CONFIG.paperTrading });
       saveLog(log);
-      writeCsvRow({
-        price,
-        orderId: "FAILED",
-        mode: "BLOCKED",
-        notes: `Order failed: ${err.message}`,
-      });
+      writeCsvRow({ price, orderId: "FAILED", mode: "BLOCKED", notes: `Order failed: ${err.message}` });
+      return;
     }
 
-    if (!orderFailed) {
-      const newPosition = {
-        side: positionSide,
-        entryPrice: price,
-        quantity,
-        sizeUSD: tradeSize,
-        extremePrice: price,
-        openedAt: new Date().toISOString(),
-        orderId: order.orderId,
-      };
-      savePosition(newPosition);
+    savePosition({ side: positionSide, entryPrice: price, quantity, sizeUSD: tradeSize, openedAt: new Date().toISOString(), orderId: order.orderId });
+    log.trades.push({ timestamp: new Date().toISOString(), type: "entry", symbol: CONFIG.symbol, side, quantity, price, sizeUSD: tradeSize, portfolioValue, nkb, orderPlaced: true, orderId: order.orderId, paperTrading: CONFIG.paperTrading });
+    saveLog(log);
+    writeCsvRow({ side: side.toUpperCase(), quantity, price, totalUSD: tradeSize, orderId: order.orderId, mode: CONFIG.paperTrading ? "PAPER" : "LIVE", notes: `NKB ${signalNote} | Portfolio: $${portfolioValue.toFixed(2)}` });
+    console.log(`✅ ${positionSide} opened — exits on next NKB reversal signal only`);
+  }
 
-      log.trades.push({
-        timestamp: new Date().toISOString(),
-        type: "entry",
-        symbol: CONFIG.symbol,
-        side,
-        quantity,
-        price,
-        sizeUSD: tradeSize,
-        indicators: { ema8, vwap, rsi3 },
-        conditions: results,
-        bias,
-        allPass: true,
-        orderPlaced: true,
-        orderId: order.orderId,
-        paperTrading: CONFIG.paperTrading,
-      });
-      saveLog(log);
-
-      writeCsvRow({
-        side: side.toUpperCase(),
-        quantity,
-        price,
-        totalUSD: tradeSize,
-        orderId: order.orderId,
-        mode: CONFIG.paperTrading ? "PAPER" : "LIVE",
-        notes: `Opened ${positionSide} — all conditions met`,
-      });
-
-      console.log(`✅ Position opened — ${positionSide}, stop loss ${CONFIG.stopLossPct}%, trailing stop ${CONFIG.trailingStopPct}%`);
-    }
+  if (buySignal) {
+    await openPosition("buy", "long", "NKB Buy — bands flipped bullish");
+  } else if (sellSignal && canShort) {
+    await openPosition("sell", "short", "NKB Sell — bands flipped bearish");
+  } else if (sellSignal && !canShort) {
+    console.log("🚫 SELL SIGNAL — spot mode can't short. Set TRADE_MODE=futures in .env to enable.");
+    writeCsvRow({ price, orderId: "BLOCKED", mode: "BLOCKED", notes: "NKB Sell — shorting unavailable in spot mode" });
+  } else {
+    console.log(`  No signal — ${stateLabel.toLowerCase()}, waiting for band flip`);
+    writeCsvRow({ price, orderId: "BLOCKED", mode: "BLOCKED", notes: `No NKB signal — ${stateLabel}` });
   }
 
   console.log("═══════════════════════════════════════════════════════════\n");

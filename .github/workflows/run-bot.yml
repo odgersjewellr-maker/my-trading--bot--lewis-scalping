@@ -33,15 +33,9 @@ jobs:
           BITGET_BASE_URL=https://api.bitget.com
           TRADE_MODE=spot
           PORTFOLIO_VALUE_USD=640
-          MAX_TRADE_SIZE_USD=6
           MAX_TRADES_PER_DAY=0
           SYMBOL=BTCUSDT
           TIMEFRAME=15m
-          STOP_LOSS_PCT=0.3
-          TRAILING_STOP_PCT=0.5
-          ATR_PERIOD=14
-          ATR_STOP_MULT=1.5
-          ATR_TRAILING_MULT=2.5
           PAPER_TRADING=true
           EOF
 
@@ -53,7 +47,7 @@ jobs:
           rm -f .env
           git config user.name "trading-bot"
           git config user.email "actions@users.noreply.github.com"
-          for f in position.json trades.csv safety-check-log.json; do
+          for f in position.json trades.csv safety-check-log.json nkb-state.json portfolio.json; do
             [ -f "$f" ] && git add "$f"
           done
           git diff --cached --quiet || git commit -m "Bot run $(date -u +%Y-%m-%dT%H:%M:%SZ)"
