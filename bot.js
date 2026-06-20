@@ -575,8 +575,11 @@ async function run() {
   // Buy fires only on bearish(-1)→bullish(1). Sell fires only on bullish(1)→bearish(-1).
   // Neutral→bullish/bearish does NOT fire — matching the Pine Script label logic exactly.
   const prevNKBState = loadNKBState();
-  const buySignal  = nkb.state === 1  && prevNKBState === -1;
-  const sellSignal = nkb.state === -1 && prevNKBState === 1;
+  // Fire on ANY transition INTO bullish (neutral→bull OR bear→bull) or INTO bearish
+  // This matches the Pine Script label logic — a "Buy" label appears whenever
+  // price crosses above the upper band regardless of the prior state.
+  const buySignal  = nkb.state === 1  && prevNKBState !== 1;
+  const sellSignal = nkb.state === -1 && prevNKBState !== -1;
   saveNKBState(nkb.state);
 
   const stateLabel = nkb.state === 1 ? "BULLISH" : nkb.state === -1 ? "BEARISH" : "NEUTRAL";
@@ -678,7 +681,7 @@ async function run() {
     writeCsvRow({ price, orderId: "BLOCKED", mode: "BLOCKED", notes: "NKB Sell — shorting unavailable in spot mode" });
   } else {
     console.log(`  No signal — ${stateLabel.toLowerCase()}, waiting for band flip`);
-    writeCsvRow({ price, orderId: "BLOCKED", mode: "BLOCKED", notes: `No NKB signal — ${stateLabel}` });
+    // No CSV row written — would flood the file every 5 minutes with no-signal noise
   }
 
   console.log("═══════════════════════════════════════════════════════════\n");
