@@ -583,7 +583,7 @@ async function run() {
   console.log(`\n  Portfolio value: $${portfolioValue.toFixed(2)}`);
   console.log(`  NKB state: ${stateLabel} (prev: ${prevNKBState === 1 ? "BULLISH" : prevNKBState === -1 ? "BEARISH" : "NEUTRAL"})${buySignal ? " → 🟢 BUY SIGNAL" : sellSignal ? " → 🔴 SELL SIGNAL" : ""}`);
 
-  // ── Manage an existing open position — NKB reversal is the only exit ───────
+  // ── Manage an existing open position — NKB reversal closes it then flips ───
   if (position) {
     const crossExit = position.side === "long" ? sellSignal : buySignal;
 
@@ -611,7 +611,6 @@ async function run() {
         return;
       }
 
-      // Update portfolio value with realised P&L so next trade sizes correctly
       portfolioValue = portfolioValue + pnlUSD;
       savePortfolio(portfolioValue);
       console.log(`  Portfolio updated: $${portfolioValue.toFixed(2)} (${pnlUSD >= 0 ? "+" : ""}$${pnlUSD.toFixed(2)})`);
@@ -620,14 +619,15 @@ async function run() {
       saveLog(log);
       writeCsvRow({ side: closeSide.toUpperCase(), quantity: position.quantity, price, totalUSD: position.sizeUSD, orderId: order.orderId, mode: CONFIG.paperTrading ? "PAPER" : "LIVE", notes: `NKB reversal exit — P&L $${pnlUSD.toFixed(2)} (${pnlPct.toFixed(2)}%) | Portfolio: $${portfolioValue.toFixed(2)}` });
       savePosition(null);
-      console.log(`\n✅ Position closed — P&L $${pnlUSD.toFixed(2)}`);
+      position = null;
+      console.log(`\n✅ Position closed — now opening new position in opposite direction`);
+      // Fall through to entry logic below to immediately open the flip trade
     } else {
       savePosition(position);
       console.log("  ✅ Holding — waiting for NKB reversal signal");
+      console.log("═══════════════════════════════════════════════════════════\n");
+      return;
     }
-
-    console.log("═══════════════════════════════════════════════════════════\n");
-    return;
   }
 
   // ── No open position — look for a new NKB entry ───────────────────────────
