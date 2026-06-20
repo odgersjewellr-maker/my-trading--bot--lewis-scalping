@@ -2,7 +2,7 @@ name: Run trading bot
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "*/30 * * * *"
   workflow_dispatch: {}
 
 permissions:
@@ -35,7 +35,7 @@ jobs:
           PORTFOLIO_VALUE_USD=640
           MAX_TRADES_PER_DAY=0
           SYMBOL=BTCUSDT
-          TIMEFRAME=15m
+          TIMEFRAME=30m
           PAPER_TRADING=true
           EOF
 
