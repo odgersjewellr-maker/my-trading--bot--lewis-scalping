@@ -27,3 +27,4 @@ Date,Time (UTC),Exchange,Symbol,Side,Quantity,Price,Total USD,Fee (est.),Net Amo
 2026-06-19,11:14:57,BitGet,BTCUSDT,,,62493.31,,,,BLOCKED,BLOCKED,"No NKB crossover — neutral — no crossover"
 2026-06-19,11:19:32,BitGet,BTCUSDT,,,62532.19,,,,BLOCKED,BLOCKED,"No NKB signal — NEUTRAL"
 2026-06-19,11:28:23,BitGet,BTCUSDT,,,62631.23,,,,BLOCKED,BLOCKED,"No NKB signal — NEUTRAL"
+2026-06-20,11:02:15,BitGet,BTCUSDT,,,63698.21,,,,BLOCKED,BLOCKED,"No NKB signal — NEUTRAL"
