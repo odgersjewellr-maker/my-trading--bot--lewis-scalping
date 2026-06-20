@@ -743,6 +743,26 @@
       },
       "orderPlaced": false,
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-06-20T23:01:16.457Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "side": "buy",
+      "quantity": 0.000996,
+      "price": 64265.23,
+      "sizeUSD": 64,
+      "portfolioValue": 640,
+      "nkb": {
+        "kernelMA": 64171.79400801501,
+        "sigma": 76.55868461388634,
+        "upperBand": 64248.35269262889,
+        "lowerBand": 64095.235323401124,
+        "state": 1
+      },
+      "orderPlaced": true,
+      "orderId": "PAPER-1781996476456",
+      "paperTrading": true
     }
   ]
 }
