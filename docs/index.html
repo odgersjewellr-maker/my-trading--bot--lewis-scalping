@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NKB Trading Bot — Live Dashboard</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, 'Segoe UI', Arial, sans-serif; background: #0b0e14; color: #e2e8f0; min-height: 100vh; padding: 24px 16px; }
+  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
+  .header h1 { font-size: 18px; font-weight: 600; letter-spacing: 0.02em; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .badge-paper { background: #1e3a5f; color: #60a5fa; }
+  .badge-live  { background: #14532d; color: #4ade80; }
+  .refresh-info { font-size: 12px; color: #64748b; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 16px; }
+  .card { background: #141820; border: 1px solid #1e2535; border-radius: 12px; padding: 20px; }
+  .card-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: #64748b; margin-bottom: 16px; font-weight: 600; }
+  .stat { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #1a1f2e; font-size: 13px; }
+  .stat:last-child { border-bottom: none; }
+  .stat-label { color: #64748b; }
+  .stat-value { font-weight: 600; }
+  .pos { color: #4ade80; }
+  .neg { color: #f87171; }
+  .neutral { color: #94a3b8; }
+  .state-bull { color: #00e5ff; font-weight: 700; }
+  .state-bear { color: #ff2e63; font-weight: 700; }
+  .state-neutral { color: #64748b; }
+  .big-number { font-size: 32px; font-weight: 700; margin: 8px 0 4px; }
+  .big-label { font-size: 12px; color: #64748b; }
+  .signal-box { text-align: center; padding: 16px; border-radius: 8px; margin-bottom: 12px; }
+  .signal-bull { background: rgba(0,229,255,0.08); border: 1px solid rgba(0,229,255,0.2); }
+  .signal-bear { background: rgba(255,46,99,0.08);  border: 1px solid rgba(255,46,99,0.2); }
+  .signal-none { background: rgba(100,116,139,0.08); border: 1px solid rgba(100,116,139,0.2); }
+  .signal-text { font-size: 20px; font-weight: 700; letter-spacing: 0.05em; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; padding: 8px 6px; border-bottom: 1px solid #1e2535; color: #64748b; font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+  td { padding: 8px 6px; border-bottom: 1px solid #141820; }
+  tr:last-child td { border-bottom: none; }
+  .mode-paper   { color: #60a5fa; }
+  .mode-live    { color: #4ade80; }
+  .mode-blocked { color: #334155; }
+  .no-data { color: #334155; font-style: italic; font-size: 13px; text-align: center; padding: 24px 0; }
+  .position-open { border-color: #00e5ff44; }
+  #last-updated { font-size: 11px; color: #334155; margin-top: 20px; text-align: center; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; animation: pulse 2s infinite; }
+  .dot-live { background: #4ade80; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .bands { display: flex; gap: 10px; margin-top: 8px; }
+  .band-item { flex: 1; background: #0b0e14; border-radius: 6px; padding: 8px 10px; text-align: center; font-size: 11px; color: #64748b; }
+  .band-item strong { display: block; font-size: 13px; color: #e2e8f0; margin-top: 2px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>
+    <span class="dot dot-live"></span>
+    NKB Trading Bot
+    <span class="badge badge-paper" id="mode-badge">PAPER</span>
+  </h1>
+  <div class="refresh-info">Auto-refreshes every 30s</div>
+</div>
+
+<div class="grid">
+  <!-- Portfolio card -->
+  <div class="card">
+    <div class="card-title">Portfolio</div>
+    <div class="big-number" id="portfolio-value">—</div>
+    <div class="big-label">Current value (USD)</div>
+    <div style="margin-top:16px">
+      <div class="stat"><span class="stat-label">Total P&L</span><span class="stat-value" id="total-pnl">—</span></div>
+      <div class="stat"><span class="stat-label">Win rate</span><span class="stat-value" id="win-rate">—</span></div>
+      <div class="stat"><span class="stat-label">Trades closed</span><span class="stat-value" id="trades-closed">—</span></div>
+      <div class="stat"><span class="stat-label">Symbol</span><span class="stat-value" id="symbol">BTCUSDT</span></div>
+      <div class="stat"><span class="stat-label">Timeframe</span><span class="stat-value" id="timeframe">5m</span></div>
+    </div>
+  </div>
+
+  <!-- NKB Signal card -->
+  <div class="card">
+    <div class="card-title">NKB Signal</div>
+    <div class="signal-box signal-none" id="signal-box">
+      <div class="signal-text" id="signal-text">—</div>
+    </div>
+    <div class="bands">
+      <div class="band-item">Upper Band<strong id="upper-band">—</strong></div>
+      <div class="band-item">Kernel MA<strong id="kernel-ma">—</strong></div>
+      <div class="band-item">Lower Band<strong id="lower-band">—</strong></div>
+    </div>
+    <div style="margin-top:12px">
+      <div class="stat"><span class="stat-label">Last run</span><span class="stat-value" id="last-run">—</span></div>
+    </div>
+  </div>
+
+  <!-- Position card -->
+  <div class="card" id="position-card">
+    <div class="card-title">Open Position</div>
+    <div id="position-content"><div class="no-data">No open position</div></div>
+  </div>
+</div>
+
+<!-- Recent trades -->
+<div class="card">
+  <div class="card-title">Recent Trades</div>
+  <div id="trades-content"><div class="no-data">Loading...</div></div>
+</div>
+
+<div id="last-updated">Last updated: —</div>
+
+<script>
+const REPO = 'odgersjewellr-maker/my-trading--bot--lewis-scalping';
+const RAW  = `https://raw.githubusercontent.com/${REPO}/main`;
+
+async function fetchRaw(file) {
+  const res = await fetch(`${RAW}/${file}?t=${Date.now()}`);
+  if (!res.ok) throw new Error(`${file} not found`);
+  return res.text();
+}
+
+async function fetchJson(file) {
+  return JSON.parse(await fetchRaw(file));
+}
+
+function fmt(n) { return n != null ? '$' + parseFloat(n).toFixed(2) : '—'; }
+function pnlClass(n) { return n > 0 ? 'pos' : n < 0 ? 'neg' : 'neutral'; }
+
+async function refresh() {
+  try {
+    // Load state files
+    const [portfolio, nkbState, position, csvText, logText] = await Promise.allSettled([
+      fetchJson('portfolio.json'),
+      fetchJson('nkb-state.json'),
+      fetchJson('position.json'),
+      fetchRaw('trades.csv'),
+      fetchJson('safety-check-log.json'),
+    ]);
+
+    // Portfolio
+    const pv = portfolio.status === 'fulfilled' ? portfolio.value.value : null;
+    document.getElementById('portfolio-value').textContent = pv != null ? '$' + pv.toFixed(2) : '—';
+
+    // NKB state
+    if (nkbState.status === 'fulfilled') {
+      const s = nkbState.value.state;
+      const box = document.getElementById('signal-box');
+      const txt = document.getElementById('signal-text');
+      box.className = 'signal-box ' + (s === 1 ? 'signal-bull' : s === -1 ? 'signal-bear' : 'signal-none');
+      txt.className = 'signal-text ' + (s === 1 ? 'state-bull' : s === -1 ? 'state-bear' : 'state-neutral');
+      txt.textContent = s === 1 ? '▲ BULLISH' : s === -1 ? '▼ BEARISH' : '— NEUTRAL';
+      const upd = nkbState.value.updatedAt;
+      if (upd) document.getElementById('last-run').textContent = new Date(upd).toLocaleTimeString();
+    }
+
+    // Position
+    const pos = position.status === 'fulfilled' ? position.value : null;
+    const posCard = document.getElementById('position-card');
+    const posContent = document.getElementById('position-content');
+    if (pos && pos.side) {
+      posCard.classList.add('position-open');
+      const pnlUSD = pos.side === 'long'
+        ? (pos.currentPrice - pos.entryPrice) * pos.quantity
+        : (pos.entryPrice - pos.currentPrice) * pos.quantity;
+      posContent.innerHTML = `
+        <div class="stat"><span class="stat-label">Side</span><span class="stat-value ${pos.side === 'long' ? 'state-bull' : 'state-bear'}">${pos.side.toUpperCase()}</span></div>
+        <div class="stat"><span class="stat-label">Entry price</span><span class="stat-value">${fmt(pos.entryPrice)}</span></div>
+        <div class="stat"><span class="stat-label">Size</span><span class="stat-value">${fmt(pos.sizeUSD)}</span></div>
+        <div class="stat"><span class="stat-label">Quantity</span><span class="stat-value">${pos.quantity}</span></div>
+        <div class="stat"><span class="stat-label">Opened</span><span class="stat-value">${new Date(pos.openedAt).toLocaleString()}</span></div>
+      `;
+    } else {
+      posCard.classList.remove('position-open');
+      posContent.innerHTML = '<div class="no-data">No open position</div>';
+    }
+
+    // Performance from log
+    if (logText.status === 'fulfilled') {
+      const log = logText.value;
+      const exits = log.trades.filter(t => t.type === 'exit' && t.orderPlaced);
+      const wins = exits.filter(e => e.pnlUSD > 0).length;
+      const totalPnl = exits.reduce((s, e) => s + e.pnlUSD, 0);
+      const wr = exits.length > 0 ? (wins / exits.length * 100).toFixed(1) + '%' : '—';
+      document.getElementById('total-pnl').innerHTML = `<span class="${pnlClass(totalPnl)}">${exits.length ? fmt(totalPnl) : '—'}</span>`;
+      document.getElementById('win-rate').textContent = wr;
+      document.getElementById('trades-closed').textContent = exits.length;
+    }
+
+    // Trades CSV
+    if (csvText.status === 'fulfilled') {
+      const lines = csvText.value.trim().split('\n').filter(l => l && !l.includes('NOTE'));
+      const rows = lines.slice(1).reverse().slice(0, 15);
+      if (rows.length === 0) {
+        document.getElementById('trades-content').innerHTML = '<div class="no-data">No trades yet</div>';
+      } else {
+        const trs = rows.map(line => {
+          const c = line.split(',');
+          const mode = (c[11] || '').trim();
+          const notes = (c[12] || '').replace(/^"|"$/g, '');
+          const side = c[4] || '';
+          const price = c[6] ? '$' + parseFloat(c[6]).toFixed(2) : '—';
+          const total = c[7] ? '$' + parseFloat(c[7]).toFixed(2) : '—';
+          return `<tr>
+            <td>${c[0] || ''} ${c[1] || ''}</td>
+            <td><strong class="${side === 'BUY' ? 'pos' : side === 'SELL' ? 'neg' : ''}">${side || '—'}</strong></td>
+            <td>${price}</td>
+            <td>${total}</td>
+            <td class="mode-${mode.toLowerCase()}">${mode}</td>
+            <td style="color:#475569;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${notes}</td>
+          </tr>`;
+        }).join('');
+        document.getElementById('trades-content').innerHTML = `
+          <table>
+            <tr><th>Date / Time</th><th>Side</th><th>Price</th><th>Total</th><th>Mode</th><th>Notes</th></tr>
+            ${trs}
+          </table>`;
+      }
+    }
+
+    document.getElementById('last-updated').textContent = 'Last updated: ' + new Date().toLocaleTimeString();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+refresh();
+setInterval(refresh, 30000);
+</script>
+</body>
+</html>
