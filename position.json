@@ -1,8 +1,8 @@
 {
-  "side": "short",
-  "entryPrice": 64231.91,
-  "quantity": 0.000996,
-  "sizeUSD": 63.97,
-  "openedAt": "2026-06-21T02:01:38.300Z",
-  "orderId": "PAPER-SHORT-INJECTED"
+  "side": "long",
+  "entryPrice": 64402.98,
+  "quantity": 0.000993,
+  "sizeUSD": 63.979642756000004,
+  "openedAt": "2026-06-21T10:51:32.072Z",
+  "orderId": "PAPER-1782039092072"
 }
