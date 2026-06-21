@@ -1,0 +1,13 @@
+name: Keep workflow alive
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"   # Every Monday 9am — re-enables if GitHub paused it
+  workflow_dispatch: {}
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: gautamkrishnar/keepalive-workflow@v2
