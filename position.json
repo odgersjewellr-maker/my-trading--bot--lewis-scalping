@@ -1,8 +1,8 @@
 {
-  "side": "short",
-  "entryPrice": 64706.27,
-  "quantity": 0.000989,
-  "sizeUSD": 64.009759453,
-  "openedAt": "2026-06-22T16:15:26.375Z",
-  "orderId": "PAPER-1782144926375"
+  "side": "long",
+  "entryPrice": 62643.71,
+  "quantity": 0.001025,
+  "sizeUSD": 64.213746637,
+  "openedAt": "2026-06-23T22:06:03.822Z",
+  "orderId": "PAPER-1782252363822"
 }
