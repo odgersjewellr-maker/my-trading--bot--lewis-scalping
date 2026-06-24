@@ -1,35 +1,35 @@
-// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
-// © officialjackofalltrades
+// This Pine Script code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// (c) officialjackofalltrades
 //@version=6
 indicator(title="Neural Kernel Bands [JOAT]", shorttitle="NKB [JOAT]", overlay=true, max_bars_back=500)
 
 
 // ============================================================
-//  SECTION 1  ─  INPUTS  (grouped with box-drawing headers)
+//  SECTION 1  -  INPUTS  (grouped with box-drawing headers)
 // ============================================================
 
-grpKernel = "╔═════ Kernel Regression ═════╗"
+grpKernel = "+===== Kernel Regression =====+"
 i_kernelType = input.string("Gaussian", "Kernel Type",
      options=["Gaussian", "Epanechnikov", "Tricube"], group=grpKernel,
-     tooltip="Gaussian = classic exp(-u²/2h²). Epanechnikov = compact-support parabolic, lightest tails. Tricube = LOWESS-style, very smooth shoulders.")
+     tooltip="Gaussian = classic exp(-u^2/2h^2). Epanechnikov = compact-support parabolic, lightest tails. Tricube = LOWESS-style, very smooth shoulders.")
 i_length     = input.int(30,    "Lookback Window",          minval=10, maxval=300, group=grpKernel,
      tooltip="Number of historical bars summed in the kernel weighted average.")
 i_bandwidth  = input.float(8.0, "Base Bandwidth (h)",       minval=0.5, step=0.5,  group=grpKernel,
      tooltip="Lower h => more responsive, more noise.  Higher h => smoother estimate.")
 i_adaptive   = input.bool(true, "Adaptive Bandwidth (ATR-scaled)", group=grpKernel,
-     tooltip="Scales the bandwidth by normalised ATR — kernel widens in volatile regimes.")
+     tooltip="Scales the bandwidth by normalised ATR - kernel widens in volatile regimes.")
 i_atrLen     = input.int(14,    "ATR Length (adaptive)",    minval=5,              group=grpKernel)
 i_smooth     = input.int(3,     "MA Output Smoothing",      minval=1, maxval=20,   group=grpKernel,
      tooltip="EMA smoothing applied to the kernel output to reduce micro-jitter.")
 i_regimeAlrt = input.float(0.50,"Regime Shift Threshold",   minval=0.05, step=0.05, group=grpKernel,
      tooltip="Bandwidth-jump alert: triggers when h moves more than this fraction in a single bar.")
 
-grpBands = "╔═══════ Residual Bands ═══════╗"
-i_bandMult   = input.float(1.0, "Band Multiplier (σ)",      minval=0.5, step=0.1,  group=grpBands)
-i_bandLen    = input.int(24,    "Band Lookback (σ)",        minval=10, maxval=200, group=grpBands)
+grpBands = "+======= Residual Bands =======+"
+i_bandMult   = input.float(1.0, "Band Multiplier (sigma)",      minval=0.5, step=0.1,  group=grpBands)
+i_bandLen    = input.int(24,    "Band Lookback (sigma)",        minval=10, maxval=200, group=grpBands)
 i_bandSmooth = input.int(5,     "Band Smoothing",           minval=1,  maxval=20,  group=grpBands)
 
-grpVis = "╔═════════ Visuals ═════════╗"
+grpVis = "+========= Visuals =========+"
 VisualMode   = input.string("Bands", "Visual Mode",
      options=["Bands", "Single Line", "Trail"], group=grpVis)
 i_showBars   = input.bool(true, "Color Bars",          group=grpVis)
@@ -47,23 +47,23 @@ i_dashSize   = input.string("Normal", "Dashboard Text Size",
 i_gradSmooth = input.int(1,    "Color Gradient Smooth", minval=1, maxval=30, group=grpVis,
      tooltip="EMA smoothing applied to slope-based colour ratios. 1 = none.")
 
-grpLabels = "╔═════════ Signal Labels ═════════╗"
+grpLabels = "+========= Signal Labels =========+"
 i_labelAnchor   = input.string("Main Line", "Label Anchor",
      options=["High/Low", "Main Line", "Bands"], group=grpLabels)
 i_labelOffMult  = input.float(0.50, "Offset Mult (ATR)", minval=0.0, step=0.05, group=grpLabels)
 i_labelSize     = input.string("Normal", "Label Size",
      options=["Tiny", "Small", "Normal", "Large", "Huge"], group=grpLabels)
 
-grpDiv = "╔═════════ Divergence ═════════╗"
+grpDiv = "+========= Divergence =========+"
 i_showDiv     = input.bool(true,  "Show Divergence Detection", group=grpDiv)
 i_divLen      = input.int(14,     "Divergence Lookback",       minval=4, maxval=80, group=grpDiv,
      tooltip="Number of bars used to compute price slope and kernel slope for divergence comparison.")
-i_divMinAtr   = input.float(0.10, "Min Slope Magnitude (× ATR)", minval=0.0, step=0.01, group=grpDiv,
-     tooltip="Filters out noise — both slopes must exceed this fraction of ATR before a divergence is registered.")
+i_divMinAtr   = input.float(0.10, "Min Slope Magnitude (x ATR)", minval=0.0, step=0.01, group=grpDiv,
+     tooltip="Filters out noise - both slopes must exceed this fraction of ATR before a divergence is registered.")
 i_divCooldown = input.int(8,      "Divergence Cooldown (bars)",  minval=0, group=grpDiv)
 i_divLabels   = input.bool(true,  "Plot Divergence Labels",       group=grpDiv)
 
-grpAlert = "╔═════════ Alerts ════════╗"
+grpAlert = "+========= Alerts ========+"
 i_alertBull   = input.bool(true, "Alert: Cross Above Upper Band",        group=grpAlert)
 i_alertBear   = input.bool(true, "Alert: Cross Below Lower Band",        group=grpAlert)
 i_alertDiv    = input.bool(true, "Alert: Divergence Detected",            group=grpAlert)
@@ -71,7 +71,7 @@ i_alertRegime = input.bool(true, "Alert: Bandwidth Regime Shift",         group=
 
 
 // ============================================================
-//  SECTION 2  ─  COLOR PALETTE  (Cyber Aqua - locked)
+//  SECTION 2  -  COLOR PALETTE  (Cyber Aqua - locked)
 // ============================================================
 
 const color bullBase    = #00E5FF
@@ -105,7 +105,7 @@ C_NEUTRAL_60 = color.new(neutralBase,60)
 
 
 // ============================================================
-//  SECTION 3  ─  HELPER FUNCTIONS
+//  SECTION 3  -  HELPER FUNCTIONS
 // ============================================================
 
 // 3.1  Linear-interpolation gradient between two colours.
@@ -164,17 +164,17 @@ f_sign(_x) => _x > 0 ? 1 : _x < 0 ? -1 : 0
 
 
 // ============================================================
-//  SECTION 4  ─  KERNEL REGRESSION (ML CORE)
+//  SECTION 4  -  KERNEL REGRESSION (ML CORE)
 // ============================================================
 //
 //  Three kernel variants share the same Nadaraya-Watson skeleton:
 //
-//      ŷ = Σ K(i) · close[i]  /  Σ K(i),  i = 0 … L-1
+//      y_hat = sum K(i) . close[i]  /  sum K(i),  i = 0 ... L-1
 //
 //  where K(u) is one of:
-//      Gaussian       K(u) = exp(-u² / 2h²)
-//      Epanechnikov   K(u) = max(0, 1 - u²/h²)
-//      Tricube        K(u) = max(0, (1 - |u/h|³)³)
+//      Gaussian       K(u) = exp(-u^2 / 2h^2)
+//      Epanechnikov   K(u) = max(0, 1 - u^2/h^2)
+//      Tricube        K(u) = max(0, (1 - |u/h|^3)^3)
 //
 //  Bandwidth h is optionally scaled by normalised ATR so the
 //  kernel widens in volatile regimes.  No future data is used.
@@ -203,12 +203,12 @@ kernelMA = ta.ema(nwRaw, i_smooth)
 
 
 // ============================================================
-//  SECTION 5  ─  RESIDUAL BANDS  (σ of price vs kernel)
+//  SECTION 5  -  RESIDUAL BANDS  (sigma of price vs kernel)
 // ============================================================
 //
-//  Residual = close − kernelMA
-//  σ        = rolling std-dev of residuals over bandLen, then EMA-smoothed
-//  Upper / Lower bands = kernelMA ± mult · σ
+//  Residual = close - kernelMA
+//  sigma        = rolling std-dev of residuals over bandLen, then EMA-smoothed
+//  Upper / Lower bands = kernelMA +/- mult . sigma
 
 residual   = close - kernelMA
 sigmaRaw   = ta.stdev(residual, i_bandLen)
@@ -219,7 +219,7 @@ lowerBand  = kernelMA - i_bandMult * sigma
 
 
 // ============================================================
-//  SECTION 6  ─  STATE & SIGNAL  (confirmed, non-repainting)
+//  SECTION 6  -  STATE & SIGNAL  (confirmed, non-repainting)
 // ============================================================
 //
 //  State pattern:  hold last state until close exits the
@@ -246,13 +246,13 @@ crossBear = ta.crossunder(close, lowerBand)
 
 
 // ============================================================
-//  SECTION 6.5  ─  DIVERGENCE ENGINE  (kernel slope vs price slope)
+//  SECTION 6.5  -  DIVERGENCE ENGINE  (kernel slope vs price slope)
 // ============================================================
 //
 //  Compares the slope of the kernel MA against the slope of price
 //  over divLen bars.  Bullish divergence: price slope is negative
 //  while kernel slope is positive (or vice-versa for bearish).
-//  Both slopes must exceed divMinAtr × ATR to filter out flatness.
+//  Both slopes must exceed divMinAtr x ATR to filter out flatness.
 
 divAtrRef    = ta.atr(i_atrLen)
 priceSlope   = close    - close[i_divLen]
@@ -286,11 +286,11 @@ else if divState != 0
 
 
 // ============================================================
-//  SECTION 6.6  ─  REGIME-SHIFT DETECTOR
+//  SECTION 6.6  -  REGIME-SHIFT DETECTOR
 // ============================================================
 //
 //  Triggers when the adaptive bandwidth h jumps more than
-//  regimeAlrt fraction in a single bar — useful as a volatility
+//  regimeAlrt fraction in a single bar - useful as a volatility
 //  squeeze / expansion alert.
 
 float hPrev      = nz(h[1], h)
@@ -299,13 +299,13 @@ bool  regimeShift = hChangePct >= i_regimeAlrt and bar_index > i_atrLen * 3
 
 
 // ============================================================
-//  SECTION 7  ─  PLOTS  (Bands / Single Line / Trail)
+//  SECTION 7  -  PLOTS  (Bands / Single Line / Trail)
 // ============================================================
 //
 //  Each visual mode reuses the same kernelMA / upper / lower
 //  but exposes a different combination of plot+fill statements.
 
-// 7.0  Pulse alpha (Trail mode) — sin-wave modulation tied to bar_index.
+// 7.0  Pulse alpha (Trail mode) - sin-wave modulation tied to bar_index.
 float pulseAlpha   = 60 + 25 * math.sin(bar_index * 0.3)
 int   pulseAlphaI  = int(f_clamp(pulseAlpha, 0, 100))
 color trailFillA   = isBull ? color.new(bullBase, pulseAlphaI) : isBear ? color.new(bearBase, pulseAlphaI) : na
@@ -330,10 +330,10 @@ fill(pMid, pPrice, kernelMA, close,
 
 // 7.4  Bands mode --------------------------------------------------------------
 pUpper = plot(VisualMode == "Bands" ? upperBand : na,
-     title="Upper Band (σ)", color=solidCol60, linewidth=1)
+     title="Upper Band (sigma)", color=solidCol60, linewidth=1)
 
 pLower = plot(VisualMode == "Bands" ? lowerBand : na,
-     title="Lower Band (σ)", color=solidCol60, linewidth=1)
+     title="Lower Band (sigma)", color=solidCol60, linewidth=1)
 
 fill(pUpper, pLower, upperBand, lowerBand,
      i_showFill ? solidCol80 : na,
@@ -384,19 +384,19 @@ plotcandle(open, high, low, close,
 
 
 // ============================================================
-//  SECTION 8  ─  SIGNAL LABELS  (entry flips only)
+//  SECTION 8  -  SIGNAL LABELS  (entry flips only)
 // ============================================================
 //
-//  Standard entry-flip pattern — a label fires only
+//  Standard entry-flip pattern - a label fires only
 //  when lastState transitions from one non-zero value to another.
 //  Label anchor is configurable: High/Low, Main Line, or Bands.
 //
 //  Each label fire is paired with an alert() call carrying the literal
-//  text "BUY" / "SELL" — this is the event the trading bot's webhook
+//  text "BUY" / "SELL" - this is the event the trading bot's webhook
 //  listens for. Wire a single TradingView alert to this indicator with
 //  condition "Any alert() function call" and message "{{message}}" (plus
 //  your shared secret) so the bot only ever trades on the same event that
-//  draws the label on the chart — not on every raw band touch.
+//  draws the label on the chart - not on every raw band touch.
 
 float labelOffset = ta.atr(14) * i_labelOffMult
 
@@ -428,13 +428,13 @@ if barstate.isconfirmed
 // 8.1  Divergence labels -------------------------------------------------------
 if i_divLabels and i_showDiv
     if bullDivFire
-        label.new(bar_index, low - labelOffset, "▲ Div",
+        label.new(bar_index, low - labelOffset, "UP Div",
              style       = label.style_label_up,
              color       = color.new(bullBase, 25),
              textcolor   = C_BG,
              size        = size.small)
     if bearDivFire
-        label.new(bar_index, high + labelOffset, "▼ Div",
+        label.new(bar_index, high + labelOffset, "DOWN Div",
              style       = label.style_label_down,
              color       = color.new(bearBase, 25),
              textcolor   = color.white,
@@ -442,7 +442,7 @@ if i_divLabels and i_showDiv
 
 
 // ============================================================
-//  SECTION 9  ─  DASHBOARD  (monospace, vertical gradient bg)
+//  SECTION 9  -  DASHBOARD  (monospace, vertical gradient bg)
 // ============================================================
 //
 //  Single 10-row table.  Built ONCE with var, then cells are
@@ -473,18 +473,18 @@ if i_showTable and barstate.islast
     color bg9 = grad(C_BG, 9, DASH_ROWS, 86, 95)
 
     sigColor = isBull ? C_BULL : isBear ? C_BEAR : C_NEUTRAL
-    sigText  = isBull ? "▲  BULLISH" : isBear ? "▼  BEARISH" : "—  NEUTRAL"
+    sigText  = isBull ? "UP  BULLISH" : isBear ? "DOWN  BEARISH" : "-  NEUTRAL"
 
     divText  =
-         divState ==  1 ? "▲  BULL DIV  (" + str.tostring(divActiveBars) + ")" :
-         divState == -1 ? "▼  BEAR DIV  (" + str.tostring(divActiveBars) + ")" :
-                          "—"
+         divState ==  1 ? "UP  BULL DIV  (" + str.tostring(divActiveBars) + ")" :
+         divState == -1 ? "DOWN  BEAR DIV  (" + str.tostring(divActiveBars) + ")" :
+                          "-"
     divColor =
          divState ==  1 ? C_BULL :
          divState == -1 ? C_BEAR :
                           C_TEXT_60
 
-    string regimeText  = regimeShift ? "⚡ SHIFT (" + str.tostring(hChangePct * 100, "#.#") + "%)" : "stable"
+    string regimeText  = regimeShift ? "! SHIFT (" + str.tostring(hChangePct * 100, "#.#") + "%)" : "stable"
     color  regimeColor = regimeShift ? color.new(#FFD700, 0) : C_TEXT_60
 
     // Header (two cells)
@@ -495,7 +495,7 @@ if i_showTable and barstate.islast
          text_color=C_TEXT, text_size=strToSize(i_dashSize), bgcolor=hdrBg,
          text_halign=text.align_right, text_font_family=font.family_monospace)
 
-    // Row 1 — Signal
+    // Row 1 - Signal
     table.cell(tbl, 0, 1, "Signal",
          text_color=C_TEXT, text_size=strToSize(i_dashSize), bgcolor=bg1,
          text_halign=text.align_left, text_font_family=font.family_monospace)
@@ -503,7 +503,7 @@ if i_showTable and barstate.islast
          text_color=sigColor, text_size=strToSize(i_dashSize), bgcolor=bg1,
          text_halign=text.align_right, text_font_family=font.family_monospace)
 
-    // Row 2 — Kernel MA value
+    // Row 2 - Kernel MA value
     table.cell(tbl, 0, 2, "Kernel MA",
          text_color=C_TEXT, text_size=strToSize(i_dashSize), bgcolor=bg2,
          text_halign=text.align_left, text_font_family=font.family_monospace)
@@ -511,7 +511,7 @@ if i_showTable and barstate.islast
          text_color=solidCol, text_size=strToSize(i_dashSize), bgcolor=bg2,
          text_halign=text.align_right, text_font_family=font.family_monospace)
 
-    // Row 3 — Upper band
+    // Row 3 - Upper band
     table.cell(tbl, 0, 3, "Upper Band",
          text_color=C_TEXT, text_size=strToSize(i_dashSize), bgcolor=bg3,
          text_halign=text.align_left, text_font_family=font.family_monospace)
@@ -519,7 +519,7 @@ if i_showTable and barstate.islast
          text_color=C_BULL, text_size=strToSize(i_dashSize), bgcolor=bg3,
          text_halign=text.align_right, text_font_family=font.family_monospace)
 
-    // Row 4 — Lower band
+    // Row 4 - Lower band
     table.cell(tbl, 0, 4, "Lower Band",
          text_color=C_TEXT, text_size=strToSize(i_dashSize), bgcolor=bg4,
          text_halign=text.align_left, text_font_family=font.family_monospace)
@@ -527,15 +527,15 @@ if i_showTable and barstate.islast
          text_color=C_BEAR, text_size=strToSize(i_dashSize), bgcolor=bg4,
          text_halign=text.align_right, text_font_family=font.family_monospace)
 
-    // Row 5 — Sigma (band width)
-    table.cell(tbl, 0, 5, "Band Width σ",
+    // Row 5 - Sigma (band width)
+    table.cell(tbl, 0, 5, "Band Width sigma",
          text_color=C_TEXT, text_size=strToSize(i_dashSize), bgcolor=bg5,
          text_halign=text.align_left, text_font_family=font.family_monospace)
     table.cell(tbl, 1, 5, str.tostring(sigma, "#.##"),
          text_color=C_TEXT, text_size=strToSize(i_dashSize), bgcolor=bg5,
          text_halign=text.align_right, text_font_family=font.family_monospace)
 
-    // Row 6 — Bandwidth h
+    // Row 6 - Bandwidth h
     string bwLabel = i_adaptive
          ? str.tostring(h, "#.##") + "  (adaptive)"
          : str.tostring(h, "#.##")
@@ -546,7 +546,7 @@ if i_showTable and barstate.islast
          text_color=C_TEXT, text_size=strToSize(i_dashSize), bgcolor=bg6,
          text_halign=text.align_right, text_font_family=font.family_monospace)
 
-    // Row 7 — Active kernel
+    // Row 7 - Active kernel
     table.cell(tbl, 0, 7, "Kernel",
          text_color=C_TEXT, text_size=strToSize(i_dashSize), bgcolor=bg7,
          text_halign=text.align_left, text_font_family=font.family_monospace)
@@ -554,7 +554,7 @@ if i_showTable and barstate.islast
          text_color=color.new(neutralBase, 0), text_size=strToSize(i_dashSize), bgcolor=bg7,
          text_halign=text.align_right, text_font_family=font.family_monospace)
 
-    // Row 8 — Divergence
+    // Row 8 - Divergence
     table.cell(tbl, 0, 8, "Divergence",
          text_color=C_TEXT, text_size=strToSize(i_dashSize), bgcolor=bg8,
          text_halign=text.align_left, text_font_family=font.family_monospace)
@@ -562,7 +562,7 @@ if i_showTable and barstate.islast
          text_color=divColor, text_size=strToSize(i_dashSize), bgcolor=bg8,
          text_halign=text.align_right, text_font_family=font.family_monospace)
 
-    // Row 9 — Regime
+    // Row 9 - Regime
     table.cell(tbl, 0, 9, "Regime",
          text_color=C_TEXT, text_size=strToSize(i_dashSize), bgcolor=bg9,
          text_halign=text.align_left, text_font_family=font.family_monospace)
@@ -572,29 +572,29 @@ if i_showTable and barstate.islast
 
 
 // ============================================================
-//  SECTION 10  ─  ALERTS
+//  SECTION 10  -  ALERTS
 // ============================================================
 
 alertcondition(i_alertBull and crossBull,
-     title   = "NKB — Bullish Breakout",
-     message = "Neural Kernel Bands [JOAT]: Close crossed ABOVE upper band → Bullish signal.")
+     title   = "NKB - Bullish Breakout",
+     message = "Neural Kernel Bands [JOAT]: Close crossed ABOVE upper band -> Bullish signal.")
 
 alertcondition(i_alertBear and crossBear,
-     title   = "NKB — Bearish Breakdown",
-     message = "Neural Kernel Bands [JOAT]: Close crossed BELOW lower band → Bearish signal.")
+     title   = "NKB - Bearish Breakdown",
+     message = "Neural Kernel Bands [JOAT]: Close crossed BELOW lower band -> Bearish signal.")
 
 alertcondition(i_alertDiv and bullDivFire,
-     title   = "NKB — Bullish Divergence",
-     message = "Neural Kernel Bands [JOAT]: Bullish divergence — kernel slope rising while price slope falling.")
+     title   = "NKB - Bullish Divergence",
+     message = "Neural Kernel Bands [JOAT]: Bullish divergence - kernel slope rising while price slope falling.")
 
 alertcondition(i_alertDiv and bearDivFire,
-     title   = "NKB — Bearish Divergence",
-     message = "Neural Kernel Bands [JOAT]: Bearish divergence — kernel slope falling while price slope rising.")
+     title   = "NKB - Bearish Divergence",
+     message = "Neural Kernel Bands [JOAT]: Bearish divergence - kernel slope falling while price slope rising.")
 
 alertcondition(i_alertRegime and regimeShift,
-     title   = "NKB — Bandwidth Regime Shift",
-     message = "Neural Kernel Bands [JOAT]: Adaptive bandwidth h moved more than threshold — regime shift detected.")
+     title   = "NKB - Bandwidth Regime Shift",
+     message = "Neural Kernel Bands [JOAT]: Adaptive bandwidth h moved more than threshold - regime shift detected.")
 
-// ════════════════════════════════════════════════════════════════════════════════════════
-//  END OF FILE — Neural Kernel Bands [JOAT]
-// ════════════════════════════════════════════════════════════════════════════════════════
+// ========================================================================================
+//  END OF FILE - Neural Kernel Bands [JOAT]
+// ========================================================================================
