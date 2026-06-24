@@ -918,6 +918,41 @@
       "orderPlaced": true,
       "orderId": "PAPER-1782296927633",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-06-24T22:01:58.351Z",
+      "type": "exit",
+      "symbol": "BTCUSDT",
+      "side": "buy",
+      "quantity": 0.001026,
+      "price": 61189.35,
+      "sizeUSD": 64.20442938699999,
+      "pnlUSD": 1.398909959999999,
+      "pnlPct": 2.1788371508886084,
+      "reason": "NKB reversal",
+      "orderPlaced": true,
+      "orderId": "PAPER-1782338518351",
+      "paperTrading": true
+    },
+    {
+      "timestamp": "2026-06-24T22:01:58.352Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "side": "buy",
+      "quantity": 0.001052,
+      "price": 61189.35,
+      "sizeUSD": 64.344320383,
+      "portfolioValue": 643.4432038299999,
+      "nkb": {
+        "kernelMA": 60884.232331634936,
+        "sigma": 263.00027399448004,
+        "upperBand": 61147.23260562942,
+        "lowerBand": 60621.23205764045,
+        "state": 1
+      },
+      "orderPlaced": true,
+      "orderId": "PAPER-1782338518352",
+      "paperTrading": true
     }
   ]
 }
