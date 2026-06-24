@@ -248,11 +248,13 @@ const server = createServer(async (req, res) => {
     let body = "";
     req.on("data", (chunk) => (body += chunk));
     req.on("end", async () => {
-      if (WEBHOOK_SECRET) {
-        const token = req.headers["x-webhook-secret"] || "";
-        if (token !== WEBHOOK_SECRET) {
-          res.writeHead(401); res.end("Unauthorized"); return;
-        }
+      // TradingView's standard webhook delivery does not support custom HTTP
+      // headers — it only POSTs whatever text is in the alert's Message field.
+      // So the secret has to be checked inside that body text, not a header.
+      const headerToken = req.headers["x-webhook-secret"] || "";
+      const bodyHasSecret = WEBHOOK_SECRET && body.includes(WEBHOOK_SECRET);
+      if (WEBHOOK_SECRET && headerToken !== WEBHOOK_SECRET && !bodyHasSecret) {
+        res.writeHead(401); res.end("Unauthorized"); return;
       }
 
       const text   = body.trim().toUpperCase();

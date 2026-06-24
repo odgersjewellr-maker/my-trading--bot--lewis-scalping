@@ -191,7 +191,7 @@ const NKB = {
   adaptive:    process.env.NKB_ADAPTIVE !== "false",
   atrLen:      parseInt(process.env.NKB_ATR_LEN     || "14"),
   smooth:      parseInt(process.env.NKB_SMOOTH       || "3"),
-  bandMult:    parseFloat(process.env.NKB_BAND_MULT  || "0.5"),
+  bandMult:    parseFloat(process.env.NKB_BAND_MULT  || "1.0"),
   bandLen:     parseInt(process.env.NKB_BAND_LEN     || "24"),
   bandSmooth:  parseInt(process.env.NKB_BAND_SMOOTH  || "5"),
 };
@@ -206,79 +206,114 @@ function calcATR(candles, period = 14) {
   return trs.slice(-period).reduce((a, b) => a + b, 0) / period;
 }
 
-function calcEMAArr(values, period) {
+// Wilder's RMA-smoothed ATR series, matching Pine's ta.atr() exactly —
+// seeded with a simple average of the first `period` true ranges, then
+// each subsequent value is a recursive (period-1)/period-weighted average.
+function calcATRSeries(candles, period) {
+  const n = candles.length;
+  const tr = new Array(n).fill(null);
+  for (let i = 1; i < n; i++) {
+    const c = candles[i], p = candles[i - 1];
+    tr[i] = Math.max(c.high - c.low, Math.abs(c.high - p.close), Math.abs(c.low - p.close));
+  }
+  const atr = new Array(n).fill(null);
+  if (n <= period) return atr;
+  let sum = 0;
+  for (let i = 1; i <= period; i++) sum += tr[i];
+  atr[period] = sum / period;
+  for (let i = period + 1; i < n; i++) {
+    atr[i] = (atr[i - 1] * (period - 1) + tr[i]) / period;
+  }
+  return atr;
+}
+
+// EMA series matching Pine's ta.ema() — seeds on the first non-null value
+// (no SMA pre-seed), then recurses with alpha = 2/(period+1).
+function calcEMASeries(values, period) {
   const k = 2 / (period + 1);
-  const out = [];
-  let ema = values.slice(0, period).reduce((a, b) => a + b, 0) / period;
-  for (let i = 0; i < period; i++) out.push(null);
-  out.push(ema);
-  for (let i = period + 1; i < values.length; i++) {
-    ema = values[i] * k + ema * (1 - k);
-    out.push(ema);
+  const out = new Array(values.length).fill(null);
+  let ema = null;
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i];
+    if (v == null) continue;
+    ema = ema == null ? v : v * k + ema * (1 - k);
+    out[i] = ema;
   }
   return out;
 }
 
-function calcStddev(values, period) {
-  if (values.length < period) return null;
-  const window = values.slice(-period);
-  const mean = window.reduce((a, b) => a + b, 0) / period;
-  const variance = window.reduce((s, v) => s + (v - mean) ** 2, 0) / period;
-  return Math.sqrt(variance);
+// Population standard deviation over a trailing window, matching ta.stdev().
+function calcStddevSeries(values, period) {
+  const out = new Array(values.length).fill(null);
+  for (let i = period - 1; i < values.length; i++) {
+    const window = values.slice(i - period + 1, i + 1).map((v) => v ?? 0);
+    const mean = window.reduce((a, b) => a + b, 0) / period;
+    const variance = window.reduce((s, v) => s + (v - mean) ** 2, 0) / period;
+    out[i] = Math.sqrt(variance);
+  }
+  return out;
 }
 
+// Faithful port of the Neural Kernel Bands [JOAT] Pine script. Replays the
+// full fetched window so `lastState` ends up exactly where the indicator's
+// persistent `var int lastState` would be — it only flips on a genuine
+// opposite-band close, not on every dip back inside the bands.
 function calcNKB(candles) {
   const closes = candles.map((c) => c.close);
   const n = closes.length;
 
-  // ATR series for adaptive bandwidth
-  const atrArr = [];
-  for (let i = 0; i < n; i++) {
-    if (i < NKB.atrLen) { atrArr.push(null); continue; }
-    const slice = candles.slice(i - NKB.atrLen + 1, i + 1);
-    atrArr.push(calcATR(slice.concat([candles[i]]), NKB.atrLen) ?? calcATR(candles.slice(0, i + 1), NKB.atrLen));
-  }
+  const atrArr = calcATRSeries(candles, NKB.atrLen);
+  const atrNorm = atrArr.map((a, i) => (a != null ? a / closes[i] : null));
+  const atrFactor = calcEMASeries(atrNorm, NKB.atrLen);
+
+  const h = atrFactor.map((f) =>
+    NKB.bandwidth * (NKB.adaptive ? 1 + (f ?? 0) * 200 : 1),
+  );
 
   // Nadaraya-Watson kernel regression (Gaussian) — computed at every bar
-  const nwRaw = [];
+  const nwRaw = new Array(n);
   for (let i = 0; i < n; i++) {
-    const atrNorm = atrArr[i] != null ? atrArr[i] / closes[i] : 0;
-    const adaptScale = NKB.adaptive ? 1 + atrNorm * 200 : 1;
-    const h = NKB.bandwidth * adaptScale;
-
+    const hi = h[i];
     let sumW = 0, sumWC = 0;
     const lookback = Math.min(NKB.length, i + 1);
     for (let j = 0; j < lookback; j++) {
-      const kw = Math.exp(-(j * j) / (2 * h * h));
+      const kw = Math.exp(-(j * j) / (2 * hi * hi));
       sumWC += kw * closes[i - j];
       sumW  += kw;
     }
-    nwRaw.push(sumW > 0 ? sumWC / sumW : closes[i]);
+    nwRaw[i] = sumW > 0 ? sumWC / sumW : closes[i];
   }
 
-  // EMA smooth the kernel output
-  const kernelArr = calcEMAArr(nwRaw, NKB.smooth);
+  const kernelArr = calcEMASeries(nwRaw, NKB.smooth);
+  const residuals = closes.map((c, i) => (kernelArr[i] != null ? c - kernelArr[i] : null));
+  const sigmaRawArr = calcStddevSeries(residuals, NKB.bandLen);
+  const sigmaArr = calcEMASeries(sigmaRawArr, NKB.bandSmooth);
 
-  // Residual σ bands
-  const residuals = closes.map((c, i) => kernelArr[i] != null ? c - kernelArr[i] : 0);
-  const sigmaRawArr = residuals.map((_, i) => {
-    if (i < NKB.bandLen) return null;
-    return calcStddev(residuals.slice(i - NKB.bandLen + 1, i + 1), NKB.bandLen);
-  });
-  const sigmaArr = calcEMAArr(sigmaRawArr.map((v) => v ?? 0), NKB.bandSmooth);
+  const upperBand = new Array(n).fill(null);
+  const lowerBand = new Array(n).fill(null);
+  for (let i = 0; i < n; i++) {
+    if (kernelArr[i] == null || sigmaArr[i] == null) continue;
+    upperBand[i] = kernelArr[i] + NKB.bandMult * sigmaArr[i];
+    lowerBand[i] = kernelArr[i] - NKB.bandMult * sigmaArr[i];
+  }
+
+  // Sticky state replay — matches `if close > upperBand: lastState := 1
+  // else if close < lowerBand: lastState := -1` (unchanged otherwise).
+  let lastState = 0;
+  for (let i = 0; i < n; i++) {
+    if (upperBand[i] == null || lowerBand[i] == null) continue;
+    if (closes[i] > upperBand[i]) lastState = 1;
+    else if (closes[i] < lowerBand[i]) lastState = -1;
+  }
 
   const last = n - 1;
-  const prev = n - 2;
-
-  const kernelMA  = kernelArr[last];
-  const sigma     = sigmaArr[last];
-  const upperBand = kernelMA + NKB.bandMult * sigma;
-  const lowerBand = kernelMA - NKB.bandMult * sigma;
-
-  // Current bar state — matches Pine Script lastState logic
-  const state = closes[last] > upperBand ? 1 : closes[last] < lowerBand ? -1 : 0;
-
-  return { kernelMA, sigma, upperBand, lowerBand, state };
+  return {
+    kernelMA: kernelArr[last],
+    sigma: sigmaArr[last],
+    upperBand: upperBand[last],
+    lowerBand: lowerBand[last],
+    state: lastState,
+  };
 }
 
 // ─── Exit Check (open positions: trailing stop + fixed stop loss) ──────────
@@ -571,13 +606,11 @@ async function run() {
   let position = loadPosition();
   let portfolioValue = loadPortfolio();
 
-  // Load the NKB state from the previous run so we can detect transitions.
-  // Buy fires only on bearish(-1)→bullish(1). Sell fires only on bullish(1)→bearish(-1).
-  // Neutral→bullish/bearish does NOT fire — matching the Pine Script label logic exactly.
+  // nkb.state is now a sticky replay of the indicator's persistent lastState
+  // (see calcNKB) — it only changes on a genuine opposite-band close, same as
+  // the Pine script. We still track the previously-saved state across runs so
+  // we only act once per transition instead of re-firing every 5 minutes.
   const prevNKBState = loadNKBState();
-  // Fire on ANY transition INTO bullish (neutral→bull OR bear→bull) or INTO bearish
-  // This matches the Pine Script label logic — a "Buy" label appears whenever
-  // price crosses above the upper band regardless of the prior state.
   const buySignal  = nkb.state === 1  && prevNKBState !== 1;
   const sellSignal = nkb.state === -1 && prevNKBState !== -1;
   saveNKBState(nkb.state);
