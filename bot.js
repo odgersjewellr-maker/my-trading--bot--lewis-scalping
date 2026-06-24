@@ -191,7 +191,7 @@ const NKB = {
   adaptive:    process.env.NKB_ADAPTIVE !== "false",
   atrLen:      parseInt(process.env.NKB_ATR_LEN     || "14"),
   smooth:      parseInt(process.env.NKB_SMOOTH       || "3"),
-  bandMult:    parseFloat(process.env.NKB_BAND_MULT  || "1.0"),
+  bandMult:    parseFloat(process.env.NKB_BAND_MULT  || "0.5"),
   bandLen:     parseInt(process.env.NKB_BAND_LEN     || "24"),
   bandSmooth:  parseInt(process.env.NKB_BAND_SMOOTH  || "5"),
 };
