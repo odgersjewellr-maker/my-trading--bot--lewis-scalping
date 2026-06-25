@@ -391,12 +391,12 @@ plotcandle(open, high, low, close,
 //  when lastState transitions from one non-zero value to another.
 //  Label anchor is configurable: High/Low, Main Line, or Bands.
 //
-//  Each label fire is paired with an alert() call carrying the literal
-//  text "BUY" / "SELL" - this is the event the trading bot's webhook
-//  listens for. Wire a single TradingView alert to this indicator with
-//  condition "Any alert() function call" and message "{{message}}" (plus
-//  your shared secret) so the bot only ever trades on the same event that
-//  draws the label on the chart - not on every raw band touch.
+//  Each label fire is paired with an alert() call carrying the shared
+//  secret plus "BUY" / "SELL" - this is the event the trading bot's
+//  webhook listens for. With condition "Any alert() function call",
+//  TradingView sends exactly this alert() string as the webhook body
+//  regardless of the alert dialog's Message box, so the secret has to
+//  live here in the script, not in that box.
 
 float labelOffset = ta.atr(14) * i_labelOffMult
 
@@ -415,14 +415,14 @@ if barstate.isconfirmed
                  color       = C_BULL,
                  textcolor   = C_BG,
                  size        = strToSize(i_labelSize))
-            alert("BUY", alert.freq_once_per_bar_close)
+            alert("nkbbot2024BUY", alert.freq_once_per_bar_close)
         else if lastState == -1
             label.new(bar_index, shortY, "Sell",
                  style       = label.style_label_down,
                  color       = C_BEAR,
                  textcolor   = color.white,
                  size        = strToSize(i_labelSize))
-            alert("SELL", alert.freq_once_per_bar_close)
+            alert("nkbbot2024SELL", alert.freq_once_per_bar_close)
     prevState := lastState
 
 // 8.1  Divergence labels -------------------------------------------------------
