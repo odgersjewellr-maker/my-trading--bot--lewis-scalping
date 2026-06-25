@@ -106,6 +106,18 @@ async function executeOrder(side, quantity, stopLossPrice) {
 
 // ─── Trade execution ──────────────────────────────────────────────────────────
 
+// executeTrade reads each GitHub state file's sha then writes back with it.
+// Two overlapping calls (e.g. several TradingView alerts firing close
+// together) would race on the same files — the second write's sha goes
+// stale and GitHub rejects it (409), silently dropping that signal partway
+// through. Queue calls so only one runs at a time.
+let tradeQueue = Promise.resolve();
+function queueTrade(signal) {
+  const result = tradeQueue.then(() => executeTrade(signal));
+  tradeQueue = result.catch(() => {});
+  return result;
+}
+
 async function executeTrade(signal) {
   const log = [];
   const out = (msg) => { console.log(msg); log.push(msg); };
@@ -281,7 +293,7 @@ const server = createServer(async (req, res) => {
 
       res.writeHead(200, { "Content-Type": "text/plain" });
       try {
-        const result = await executeTrade(signal);
+        const result = await queueTrade(signal);
         res.end(result);
       } catch (err) {
         console.error("Trade error:", err);
