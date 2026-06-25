@@ -185,11 +185,14 @@ async function executeTrade(signal) {
       orderId: closeOrder.orderId, paperTrading: CONFIG.paperTrading,
     });
 
-    await Promise.all([
-      saveState("portfolio.json", { value: portfolioValue, updatedAt: new Date().toISOString() }, portFile?.sha),
-      saveState("position.json", null, posFile?.sha),
-      saveState("safety-check-log.json", tradeLog, logFile?.sha),
-    ]);
+    // Each saveState() creates its own commit on the same branch — running
+    // these in parallel makes them race for the branch HEAD, so the 2nd/3rd
+    // commit gets rejected with a 409 (confirmed in Railway logs: GitHub
+    // returned the just-created sibling commit's sha as the conflict).
+    // They must run sequentially, one commit at a time.
+    await saveState("portfolio.json", { value: portfolioValue, updatedAt: new Date().toISOString() }, portFile?.sha);
+    await saveState("position.json", null, posFile?.sha);
+    await saveState("safety-check-log.json", tradeLog, logFile?.sha);
     position = null;
     out(`Portfolio: $${portfolioValue.toFixed(2)}`);
   }
@@ -236,11 +239,11 @@ async function executeTrade(signal) {
     loadState("safety-check-log.json"),
   ]);
 
-  await Promise.all([
-    saveState("position.json", newPosition, freshPosFile?.sha),
-    saveState("portfolio.json", { value: portfolioValue, updatedAt: new Date().toISOString() }, freshPortFile?.sha),
-    saveState("safety-check-log.json", tradeLog, freshLogFile?.sha),
-  ]);
+  // Sequential for the same reason as the close block above — concurrent
+  // commits to the same branch race for the HEAD and 409 on each other.
+  await saveState("position.json", newPosition, freshPosFile?.sha);
+  await saveState("portfolio.json", { value: portfolioValue, updatedAt: new Date().toISOString() }, freshPortFile?.sha);
+  await saveState("safety-check-log.json", tradeLog, freshLogFile?.sha);
 
   out(`✅ ${positionSide.toUpperCase()} opened at $${price.toFixed(2)} | Order: ${order.orderId}`);
   return log.join("\n");
