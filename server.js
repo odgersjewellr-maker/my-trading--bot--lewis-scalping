@@ -249,6 +249,12 @@ const server = createServer(async (req, res) => {
 
   if (req.method === "POST" && req.url === "/webhook") {
     let body = "";
+    // An unhandled 'error' on a request stream crashes the whole Node
+    // process (EventEmitter default behavior) — that's what was killing
+    // the container and dropping other in-flight TradingView alerts.
+    req.on("error", (err) => {
+      console.error("Webhook request stream error:", err.message);
+    });
     req.on("data", (chunk) => (body += chunk));
     req.on("end", async () => {
       console.log(`\n[${new Date().toISOString()}] Incoming webhook body: ${JSON.stringify(body)}`);
@@ -286,6 +292,22 @@ const server = createServer(async (req, res) => {
   }
 
   res.writeHead(404); res.end("Not found");
+});
+
+// Raw socket-level errors (connection reset, bad request line, etc.) happen
+// before req/res even exist — without a listener these also crash the process.
+server.on("clientError", (err, socket) => {
+  console.error("Server clientError:", err.message);
+  if (socket.writable) socket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
+});
+
+// Last-resort nets so one misbehaving request can never take the whole
+// bot offline and drop other in-flight TradingView alerts.
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught exception:", err);
+});
+process.on("unhandledRejection", (err) => {
+  console.error("Unhandled rejection:", err);
 });
 
 server.listen(PORT, () => {
