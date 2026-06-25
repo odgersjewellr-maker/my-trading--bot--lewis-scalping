@@ -19,7 +19,7 @@
 import "dotenv/config";
 import { createServer } from "http";
 import crypto from "crypto";
-import { CONFIG, fetchCandles, signBitGet } from "./bot.js";
+import { CONFIG, fetchCandles, signBitGet, computeStopLossPrice } from "./bot.js";
 
 const PORT            = process.env.PORT || 3000;
 const WEBHOOK_SECRET  = process.env.WEBHOOK_SECRET || "";
@@ -71,7 +71,7 @@ async function saveState(filename, data, sha) {
 
 // ─── BitGet order execution ───────────────────────────────────────────────────
 
-async function executeOrder(side, quantity) {
+async function executeOrder(side, quantity, stopLossPrice) {
   if (CONFIG.paperTrading) return { orderId: `PAPER-${Date.now()}`, paper: true };
 
   const qty  = parseFloat(quantity).toFixed(6);
@@ -85,6 +85,7 @@ async function executeOrder(side, quantity) {
     productType: "USDT-FUTURES",
     marginMode: "isolated",
     marginCoin: "USDT",
+    ...(stopLossPrice && { presetStopLossPrice: stopLossPrice.toFixed(2) }),
   });
   const sig = signBitGet(ts, "POST", path, body);
   const res = await fetch(`${CONFIG.bitget.baseUrl}${path}`, {
@@ -192,19 +193,21 @@ async function executeTrade(signal) {
   const side        = buySignal ? "buy" : "sell";
   const positionSide = buySignal ? "long" : "short";
   const quantity    = parseFloat((tradeSize / price).toFixed(6));
+  const stopLossPrice = computeStopLossPrice(positionSide, price);
 
   out(`Opening ${positionSide} — $${tradeSize.toFixed(2)} (10% of $${portfolioValue.toFixed(2)})`);
+  out(`Stop loss: $${stopLossPrice.toFixed(2)} (${CONFIG.stopLossPct}%)`);
 
   let order;
   try {
-    order = await executeOrder(side, quantity);
+    order = await executeOrder(side, quantity, stopLossPrice);
   } catch (err) {
     out(`❌ Order failed: ${err.message}`);
     return log.join("\n");
   }
 
   const newPosition = {
-    side: positionSide, entryPrice: price, quantity,
+    side: positionSide, entryPrice: price, quantity, stopLossPrice,
     sizeUSD: tradeSize, openedAt: new Date().toISOString(), orderId: order.orderId,
   };
 

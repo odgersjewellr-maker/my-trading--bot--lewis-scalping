@@ -480,11 +480,11 @@ async function placeBitGetOrder(symbol, side, quantity, stopLossPrice) {
 
 // Executes (or, in paper mode, simulates) a single order. Used for both
 // opening and closing positions — `side` is "buy" or "sell".
-async function executeOrder(side, quantity) {
+async function executeOrder(side, quantity, stopLossPrice) {
   if (CONFIG.paperTrading) {
     return { orderId: `PAPER-${Date.now()}`, paper: true };
   }
-  const order = await placeBitGetOrder(CONFIG.symbol, side, quantity);
+  const order = await placeBitGetOrder(CONFIG.symbol, side, quantity, stopLossPrice);
   return { orderId: order.orderId, paper: false };
 }
 
@@ -691,14 +691,16 @@ async function run() {
 
   async function openPosition(side, positionSide, signalNote) {
     const quantity = parseFloat((tradeSize / price).toFixed(6));
+    const stopLossPrice = computeStopLossPrice(positionSide, price);
     console.log(`✅ ${side.toUpperCase()} SIGNAL — ${signalNote}`);
     console.log(`   Trade size: $${tradeSize.toFixed(2)} (10% of $${portfolioValue.toFixed(2)})`);
+    console.log(`   Stop loss: $${stopLossPrice.toFixed(2)} (${CONFIG.stopLossPct}%)`);
     console.log(`\n${CONFIG.paperTrading ? "📋 PAPER TRADE" : "🔴 PLACING LIVE ORDER"} — ${side.toUpperCase()} ~$${tradeSize.toFixed(2)} ${CONFIG.symbol}`);
     if (CONFIG.paperTrading) console.log(`   (Set PAPER_TRADING=false in .env to place real orders)`);
 
     let order;
     try {
-      order = await executeOrder(side, quantity);
+      order = await executeOrder(side, quantity, stopLossPrice);
     } catch (err) {
       console.log(`❌ ORDER FAILED — ${err.message}`);
       log.trades.push({ timestamp: new Date().toISOString(), type: "entry", symbol: CONFIG.symbol, price, nkb, orderPlaced: false, error: err.message, paperTrading: CONFIG.paperTrading });
@@ -707,7 +709,7 @@ async function run() {
       return;
     }
 
-    savePosition({ side: positionSide, entryPrice: price, quantity, sizeUSD: tradeSize, openedAt: new Date().toISOString(), orderId: order.orderId });
+    savePosition({ side: positionSide, entryPrice: price, quantity, sizeUSD: tradeSize, stopLossPrice, openedAt: new Date().toISOString(), orderId: order.orderId });
     log.trades.push({ timestamp: new Date().toISOString(), type: "entry", symbol: CONFIG.symbol, side, quantity, price, sizeUSD: tradeSize, portfolioValue, nkb, orderPlaced: true, orderId: order.orderId, paperTrading: CONFIG.paperTrading });
     saveLog(log);
     writeCsvRow({ side: side.toUpperCase(), quantity, price, totalUSD: tradeSize, orderId: order.orderId, mode: CONFIG.paperTrading ? "PAPER" : "LIVE", notes: `NKB ${signalNote} | Portfolio: $${portfolioValue.toFixed(2)}` });
