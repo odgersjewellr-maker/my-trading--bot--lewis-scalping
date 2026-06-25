@@ -88,6 +88,21 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+// CSV/JSON timestamps are stored in UTC; render them in US Eastern, 12-hour clock.
+function toEastern(utcDate) {
+  const date = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(utcDate);
+  const time = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true }).format(utcDate);
+  return { date, time };
+}
+
+function formatEasternFromParts(dateStr, timeStr) {
+  return toEastern(new Date(`${dateStr}T${timeStr}Z`));
+}
+
+function formatEasternFromIso(isoStr) {
+  return toEastern(new Date(isoStr));
+}
+
 async function buildDashboardHtml() {
   const stats = computePerformanceStats();
 
@@ -142,7 +157,7 @@ async function buildDashboardHtml() {
       <div class="stat"><span>Unrealized P&amp;L</span><strong class="${pnlUSD >= 0 ? "pos" : "neg"}">${pnlUSD !== null ? `$${pnlUSD.toFixed(2)} (${pnlPct.toFixed(2)}%)` : "N/A"}</strong></div>
       <div class="stat"><span>Stop loss</span><strong>$${stopLossPrice.toFixed(2)}</strong></div>
       <div class="stat"><span>Trailing stop</span><strong>$${trailingStopPrice.toFixed(2)}</strong></div>
-      <div class="stat"><span>Opened</span><strong>${position.openedAt}</strong></div>
+      <div class="stat"><span>Opened</span><strong>${(() => { const { date, time } = formatEasternFromIso(position.openedAt); return `${date} ${time} ET`; })()}</strong></div>
     `;
   } else {
     positionHtml = `<div class="empty">No open position</div>`;
@@ -152,20 +167,23 @@ async function buildDashboardHtml() {
   const tradesHtml = trades.length
     ? `
       <table>
-        <tr><th>Date</th><th>Time</th><th>Side</th><th>Qty</th><th>Price</th><th>Total USD</th><th>Mode</th><th>Notes</th></tr>
+        <tr><th>Date</th><th>Time (ET)</th><th>Side</th><th>Qty</th><th>Price</th><th>Total USD</th><th>Mode</th><th>Notes</th></tr>
         ${trades
           .map(
-            (r) => `
+            (r) => {
+              const { date, time } = formatEasternFromParts(r[0], r[1]);
+              return `
           <tr>
-            <td>${escapeHtml(r[0])}</td>
-            <td>${escapeHtml(r[1])}</td>
+            <td>${escapeHtml(date)}</td>
+            <td>${escapeHtml(time)}</td>
             <td>${escapeHtml(r[4])}</td>
             <td>${escapeHtml(r[5])}</td>
             <td>${escapeHtml(r[6])}</td>
             <td>${escapeHtml(r[7])}</td>
             <td class="mode-${escapeHtml((r[11] || "").toLowerCase())}">${escapeHtml(r[11])}</td>
             <td>${escapeHtml(r[12] || "").replace(/^"|"$/g, "")}</td>
-          </tr>`,
+          </tr>`;
+            },
           )
           .join("")}
       </table>
@@ -204,7 +222,7 @@ async function buildDashboardHtml() {
 </head>
 <body>
   <h1>Claude Trading Bot — ${escapeHtml(CONFIG.symbol)} <span class="badge ${CONFIG.paperTrading ? "badge-paper" : "badge-live"}">${CONFIG.paperTrading ? "PAPER" : "LIVE"}</span></h1>
-  <div class="subtitle">Generated ${new Date().toISOString()} · Strategy: VWAP + RSI(3) + EMA(8) · Timeframe: ${escapeHtml(CONFIG.timeframe)}</div>
+  <div class="subtitle">Generated ${(() => { const { date, time } = toEastern(new Date()); return `${date} ${time} ET`; })()} · Strategy: VWAP + RSI(3) + EMA(8) · Timeframe: ${escapeHtml(CONFIG.timeframe)}</div>
 
   <div class="card">
     <h2>Account</h2>
