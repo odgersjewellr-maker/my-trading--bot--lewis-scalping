@@ -1,12 +1,19 @@
 /**
  * Generates a local HTML dashboard summarizing the bot's state:
  * live BitGet account balance, current open position (if any), and
- * recent trade history. Run with: node dashboard.js
+ * recent trade history.
+ *
+ * Run with: node dashboard.js          (writes dashboard.html once, opens it)
+ *       or: node dashboard.js --serve  (live server, auto-refreshes every 30s)
  */
 
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { execSync } from "child_process";
+import { createServer } from "http";
 import { CONFIG, signBitGet, fetchCandles, loadPosition, CSV_FILE, LOG_FILE } from "./bot.js";
+
+const REFRESH_SECONDS = 30;
+const SERVE_PORT = process.env.DASHBOARD_PORT || 4787;
 
 async function fetchBalance() {
   const timestamp = Date.now().toString();
@@ -81,9 +88,7 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-async function main() {
-  console.log("Fetching live BitGet balance and current position...");
-
+async function buildDashboardHtml() {
   const stats = computePerformanceStats();
 
   let balanceHtml;
@@ -171,6 +176,7 @@ async function main() {
 <html>
 <head>
 <meta charset="utf-8">
+<meta http-equiv="refresh" content="${REFRESH_SECONDS}">
 <title>Trading Bot Dashboard</title>
 <style>
   body { font-family: -apple-system, Segoe UI, Arial, sans-serif; background: #0f1115; color: #e6e6e6; margin: 0; padding: 32px; }
@@ -223,6 +229,12 @@ async function main() {
 </body>
 </html>`;
 
+  return html;
+}
+
+async function writeOnce() {
+  console.log("Fetching live BitGet balance and current position...");
+  const html = await buildDashboardHtml();
   writeFileSync("dashboard.html", html);
   console.log("Dashboard written to dashboard.html");
 
@@ -237,7 +249,37 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error("Dashboard error:", err);
-  process.exit(1);
-});
+function serve() {
+  const server = createServer(async (req, res) => {
+    try {
+      const html = await buildDashboardHtml();
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end(html);
+    } catch (err) {
+      res.writeHead(500, { "Content-Type": "text/plain" });
+      res.end(`Dashboard error: ${err.message}`);
+    }
+  });
+
+  server.listen(SERVE_PORT, () => {
+    console.log(`Live dashboard at http://localhost:${SERVE_PORT} (refreshes every ${REFRESH_SECONDS}s)`);
+    if (!process.argv.includes("--no-open")) {
+      try {
+        execSync(`start http://localhost:${SERVE_PORT}`);
+      } catch {
+        try {
+          execSync(`open http://localhost:${SERVE_PORT}`);
+        } catch {}
+      }
+    }
+  });
+}
+
+if (process.argv.includes("--serve")) {
+  serve();
+} else {
+  writeOnce().catch((err) => {
+    console.error("Dashboard error:", err);
+    process.exit(1);
+  });
+}
