@@ -427,7 +427,15 @@ export function signBitGet(timestamp, method, path, body = "") {
     .digest("base64");
 }
 
-async function placeBitGetOrder(symbol, side, quantity) {
+// BitGet's preset stop-loss only makes sense on the *entry* order — a
+// reversal/close order should never carry one. positionSide is "long"/"short".
+export function computeStopLossPrice(positionSide, entryPrice) {
+  return positionSide === "long"
+    ? entryPrice * (1 - CONFIG.stopLossPct / 100)
+    : entryPrice * (1 + CONFIG.stopLossPct / 100);
+}
+
+async function placeBitGetOrder(symbol, side, quantity, stopLossPrice) {
   const qty = parseFloat(quantity).toFixed(6);
   const timestamp = Date.now().toString();
   const path =
@@ -444,6 +452,7 @@ async function placeBitGetOrder(symbol, side, quantity) {
       productType: "USDT-FUTURES",
       marginMode: "isolated",
       marginCoin: "USDT",
+      ...(stopLossPrice && { presetStopLossPrice: stopLossPrice.toFixed(2) }),
     }),
   });
 
