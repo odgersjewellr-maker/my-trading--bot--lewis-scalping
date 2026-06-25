@@ -1,12 +1,19 @@
 /**
  * Generates a local HTML dashboard summarizing the bot's state:
  * live BitGet account balance, current open position (if any), and
- * recent trade history. Run with: node dashboard.js
+ * recent trade history.
+ *
+ * Run with: node dashboard.js          (writes dashboard.html once, opens it)
+ *       or: node dashboard.js --serve  (live server, auto-refreshes every 30s)
  */
 
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { execSync } from "child_process";
+import { createServer } from "http";
 import { CONFIG, signBitGet, fetchCandles, loadPosition, CSV_FILE, LOG_FILE } from "./bot.js";
+
+const REFRESH_SECONDS = 30;
+const SERVE_PORT = process.env.DASHBOARD_PORT || 4787;
 
 async function fetchBalance() {
   const timestamp = Date.now().toString();
@@ -81,9 +88,22 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-async function main() {
-  console.log("Fetching live BitGet balance and current position...");
+// CSV/JSON timestamps are stored in UTC; render them in US Eastern, 12-hour clock.
+function toEastern(utcDate) {
+  const date = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(utcDate);
+  const time = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true }).format(utcDate);
+  return { date, time };
+}
 
+function formatEasternFromParts(dateStr, timeStr) {
+  return toEastern(new Date(`${dateStr}T${timeStr}Z`));
+}
+
+function formatEasternFromIso(isoStr) {
+  return toEastern(new Date(isoStr));
+}
+
+async function buildDashboardHtml() {
   const stats = computePerformanceStats();
 
   let balanceHtml;
@@ -137,7 +157,7 @@ async function main() {
       <div class="stat"><span>Unrealized P&amp;L</span><strong class="${pnlUSD >= 0 ? "pos" : "neg"}">${pnlUSD !== null ? `$${pnlUSD.toFixed(2)} (${pnlPct.toFixed(2)}%)` : "N/A"}</strong></div>
       <div class="stat"><span>Stop loss</span><strong>$${stopLossPrice.toFixed(2)}</strong></div>
       <div class="stat"><span>Trailing stop</span><strong>$${trailingStopPrice.toFixed(2)}</strong></div>
-      <div class="stat"><span>Opened</span><strong>${position.openedAt}</strong></div>
+      <div class="stat"><span>Opened</span><strong>${(() => { const { date, time } = formatEasternFromIso(position.openedAt); return `${date} ${time} ET`; })()}</strong></div>
     `;
   } else {
     positionHtml = `<div class="empty">No open position</div>`;
@@ -147,20 +167,23 @@ async function main() {
   const tradesHtml = trades.length
     ? `
       <table>
-        <tr><th>Date</th><th>Time</th><th>Side</th><th>Qty</th><th>Price</th><th>Total USD</th><th>Mode</th><th>Notes</th></tr>
+        <tr><th>Date</th><th>Time (ET)</th><th>Side</th><th>Qty</th><th>Price</th><th>Total USD</th><th>Mode</th><th>Notes</th></tr>
         ${trades
           .map(
-            (r) => `
+            (r) => {
+              const { date, time } = formatEasternFromParts(r[0], r[1]);
+              return `
           <tr>
-            <td>${escapeHtml(r[0])}</td>
-            <td>${escapeHtml(r[1])}</td>
+            <td>${escapeHtml(date)}</td>
+            <td>${escapeHtml(time)}</td>
             <td>${escapeHtml(r[4])}</td>
             <td>${escapeHtml(r[5])}</td>
             <td>${escapeHtml(r[6])}</td>
             <td>${escapeHtml(r[7])}</td>
             <td class="mode-${escapeHtml((r[11] || "").toLowerCase())}">${escapeHtml(r[11])}</td>
             <td>${escapeHtml(r[12] || "").replace(/^"|"$/g, "")}</td>
-          </tr>`,
+          </tr>`;
+            },
           )
           .join("")}
       </table>
@@ -171,6 +194,7 @@ async function main() {
 <html>
 <head>
 <meta charset="utf-8">
+<meta http-equiv="refresh" content="${REFRESH_SECONDS}">
 <title>Trading Bot Dashboard</title>
 <style>
   body { font-family: -apple-system, Segoe UI, Arial, sans-serif; background: #0f1115; color: #e6e6e6; margin: 0; padding: 32px; }
@@ -198,7 +222,7 @@ async function main() {
 </head>
 <body>
   <h1>Claude Trading Bot — ${escapeHtml(CONFIG.symbol)} <span class="badge ${CONFIG.paperTrading ? "badge-paper" : "badge-live"}">${CONFIG.paperTrading ? "PAPER" : "LIVE"}</span></h1>
-  <div class="subtitle">Generated ${new Date().toISOString()} · Strategy: VWAP + RSI(3) + EMA(8) · Timeframe: ${escapeHtml(CONFIG.timeframe)}</div>
+  <div class="subtitle">Generated ${(() => { const { date, time } = toEastern(new Date()); return `${date} ${time} ET`; })()} · Strategy: VWAP + RSI(3) + EMA(8) · Timeframe: ${escapeHtml(CONFIG.timeframe)}</div>
 
   <div class="card">
     <h2>Account</h2>
@@ -223,6 +247,12 @@ async function main() {
 </body>
 </html>`;
 
+  return html;
+}
+
+async function writeOnce() {
+  console.log("Fetching live BitGet balance and current position...");
+  const html = await buildDashboardHtml();
   writeFileSync("dashboard.html", html);
   console.log("Dashboard written to dashboard.html");
 
@@ -237,7 +267,37 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error("Dashboard error:", err);
-  process.exit(1);
-});
+function serve() {
+  const server = createServer(async (req, res) => {
+    try {
+      const html = await buildDashboardHtml();
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end(html);
+    } catch (err) {
+      res.writeHead(500, { "Content-Type": "text/plain" });
+      res.end(`Dashboard error: ${err.message}`);
+    }
+  });
+
+  server.listen(SERVE_PORT, () => {
+    console.log(`Live dashboard at http://localhost:${SERVE_PORT} (refreshes every ${REFRESH_SECONDS}s)`);
+    if (!process.argv.includes("--no-open")) {
+      try {
+        execSync(`start http://localhost:${SERVE_PORT}`);
+      } catch {
+        try {
+          execSync(`open http://localhost:${SERVE_PORT}`);
+        } catch {}
+      }
+    }
+  });
+}
+
+if (process.argv.includes("--serve")) {
+  serve();
+} else {
+  writeOnce().catch((err) => {
+    console.error("Dashboard error:", err);
+    process.exit(1);
+  });
+}

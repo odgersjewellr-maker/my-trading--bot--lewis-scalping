@@ -19,7 +19,7 @@
 import "dotenv/config";
 import { createServer } from "http";
 import crypto from "crypto";
-import { CONFIG, fetchCandles, signBitGet } from "./bot.js";
+import { CONFIG, fetchCandles, signBitGet, computeStopLossPrice } from "./bot.js";
 
 const PORT            = process.env.PORT || 3000;
 const WEBHOOK_SECRET  = process.env.WEBHOOK_SECRET || "";
@@ -71,7 +71,7 @@ async function saveState(filename, data, sha) {
 
 // ─── BitGet order execution ───────────────────────────────────────────────────
 
-async function executeOrder(side, quantity) {
+async function executeOrder(side, quantity, stopLossPrice) {
   if (CONFIG.paperTrading) return { orderId: `PAPER-${Date.now()}`, paper: true };
 
   const qty  = parseFloat(quantity).toFixed(6);
@@ -85,6 +85,7 @@ async function executeOrder(side, quantity) {
     productType: "USDT-FUTURES",
     marginMode: "isolated",
     marginCoin: "USDT",
+    ...(stopLossPrice && { presetStopLossPrice: stopLossPrice.toFixed(2) }),
   });
   const sig = signBitGet(ts, "POST", path, body);
   const res = await fetch(`${CONFIG.bitget.baseUrl}${path}`, {
@@ -192,19 +193,21 @@ async function executeTrade(signal) {
   const side        = buySignal ? "buy" : "sell";
   const positionSide = buySignal ? "long" : "short";
   const quantity    = parseFloat((tradeSize / price).toFixed(6));
+  const stopLossPrice = computeStopLossPrice(positionSide, price);
 
   out(`Opening ${positionSide} — $${tradeSize.toFixed(2)} (10% of $${portfolioValue.toFixed(2)})`);
+  out(`Stop loss: $${stopLossPrice.toFixed(2)} (${CONFIG.stopLossPct}%)`);
 
   let order;
   try {
-    order = await executeOrder(side, quantity);
+    order = await executeOrder(side, quantity, stopLossPrice);
   } catch (err) {
     out(`❌ Order failed: ${err.message}`);
     return log.join("\n");
   }
 
   const newPosition = {
-    side: positionSide, entryPrice: price, quantity,
+    side: positionSide, entryPrice: price, quantity, stopLossPrice,
     sizeUSD: tradeSize, openedAt: new Date().toISOString(), orderId: order.orderId,
   };
 
@@ -248,17 +251,23 @@ const server = createServer(async (req, res) => {
     let body = "";
     req.on("data", (chunk) => (body += chunk));
     req.on("end", async () => {
-      if (WEBHOOK_SECRET) {
-        const token = req.headers["x-webhook-secret"] || "";
-        if (token !== WEBHOOK_SECRET) {
-          res.writeHead(401); res.end("Unauthorized"); return;
-        }
+      console.log(`\n[${new Date().toISOString()}] Incoming webhook body: ${JSON.stringify(body)}`);
+
+      // TradingView's standard webhook delivery does not support custom HTTP
+      // headers — it only POSTs whatever text is in the alert's Message field.
+      // So the secret has to be checked inside that body text, not a header.
+      const headerToken = req.headers["x-webhook-secret"] || "";
+      const bodyHasSecret = WEBHOOK_SECRET && body.includes(WEBHOOK_SECRET);
+      if (WEBHOOK_SECRET && headerToken !== WEBHOOK_SECRET && !bodyHasSecret) {
+        console.log("Rejected: WEBHOOK_SECRET not found in header or body");
+        res.writeHead(401); res.end("Unauthorized"); return;
       }
 
       const text   = body.trim().toUpperCase();
       const signal = text.includes("BUY") ? "BUY" : text.includes("SELL") ? "SELL" : null;
 
       if (!signal) {
+        console.log(`Rejected: body has no BUY/SELL — "${body}"`);
         res.writeHead(400);
         res.end("Body must contain BUY or SELL");
         return;
