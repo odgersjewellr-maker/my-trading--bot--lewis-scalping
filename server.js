@@ -442,6 +442,8 @@ async function buildDashboardHtml() {
     : `<div class="empty">No trades logged yet</div>`;
 
   const portfolioValue = portFile?.data?.value ?? CONFIG.portfolioValue;
+  const profitUSD = portfolioValue - CONFIG.portfolioValue;
+  const profitPct = (profitUSD / CONFIG.portfolioValue) * 100;
 
   return `<!DOCTYPE html>
 <html>
@@ -481,6 +483,7 @@ async function buildDashboardHtml() {
     <h2>Account</h2>
     ${balanceHtml}
     <div class="stat"><span>Tracked portfolio value</span><strong>$${portfolioValue.toFixed(2)}</strong></div>
+    <div class="stat"><span>Profit on starting capital</span><strong class="${profitUSD >= 0 ? "pos" : "neg"}">${profitUSD >= 0 ? "+" : ""}$${profitUSD.toFixed(2)} (${profitPct >= 0 ? "+" : ""}${profitPct.toFixed(2)}% of $${CONFIG.portfolioValue.toFixed(2)})</strong></div>
     <div class="stat"><span>Max trade size</span><strong>$${CONFIG.maxTradeSizeUSD.toFixed(2)}</strong></div>
     <div class="stat"><span>Max trades / day</span><strong>${CONFIG.maxTradesPerDay === 0 ? "No limit" : CONFIG.maxTradesPerDay}</strong></div>
     <div class="stat"><span>Trade frequency</span><strong>${stats.tradesPerDay !== null ? `${stats.tradesPerDay.toFixed(2)} / day (${stats.entryCount} opened total)` : "No trades opened yet"}</strong></div>
