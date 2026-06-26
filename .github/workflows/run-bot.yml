@@ -32,6 +32,7 @@ jobs:
           BITGET_PASSPHRASE=${{ secrets.BITGET_PASSPHRASE }}
           BITGET_BASE_URL=https://api.bitget.com
           TRADE_MODE=futures
+          LEVERAGE=1
           PORTFOLIO_VALUE_USD=640
           MAX_TRADES_PER_DAY=0
           SYMBOL=BTCUSDT

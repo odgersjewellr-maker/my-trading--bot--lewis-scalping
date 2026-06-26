@@ -85,6 +85,10 @@ export const CONFIG = {
   atrPeriod: parseInt(process.env.ATR_PERIOD || "14"),
   atrStopMult: parseFloat(process.env.ATR_STOP_MULT || "1.5"),
   atrTrailingMult: parseFloat(process.env.ATR_TRAILING_MULT || "2.5"),
+  // Futures only. Left unset, BitGet falls back to whatever leverage is
+  // already configured on the account for this symbol — explicit here so
+  // it's never a surprise.
+  leverage: parseInt(process.env.LEVERAGE || "1", 10),
   bitget: {
     apiKey: process.env.BITGET_API_KEY,
     secretKey: process.env.BITGET_SECRET_KEY,
@@ -435,13 +439,51 @@ export function computeStopLossPrice(positionSide, entryPrice) {
     : entryPrice * (1 + CONFIG.stopLossPct / 100);
 }
 
-async function placeBitGetOrder(symbol, side, quantity, stopLossPrice) {
+// Isolated margin sets leverage per holdSide ("long"/"short"), so it must be
+// called for the side we're about to open before placeOrder — otherwise
+// BitGet uses whatever leverage was last set (or the account default) for
+// that side, which may not match CONFIG.leverage.
+export async function setLeverage(symbol, holdSide) {
+  const timestamp = Date.now().toString();
+  const path = "/api/v2/mix/account/set-leverage";
+  const body = JSON.stringify({
+    symbol,
+    productType: "USDT-FUTURES",
+    marginCoin: "USDT",
+    leverage: String(CONFIG.leverage),
+    holdSide,
+  });
+  const signature = signBitGet(timestamp, "POST", path, body);
+
+  const res = await fetch(`${CONFIG.bitget.baseUrl}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "ACCESS-KEY": CONFIG.bitget.apiKey,
+      "ACCESS-SIGN": signature,
+      "ACCESS-TIMESTAMP": timestamp,
+      "ACCESS-PASSPHRASE": CONFIG.bitget.passphrase,
+    },
+    body,
+  });
+
+  const data = await res.json();
+  if (data.code !== "00000") {
+    throw new Error(`BitGet set-leverage failed: ${data.msg}`);
+  }
+}
+
+async function placeBitGetOrder(symbol, side, quantity, stopLossPrice, positionSide) {
   const qty = parseFloat(quantity).toFixed(6);
   const timestamp = Date.now().toString();
   const path =
     CONFIG.tradeMode === "spot"
       ? "/api/v2/spot/trade/placeOrder"
       : "/api/v2/mix/order/placeOrder";
+
+  if (CONFIG.tradeMode === "futures" && positionSide) {
+    await setLeverage(symbol, positionSide);
+  }
 
   const body = JSON.stringify({
     symbol,
@@ -479,12 +521,15 @@ async function placeBitGetOrder(symbol, side, quantity, stopLossPrice) {
 }
 
 // Executes (or, in paper mode, simulates) a single order. Used for both
-// opening and closing positions — `side` is "buy" or "sell".
-async function executeOrder(side, quantity, stopLossPrice) {
+// opening and closing positions — `side` is "buy" or "sell". `positionSide`
+// ("long"/"short") is only passed when opening a new position, so leverage
+// gets (re)set for that holdSide; closing an existing position reuses
+// whatever leverage it was opened with.
+async function executeOrder(side, quantity, stopLossPrice, positionSide) {
   if (CONFIG.paperTrading) {
     return { orderId: `PAPER-${Date.now()}`, paper: true };
   }
-  const order = await placeBitGetOrder(CONFIG.symbol, side, quantity, stopLossPrice);
+  const order = await placeBitGetOrder(CONFIG.symbol, side, quantity, stopLossPrice, positionSide);
   return { orderId: order.orderId, paper: false };
 }
 
@@ -700,7 +745,7 @@ async function run() {
 
     let order;
     try {
-      order = await executeOrder(side, quantity, stopLossPrice);
+      order = await executeOrder(side, quantity, stopLossPrice, positionSide);
     } catch (err) {
       console.log(`❌ ORDER FAILED — ${err.message}`);
       log.trades.push({ timestamp: new Date().toISOString(), type: "entry", symbol: CONFIG.symbol, price, nkb, orderPlaced: false, error: err.message, paperTrading: CONFIG.paperTrading });

@@ -13,6 +13,7 @@
  *   WEBHOOK_SECRET — any password you choose (must match TradingView alert header)
  *   PAPER_TRADING=true
  *   TRADE_MODE=futures
+ *   LEVERAGE=1      — futures only; explicitly set via API, never left to the account default
  *   SYMBOL=BTCUSDT
  *   TIMEFRAME=5m
  *   PORTFOLIO_VALUE_USD=640
@@ -21,7 +22,7 @@
 import "dotenv/config";
 import { createServer } from "http";
 import crypto from "crypto";
-import { CONFIG, fetchCandles, signBitGet, computeStopLossPrice } from "./bot.js";
+import { CONFIG, fetchCandles, signBitGet, computeStopLossPrice, setLeverage } from "./bot.js";
 
 const PORT            = process.env.PORT || 3000;
 const WEBHOOK_SECRET  = process.env.WEBHOOK_SECRET || "";
@@ -80,8 +81,12 @@ async function loadRawText(filename) {
 
 // ─── BitGet order execution ───────────────────────────────────────────────────
 
-async function executeOrder(side, quantity, stopLossPrice) {
+async function executeOrder(side, quantity, stopLossPrice, positionSide) {
   if (CONFIG.paperTrading) return { orderId: `PAPER-${Date.now()}`, paper: true };
+
+  if (CONFIG.tradeMode === "futures" && positionSide) {
+    await setLeverage(CONFIG.symbol, positionSide);
+  }
 
   const qty  = parseFloat(quantity).toFixed(6);
   const ts   = Date.now().toString();
@@ -224,7 +229,7 @@ async function executeTrade(signal) {
 
   let order;
   try {
-    order = await executeOrder(side, quantity, stopLossPrice);
+    order = await executeOrder(side, quantity, stopLossPrice, positionSide);
   } catch (err) {
     out(`❌ Order failed: ${err.message}`);
     return log.join("\n");
