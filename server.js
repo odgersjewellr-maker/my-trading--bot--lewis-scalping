@@ -23,7 +23,7 @@
 import "dotenv/config";
 import { createServer } from "http";
 import crypto from "crypto";
-import { CONFIG, fetchCandles, signBitGet, computeStopLossPrice, setLeverage } from "./bot.js";
+import { CONFIG, fetchCandles, signBitGet, computeStopLossPrice, setLeverage, bitgetAuthHeaders } from "./bot.js";
 
 const PORT            = process.env.PORT || 3000;
 const WEBHOOK_SECRET  = process.env.WEBHOOK_SECRET || "";
@@ -116,8 +116,6 @@ async function appendCsvRow({ side, quantity, price, totalUSD, orderId, mode, no
 // ─── BitGet order execution ───────────────────────────────────────────────────
 
 async function executeOrder(side, quantity, stopLossPrice, positionSide) {
-  if (CONFIG.paperTrading) return { orderId: `PAPER-${Date.now()}`, paper: true };
-
   if (CONFIG.tradeMode === "futures" && positionSide) {
     await setLeverage(CONFIG.symbol, positionSide);
   }
@@ -138,18 +136,12 @@ async function executeOrder(side, quantity, stopLossPrice, positionSide) {
   const sig = signBitGet(ts, "POST", path, body);
   const res = await fetch(`${CONFIG.bitget.baseUrl}${path}`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "ACCESS-KEY": CONFIG.bitget.apiKey,
-      "ACCESS-SIGN": sig,
-      "ACCESS-TIMESTAMP": ts,
-      "ACCESS-PASSPHRASE": CONFIG.bitget.passphrase,
-    },
+    headers: bitgetAuthHeaders(ts, sig),
     body,
   });
   const data = await res.json();
   if (data.code !== "00000") throw new Error(`BitGet order failed: ${data.msg}`);
-  return { orderId: data.data.orderId, paper: false };
+  return { orderId: data.data.orderId, paper: CONFIG.paperTrading };
 }
 
 // ─── Trade execution ──────────────────────────────────────────────────────────
@@ -327,13 +319,7 @@ async function fetchBalance() {
 
   const res = await fetch(`${CONFIG.bitget.baseUrl}${path}`, {
     method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-      "ACCESS-KEY": CONFIG.bitget.apiKey,
-      "ACCESS-SIGN": signature,
-      "ACCESS-TIMESTAMP": timestamp,
-      "ACCESS-PASSPHRASE": CONFIG.bitget.passphrase,
-    },
+    headers: bitgetAuthHeaders(timestamp, signature),
   });
 
   const body = await res.json();

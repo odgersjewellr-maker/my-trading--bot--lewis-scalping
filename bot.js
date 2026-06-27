@@ -393,6 +393,20 @@ export function signBitGet(timestamp, method, path, body = "") {
     .digest("base64");
 }
 
+// PAPER_TRADING uses BitGet's demo trading environment — same endpoints,
+// same signing, just a "paptrading: 1" header that routes the order to the
+// account's virtual balance instead of real funds. Requires a Demo API key.
+export function bitgetAuthHeaders(timestamp, signature) {
+  return {
+    "Content-Type": "application/json",
+    "ACCESS-KEY": CONFIG.bitget.apiKey,
+    "ACCESS-SIGN": signature,
+    "ACCESS-TIMESTAMP": timestamp,
+    "ACCESS-PASSPHRASE": CONFIG.bitget.passphrase,
+    ...(CONFIG.paperTrading && { paptrading: "1" }),
+  };
+}
+
 // BitGet's preset stop-loss only makes sense on the *entry* order — a
 // reversal/close order should never carry one. positionSide is "long"/"short".
 export function computeStopLossPrice(positionSide, entryPrice) {
@@ -419,13 +433,7 @@ export async function setLeverage(symbol, holdSide) {
 
   const res = await fetch(`${CONFIG.bitget.baseUrl}${path}`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "ACCESS-KEY": CONFIG.bitget.apiKey,
-      "ACCESS-SIGN": signature,
-      "ACCESS-TIMESTAMP": timestamp,
-      "ACCESS-PASSPHRASE": CONFIG.bitget.passphrase,
-    },
+    headers: bitgetAuthHeaders(timestamp, signature),
     body,
   });
 
@@ -464,13 +472,7 @@ async function placeBitGetOrder(symbol, side, quantity, stopLossPrice, positionS
 
   const res = await fetch(`${CONFIG.bitget.baseUrl}${path}`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "ACCESS-KEY": CONFIG.bitget.apiKey,
-      "ACCESS-SIGN": signature,
-      "ACCESS-TIMESTAMP": timestamp,
-      "ACCESS-PASSPHRASE": CONFIG.bitget.passphrase,
-    },
+    headers: bitgetAuthHeaders(timestamp, signature),
     body,
   });
 
@@ -482,17 +484,15 @@ async function placeBitGetOrder(symbol, side, quantity, stopLossPrice, positionS
   return data.data;
 }
 
-// Executes (or, in paper mode, simulates) a single order. Used for both
-// opening and closing positions — `side` is "buy" or "sell". `positionSide`
-// ("long"/"short") is only passed when opening a new position, so leverage
-// gets (re)set for that holdSide; closing an existing position reuses
-// whatever leverage it was opened with.
+// Executes a single order against BitGet — real funds when PAPER_TRADING is
+// false, the demo account's virtual funds when it's true (see
+// bitgetAuthHeaders). Used for both opening and closing positions — `side`
+// is "buy" or "sell". `positionSide` ("long"/"short") is only passed when
+// opening a new position, so leverage gets (re)set for that holdSide;
+// closing an existing position reuses whatever leverage it was opened with.
 async function executeOrder(side, quantity, stopLossPrice, positionSide) {
-  if (CONFIG.paperTrading) {
-    return { orderId: `PAPER-${Date.now()}`, paper: true };
-  }
   const order = await placeBitGetOrder(CONFIG.symbol, side, quantity, stopLossPrice, positionSide);
-  return { orderId: order.orderId, paper: false };
+  return { orderId: order.orderId, paper: CONFIG.paperTrading };
 }
 
 // ─── Tax CSV Logging ─────────────────────────────────────────────────────────
