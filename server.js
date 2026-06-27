@@ -14,6 +14,7 @@
  *   PAPER_TRADING=true
  *   TRADE_MODE=futures
  *   LEVERAGE=1      — futures only; explicitly set via API, never left to the account default
+ *   TRADE_SIZE_PCT=80 — % of current portfolio value risked per trade, recalculated every trade
  *   SYMBOL=BTCUSDT
  *   TIMEFRAME=5m
  *   PORTFOLIO_VALUE_USD=640
@@ -218,13 +219,13 @@ async function executeTrade(signal) {
     return log.join("\n");
   }
 
-  const tradeSize   = portfolioValue * 0.10;
+  const tradeSize   = portfolioValue * CONFIG.tradeSizePct;
   const side        = buySignal ? "buy" : "sell";
   const positionSide = buySignal ? "long" : "short";
   const quantity    = parseFloat((tradeSize / price).toFixed(6));
   const stopLossPrice = computeStopLossPrice(positionSide, price);
 
-  out(`Opening ${positionSide} — $${tradeSize.toFixed(2)} (10% of $${portfolioValue.toFixed(2)})`);
+  out(`Opening ${positionSide} — $${tradeSize.toFixed(2)} (${(CONFIG.tradeSizePct * 100).toFixed(0)}% of $${portfolioValue.toFixed(2)})`);
   out(`Stop loss: $${stopLossPrice.toFixed(2)} (${CONFIG.stopLossPct}%)`);
 
   let order;

@@ -76,6 +76,7 @@ export const CONFIG = {
   symbol: process.env.SYMBOL || "BTCUSDT",
   timeframe: process.env.TIMEFRAME || "4H",
   portfolioValue: parseFloat(process.env.PORTFOLIO_VALUE_USD || "1000"),
+  tradeSizePct: parseFloat(process.env.TRADE_SIZE_PCT || "80") / 100,
   maxTradeSizeUSD: parseFloat(process.env.MAX_TRADE_SIZE_USD || "100"),
   maxTradesPerDay: parseInt(process.env.MAX_TRADES_PER_DAY || "3"),
   paperTrading: process.env.PAPER_TRADING !== "false",
@@ -731,14 +732,14 @@ async function run() {
   console.log("\n── NKB Signal ───────────────────────────────────────────\n");
 
   const canShort = CONFIG.tradeMode === "futures";
-  // 10% of current portfolio value, re-evaluated each trade
-  const tradeSize = portfolioValue * 0.10;
+  // CONFIG.tradeSizePct of current portfolio value, re-evaluated each trade
+  const tradeSize = portfolioValue * CONFIG.tradeSizePct;
 
   async function openPosition(side, positionSide, signalNote) {
     const quantity = parseFloat((tradeSize / price).toFixed(6));
     const stopLossPrice = computeStopLossPrice(positionSide, price);
     console.log(`✅ ${side.toUpperCase()} SIGNAL — ${signalNote}`);
-    console.log(`   Trade size: $${tradeSize.toFixed(2)} (10% of $${portfolioValue.toFixed(2)})`);
+    console.log(`   Trade size: $${tradeSize.toFixed(2)} (${(CONFIG.tradeSizePct * 100).toFixed(0)}% of $${portfolioValue.toFixed(2)})`);
     console.log(`   Stop loss: $${stopLossPrice.toFixed(2)} (${CONFIG.stopLossPct}%)`);
     console.log(`\n${CONFIG.paperTrading ? "📋 PAPER TRADE" : "🔴 PLACING LIVE ORDER"} — ${side.toUpperCase()} ~$${tradeSize.toFixed(2)} ${CONFIG.symbol}`);
     if (CONFIG.paperTrading) console.log(`   (Set PAPER_TRADING=false in .env to place real orders)`);
