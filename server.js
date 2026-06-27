@@ -80,6 +80,39 @@ async function loadRawText(filename) {
   return Buffer.from(file.content, "base64").toString();
 }
 
+// Appends one row to trades.csv on GitHub. Mirrors bot.js's writeCsvRow() format/columns —
+// the webhook path executes most trades these days, so without this the CSV (and the
+// dashboard's "Recent trades" table, which reads it) goes stale even though trading continues.
+async function appendCsvRow({ side, quantity, price, totalUSD, orderId, mode, notes }) {
+  const file = await ghGet("trades.csv");
+  const existing = file ? Buffer.from(file.content, "base64").toString() : "";
+  const now = new Date();
+  const date = now.toISOString().slice(0, 10);
+  const time = now.toISOString().slice(11, 19);
+  const fee = totalUSD !== undefined ? (totalUSD * 0.001).toFixed(4) : "";
+  const netAmount = totalUSD !== undefined ? (totalUSD - parseFloat(fee)).toFixed(2) : "";
+  const row = [
+    date, time, "BitGet", CONFIG.symbol, side ?? "", quantity ?? "",
+    price !== undefined ? price.toFixed(2) : "",
+    totalUSD !== undefined ? totalUSD.toFixed(2) : "",
+    fee, netAmount, orderId ?? "", mode, `"${notes}"`,
+  ].join(",");
+  const updated = existing && !existing.endsWith("\n") ? `${existing}\n${row}\n` : `${existing}${row}\n`;
+  const res = await fetch(`${GITHUB_API}/repos/${GITHUB_REPO}/contents/trades.csv`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${GITHUB_TOKEN}`, Accept: "application/vnd.github+json", "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message: "Webhook: append trades.csv row",
+      content: Buffer.from(updated).toString("base64"),
+      branch: GITHUB_BRANCH,
+      ...(file && { sha: file.sha }),
+    }),
+  });
+  if (!res.ok) {
+    console.log(`⚠️ Failed to append trades.csv row: ${res.status} ${await res.text()}`);
+  }
+}
+
 // ─── BitGet order execution ───────────────────────────────────────────────────
 
 async function executeOrder(side, quantity, stopLossPrice, positionSide) {
@@ -193,9 +226,11 @@ async function executeTrade(signal) {
     }
 
     portfolioValue += pnlUSD;
+    const closedQuantity = position.quantity;
+    const closedSizeUSD = position.sizeUSD;
     tradeLog.trades.push({
       timestamp: new Date().toISOString(), type: "exit", symbol: CONFIG.symbol,
-      side: closeSide, quantity: position.quantity, price, sizeUSD: position.sizeUSD,
+      side: closeSide, quantity: closedQuantity, price, sizeUSD: closedSizeUSD,
       pnlUSD, pnlPct, reason: "NKB webhook reversal", orderPlaced: true,
       orderId: closeOrder.orderId, paperTrading: CONFIG.paperTrading,
     });
@@ -210,6 +245,12 @@ async function executeTrade(signal) {
     await saveState("safety-check-log.json", tradeLog, logFile?.sha);
     position = null;
     out(`Portfolio: $${portfolioValue.toFixed(2)}`);
+
+    await appendCsvRow({
+      side: closeSide.toUpperCase(), quantity: closedQuantity, price, totalUSD: closedSizeUSD,
+      orderId: closeOrder.orderId, mode: CONFIG.paperTrading ? "PAPER" : "LIVE",
+      notes: `NKB reversal exit — P&L $${pnlUSD.toFixed(2)} (${pnlPct.toFixed(2)}%) | Portfolio: $${portfolioValue.toFixed(2)}`,
+    });
   }
 
   // Open new position
@@ -261,6 +302,13 @@ async function executeTrade(signal) {
   await saveState("safety-check-log.json", tradeLog, freshLogFile?.sha);
 
   out(`✅ ${positionSide.toUpperCase()} opened at $${price.toFixed(2)} | Order: ${order.orderId}`);
+
+  await appendCsvRow({
+    side: side.toUpperCase(), quantity, price, totalUSD: tradeSize, orderId: order.orderId,
+    mode: CONFIG.paperTrading ? "PAPER" : "LIVE",
+    notes: `NKB ${buySignal ? "Buy — bands flipped bullish" : "Sell — bands flipped bearish"} | Portfolio: $${portfolioValue.toFixed(2)}`,
+  });
+
   return log.join("\n");
 }
 

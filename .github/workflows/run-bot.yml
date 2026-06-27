@@ -52,5 +52,18 @@ jobs:
           for f in position.json trades.csv safety-check-log.json nkb-state.json portfolio.json; do
             [ -f "$f" ] && git add "$f"
           done
-          git diff --cached --quiet || git commit -m "Bot run $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          git push
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "Bot run $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          for i in 1 2 3 4 5; do
+            if git push; then
+              exit 0
+            fi
+            echo "Push rejected (attempt $i) — webhook likely committed concurrently. Rebasing onto latest main and retrying..."
+            git fetch origin main
+            git rebase origin/main
+            sleep $((i * 2))
+          done
+          echo "::error::git push failed after retries"
+          exit 1
