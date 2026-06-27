@@ -81,11 +81,10 @@ export const CONFIG = {
   maxTradesPerDay: parseInt(process.env.MAX_TRADES_PER_DAY || "3"),
   paperTrading: process.env.PAPER_TRADING !== "false",
   tradeMode: process.env.TRADE_MODE || "spot",
+  // Sent to BitGet as presetStopLossPrice on the entry order itself (see
+  // computeStopLossPrice) — enforced by the exchange on real trades, not by us.
   stopLossPct: parseFloat(process.env.STOP_LOSS_PCT || "0.3"),
-  trailingStopPct: parseFloat(process.env.TRAILING_STOP_PCT || "0.5"),
   atrPeriod: parseInt(process.env.ATR_PERIOD || "14"),
-  atrStopMult: parseFloat(process.env.ATR_STOP_MULT || "1.5"),
-  atrTrailingMult: parseFloat(process.env.ATR_TRAILING_MULT || "2.5"),
   // Futures only. Left unset, BitGet falls back to whatever leverage is
   // already configured on the account for this symbol — explicit here so
   // it's never a surprise.
@@ -199,7 +198,29 @@ const NKB = {
   bandMult:    parseFloat(process.env.NKB_BAND_MULT  || "1.0"),
   bandLen:     parseInt(process.env.NKB_BAND_LEN     || "24"),
   bandSmooth:  parseInt(process.env.NKB_BAND_SMOOTH  || "5"),
+  // gaussian (infinite tail, smoothest/laggiest) | epanechnikov (compact support,
+  // hard cutoff, most reactive) | tricube (compact support, smooth taper — a
+  // middle ground between the other two). See KERNELS below for the math.
+  kernel:      (process.env.NKB_KERNEL || "gaussian").toLowerCase(),
 };
+
+// u = distance-from-current-bar / bandwidth. Gaussian never reaches zero so every
+// bar in the fetched window still has some pull; the other two are zero past u=1,
+// so they only look back roughly one bandwidth's worth of bars.
+const KERNELS = {
+  gaussian: (j, h) => Math.exp(-(j * j) / (2 * h * h)),
+  epanechnikov: (j, h) => {
+    const u = j / h;
+    return Math.abs(u) > 1 ? 0 : 0.75 * (1 - u * u);
+  },
+  tricube: (j, h) => {
+    const u = j / h;
+    return Math.abs(u) > 1 ? 0 : (1 - Math.abs(u) ** 3) ** 3;
+  },
+};
+if (!KERNELS[NKB.kernel]) {
+  throw new Error(`Unknown NKB_KERNEL "${NKB.kernel}" — expected gaussian, epanechnikov, or tricube`);
+}
 
 function calcATR(candles, period = 14) {
   if (candles.length < period + 1) return null;
@@ -275,14 +296,15 @@ function calcNKB(candles) {
     NKB.bandwidth * (NKB.adaptive ? 1 + (f ?? 0) * 200 : 1),
   );
 
-  // Nadaraya-Watson kernel regression (Gaussian) — computed at every bar
+  // Nadaraya-Watson kernel regression — computed at every bar
+  const kernelFn = KERNELS[NKB.kernel];
   const nwRaw = new Array(n);
   for (let i = 0; i < n; i++) {
     const hi = h[i];
     let sumW = 0, sumWC = 0;
     const lookback = Math.min(NKB.length, i + 1);
     for (let j = 0; j < lookback; j++) {
-      const kw = Math.exp(-(j * j) / (2 * hi * hi));
+      const kw = kernelFn(j, hi);
       sumWC += kw * closes[i - j];
       sumW  += kw;
     }
@@ -319,67 +341,6 @@ function calcNKB(candles) {
     lowerBand: lowerBand[last],
     state: lastState,
   };
-}
-
-// ─── Exit Check (open positions: trailing stop + fixed stop loss) ──────────
-
-function checkExitConditions(position, price, atr) {
-  console.log("\n── Position Management ──────────────────────────────────\n");
-  console.log(`  Side: ${position.side.toUpperCase()} | Entry: $${position.entryPrice.toFixed(2)} | Current: $${price.toFixed(2)}`);
-
-  // Volatility-adjusted distances: the wider of "fixed %" and "ATR × multiplier"
-  // wins, so calm markets keep the tight fixed % stop, and choppy markets get
-  // more room instead of being stopped out by normal noise.
-  const atrStopDist = atr ? atr * CONFIG.atrStopMult : null;
-  const atrTrailingDist = atr ? atr * CONFIG.atrTrailingMult : null;
-  const fixedStopDist = position.entryPrice * (CONFIG.stopLossPct / 100);
-
-  const stopLossDist = atrStopDist ? Math.max(atrStopDist, fixedStopDist) : fixedStopDist;
-
-  let stopPrice;
-  let trailingStopPrice;
-  let stopLossPrice;
-
-  if (position.side === "long") {
-    if (price > position.extremePrice) position.extremePrice = price;
-    const fixedTrailingDist = position.extremePrice * (CONFIG.trailingStopPct / 100);
-    const trailingDist = atrTrailingDist ? Math.max(atrTrailingDist, fixedTrailingDist) : fixedTrailingDist;
-    trailingStopPrice = position.extremePrice - trailingDist;
-    stopLossPrice = position.entryPrice - stopLossDist;
-    // Trailing stop only takes over once it has ratcheted above the fixed stop loss
-    stopPrice = Math.max(trailingStopPrice, stopLossPrice);
-    var shouldExit = price <= stopPrice;
-  } else {
-    if (price < position.extremePrice) position.extremePrice = price;
-    const fixedTrailingDist = position.extremePrice * (CONFIG.trailingStopPct / 100);
-    const trailingDist = atrTrailingDist ? Math.max(atrTrailingDist, fixedTrailingDist) : fixedTrailingDist;
-    trailingStopPrice = position.extremePrice + trailingDist;
-    stopLossPrice = position.entryPrice + stopLossDist;
-    stopPrice = Math.min(trailingStopPrice, stopLossPrice);
-    var shouldExit = price >= stopPrice;
-  }
-
-  const pnlUSD =
-    position.side === "long"
-      ? (price - position.entryPrice) * position.quantity
-      : (position.entryPrice - price) * position.quantity;
-  const pnlPct = (pnlUSD / position.sizeUSD) * 100;
-
-  console.log(`  ATR(${CONFIG.atrPeriod}): ${atr ? "$" + atr.toFixed(2) : "N/A — using fixed % only"}`);
-  console.log(`  Stop loss:     $${stopLossPrice.toFixed(2)} (${atrStopDist && atrStopDist > fixedStopDist ? "ATR-widened" : "fixed"}, $${stopLossDist.toFixed(2)} from entry)`);
-  console.log(`  Trailing stop: $${trailingStopPrice.toFixed(2)} (${atrTrailingDist && atrTrailingDist > position.entryPrice * (CONFIG.trailingStopPct / 100) ? "ATR-widened" : "fixed"}, from best price $${position.extremePrice.toFixed(2)})`);
-  console.log(`  Unrealized P&L: $${pnlUSD.toFixed(2)} (${pnlPct.toFixed(2)}%)`);
-
-  if (shouldExit) {
-    const reason = position.side === "long"
-      ? (price <= trailingStopPrice && trailingStopPrice > stopLossPrice ? "Trailing stop hit" : "Stop loss hit")
-      : (price >= trailingStopPrice && trailingStopPrice < stopLossPrice ? "Trailing stop hit" : "Stop loss hit");
-    console.log(`  🚫 ${reason} — closing position`);
-    return { shouldExit: true, reason, pnlUSD, pnlPct };
-  }
-
-  console.log("  ✅ Within stop levels — holding position");
-  return { shouldExit: false, pnlUSD, pnlPct };
 }
 
 // ─── Trade Limits ────────────────────────────────────────────────────────────
