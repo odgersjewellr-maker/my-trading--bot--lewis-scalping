@@ -77,7 +77,7 @@ export const CONFIG = {
   timeframe: process.env.TIMEFRAME || "4H",
   portfolioValue: parseFloat(process.env.PORTFOLIO_VALUE_USD || "1000"),
   tradeSizePct: parseFloat(process.env.TRADE_SIZE_PCT || "80") / 100,
-  maxTradeSizeUSD: parseFloat(process.env.MAX_TRADE_SIZE_USD || "100"),
+  maxTradeSizeUSD: parseFloat(process.env.MAX_TRADE_SIZE_USD || "5000"),
   maxTradesPerDay: parseInt(process.env.MAX_TRADES_PER_DAY || "3"),
   paperTrading: process.env.PAPER_TRADING !== "false",
   tradeMode: process.env.TRADE_MODE || "spot",
@@ -732,8 +732,9 @@ async function run() {
   console.log("\n── NKB Signal ───────────────────────────────────────────\n");
 
   const canShort = CONFIG.tradeMode === "futures";
-  // CONFIG.tradeSizePct of current portfolio value, re-evaluated each trade
-  const tradeSize = portfolioValue * CONFIG.tradeSizePct;
+  // CONFIG.tradeSizePct of current portfolio value, re-evaluated each trade,
+  // capped at CONFIG.maxTradeSizeUSD
+  const tradeSize = Math.min(portfolioValue * CONFIG.tradeSizePct, CONFIG.maxTradeSizeUSD);
 
   async function openPosition(side, positionSide, signalNote) {
     const quantity = parseFloat((tradeSize / price).toFixed(6));

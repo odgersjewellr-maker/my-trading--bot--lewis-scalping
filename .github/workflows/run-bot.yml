@@ -34,6 +34,7 @@ jobs:
           TRADE_MODE=futures
           LEVERAGE=1
           TRADE_SIZE_PCT=80
+          MAX_TRADE_SIZE_USD=5000
           PORTFOLIO_VALUE_USD=640
           MAX_TRADES_PER_DAY=0
           SYMBOL=BTCUSDT

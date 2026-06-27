@@ -15,6 +15,7 @@
  *   TRADE_MODE=futures
  *   LEVERAGE=1      — futures only; explicitly set via API, never left to the account default
  *   TRADE_SIZE_PCT=80 — % of current portfolio value risked per trade, recalculated every trade
+ *   MAX_TRADE_SIZE_USD=5000 — hard cap on trade size regardless of TRADE_SIZE_PCT
  *   SYMBOL=BTCUSDT
  *   TIMEFRAME=5m
  *   PORTFOLIO_VALUE_USD=640
@@ -219,7 +220,7 @@ async function executeTrade(signal) {
     return log.join("\n");
   }
 
-  const tradeSize   = portfolioValue * CONFIG.tradeSizePct;
+  const tradeSize   = Math.min(portfolioValue * CONFIG.tradeSizePct, CONFIG.maxTradeSizeUSD);
   const side        = buySignal ? "buy" : "sell";
   const positionSide = buySignal ? "long" : "short";
   const quantity    = parseFloat((tradeSize / price).toFixed(6));
