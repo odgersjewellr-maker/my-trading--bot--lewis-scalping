@@ -199,7 +199,29 @@ const NKB = {
   bandMult:    parseFloat(process.env.NKB_BAND_MULT  || "1.0"),
   bandLen:     parseInt(process.env.NKB_BAND_LEN     || "24"),
   bandSmooth:  parseInt(process.env.NKB_BAND_SMOOTH  || "5"),
+  // gaussian (infinite tail, smoothest/laggiest) | epanechnikov (compact support,
+  // hard cutoff, most reactive) | tricube (compact support, smooth taper — a
+  // middle ground between the other two). See KERNELS below for the math.
+  kernel:      (process.env.NKB_KERNEL || "gaussian").toLowerCase(),
 };
+
+// u = distance-from-current-bar / bandwidth. Gaussian never reaches zero so every
+// bar in the fetched window still has some pull; the other two are zero past u=1,
+// so they only look back roughly one bandwidth's worth of bars.
+const KERNELS = {
+  gaussian: (j, h) => Math.exp(-(j * j) / (2 * h * h)),
+  epanechnikov: (j, h) => {
+    const u = j / h;
+    return Math.abs(u) > 1 ? 0 : 0.75 * (1 - u * u);
+  },
+  tricube: (j, h) => {
+    const u = j / h;
+    return Math.abs(u) > 1 ? 0 : (1 - Math.abs(u) ** 3) ** 3;
+  },
+};
+if (!KERNELS[NKB.kernel]) {
+  throw new Error(`Unknown NKB_KERNEL "${NKB.kernel}" — expected gaussian, epanechnikov, or tricube`);
+}
 
 function calcATR(candles, period = 14) {
   if (candles.length < period + 1) return null;
@@ -275,14 +297,15 @@ function calcNKB(candles) {
     NKB.bandwidth * (NKB.adaptive ? 1 + (f ?? 0) * 200 : 1),
   );
 
-  // Nadaraya-Watson kernel regression (Gaussian) — computed at every bar
+  // Nadaraya-Watson kernel regression — computed at every bar
+  const kernelFn = KERNELS[NKB.kernel];
   const nwRaw = new Array(n);
   for (let i = 0; i < n; i++) {
     const hi = h[i];
     let sumW = 0, sumWC = 0;
     const lookback = Math.min(NKB.length, i + 1);
     for (let j = 0; j < lookback; j++) {
-      const kw = Math.exp(-(j * j) / (2 * hi * hi));
+      const kw = kernelFn(j, hi);
       sumWC += kw * closes[i - j];
       sumW  += kw;
     }
