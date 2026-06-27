@@ -732,9 +732,8 @@ async function run() {
   console.log("\n── NKB Signal ───────────────────────────────────────────\n");
 
   const canShort = CONFIG.tradeMode === "futures";
-  // CONFIG.tradeSizePct of current portfolio value, re-evaluated each trade,
-  // capped at CONFIG.maxTradeSizeUSD
-  const tradeSize = Math.min(portfolioValue * CONFIG.tradeSizePct, CONFIG.maxTradeSizeUSD);
+  // CONFIG.tradeSizePct of current portfolio value, re-evaluated each trade
+  const tradeSize = portfolioValue * CONFIG.tradeSizePct;
 
   async function openPosition(side, positionSide, signalNote) {
     const quantity = parseFloat((tradeSize / price).toFixed(6));

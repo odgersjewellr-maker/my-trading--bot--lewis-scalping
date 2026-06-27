@@ -15,7 +15,6 @@
  *   TRADE_MODE=futures
  *   LEVERAGE=1      — futures only; explicitly set via API, never left to the account default
  *   TRADE_SIZE_PCT=80 — % of current portfolio value risked per trade, recalculated every trade
- *   MAX_TRADE_SIZE_USD=5000 — hard cap on trade size regardless of TRADE_SIZE_PCT
  *   SYMBOL=BTCUSDT
  *   TIMEFRAME=5m
  *   PORTFOLIO_VALUE_USD=640
@@ -220,7 +219,7 @@ async function executeTrade(signal) {
     return log.join("\n");
   }
 
-  const tradeSize   = Math.min(portfolioValue * CONFIG.tradeSizePct, CONFIG.maxTradeSizeUSD);
+  const tradeSize   = portfolioValue * CONFIG.tradeSizePct;
   const side        = buySignal ? "buy" : "sell";
   const positionSide = buySignal ? "long" : "short";
   const quantity    = parseFloat((tradeSize / price).toFixed(6));
@@ -486,7 +485,6 @@ async function buildDashboardHtml() {
     ${balanceHtml}
     <div class="stat"><span>Tracked portfolio value</span><strong>$${portfolioValue.toFixed(2)}</strong></div>
     <div class="stat"><span>Profit on starting capital</span><strong class="${profitUSD >= 0 ? "pos" : "neg"}">${profitUSD >= 0 ? "+" : ""}$${profitUSD.toFixed(2)} (${profitPct >= 0 ? "+" : ""}${profitPct.toFixed(2)}% of $${CONFIG.portfolioValue.toFixed(2)})</strong></div>
-    <div class="stat"><span>Max trade size</span><strong>$${CONFIG.maxTradeSizeUSD.toFixed(2)}</strong></div>
     <div class="stat"><span>Max trades / day</span><strong>${CONFIG.maxTradesPerDay === 0 ? "No limit" : CONFIG.maxTradesPerDay}</strong></div>
     <div class="stat"><span>Trade frequency</span><strong>${stats.tradesPerDay !== null ? `${stats.tradesPerDay.toFixed(2)} / day (${stats.entryCount} opened total)` : "No trades opened yet"}</strong></div>
     <div class="stat"><span>Total P&amp;L (closed trades)</span><strong class="${stats.totalPnlUSD >= 0 ? "pos" : "neg"}">${stats.exitCount > 0 ? `$${stats.totalPnlUSD.toFixed(2)}` : "No closed trades yet"}</strong></div>
