@@ -38,6 +38,11 @@ const confirmModeIdx = process.argv.indexOf("--confirm-mode");
 // "or"  = either 15m or 30m agreeing is enough (default, current live logic).
 // "and" = both 15m AND 30m must agree — fewer, higher-conviction entries.
 const CONFIRM_MODE = confirmModeIdx !== -1 ? process.argv[confirmModeIdx + 1] : "or";
+const convictionIdx = process.argv.indexOf("--conviction");
+// Minimum sigma the 5m close must clear beyond the band edge at the flip
+// bar before the signal counts as an entry — 0 = off (any crossing counts,
+// current default), 0.5 = needs to clear the band by an extra half-sigma.
+const CONVICTION = convictionIdx !== -1 ? parseFloat(process.argv[convictionIdx + 1]) : 0;
 
 const NKB = {
   length: 30,
@@ -185,6 +190,11 @@ function calcNKBStates(candles) {
   const sigmaArr = calcEMASeries(sigmaRawArr, NKB.bandSmooth);
 
   const states = new Array(n).fill(0);
+  // Conviction: how many sigma beyond the *opposite* band the close currently
+  // sits — e.g. strength=0 means just touching the band edge (bandMult), 0.5
+  // means half a sigma further out than that. Used to filter marginal,
+  // barely-crossed-the-line signals from genuine breakouts.
+  const strength = new Array(n).fill(0);
   let lastState = 0;
   for (let i = 0; i < n; i++) {
     if (kernelArr[i] == null || sigmaArr[i] == null) {
@@ -196,8 +206,16 @@ function calcNKBStates(candles) {
     if (closes[i] > upper) lastState = 1;
     else if (closes[i] < lower) lastState = -1;
     states[i] = lastState;
+    if (sigmaArr[i] > 0) {
+      strength[i] =
+        lastState === 1
+          ? (closes[i] - upper) / sigmaArr[i]
+          : lastState === -1
+            ? (lower - closes[i]) / sigmaArr[i]
+            : 0;
+    }
   }
-  return states;
+  return { states, strength };
 }
 
 // Aligns a higher-timeframe state series onto a lower-timeframe candle index:
@@ -220,7 +238,7 @@ function computeStopPrice(dir, entryPrice) {
   return dir === 1 ? entryPrice * (1 - STOP_LOSS_PCT / 100) : entryPrice * (1 + STOP_LOSS_PCT / 100);
 }
 
-function runBacktest(candles5, state5, state15Aligned, state30Aligned) {
+function runBacktest(candles5, state5, state15Aligned, state30Aligned, strength5) {
   const trades = [];
   let position = null; // { dir, entryPrice, entryTime, stopPrice }
   let prevState5 = 0;
@@ -268,7 +286,9 @@ function runBacktest(candles5, state5, state15Aligned, state30Aligned) {
       if (s15 === s5) confirmedBy.push("15m");
       if (s30 === s5) confirmedBy.push("30m");
       const confirmed = CONFIRM_MODE === "and" ? confirmedBy.length === 2 : confirmedBy.length > 0;
-      if (confirmed) {
+      const convictionMet = strength5[i] >= CONVICTION;
+
+      if (confirmed && convictionMet) {
         position = {
           dir: s5,
           entryPrice: bar.close,
@@ -325,14 +345,14 @@ const candles30 = resample(candles1m, 30);
 console.log(`Resampled: 5m=${candles5.length} 15m=${candles15.length} 30m=${candles30.length} bars`);
 console.log(`Kernel: ${KERNEL_NAME}  |  Stop loss: ${STOP_LOSS_PCT}%  |  Exit mode: ${EXIT_MODE}  |  Confirm mode: ${CONFIRM_MODE}\n`);
 
-const state5 = calcNKBStates(candles5);
-const state15 = calcNKBStates(candles15);
-const state30 = calcNKBStates(candles30);
+const { states: state5, strength: strength5 } = calcNKBStates(candles5);
+const { states: state15 } = calcNKBStates(candles15);
+const { states: state30 } = calcNKBStates(candles30);
 
 const state15Aligned = alignStates(candles5, candles15, state15);
 const state30Aligned = alignStates(candles5, candles30, state30);
 
-const trades = runBacktest(candles5, state5, state15Aligned, state30Aligned);
+const trades = runBacktest(candles5, state5, state15Aligned, state30Aligned, strength5);
 const stats = summarize(trades);
 
 // candles1m.length / 1440, not (lastTime - firstTime), since the 5 months
