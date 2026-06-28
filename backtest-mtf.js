@@ -68,13 +68,46 @@ const trailIdx = process.argv.indexOf("--trail-pct");
 // favor as price moves but never loosens, e.g. 0.3 means "stop sits 0.3%
 // behind the best price seen so far," locking in gains as a trend runs.
 const TRAIL_PCT = trailIdx !== -1 ? parseFloat(process.argv[trailIdx + 1]) : 0;
-// --smart-size combines three sizing signals into a per-trade weight
-// (fraction of standard capital risked), and scales a position OUT (not
-// fully closed) the first time one of 15m/30m disagrees with a trade that
-// originally had all three timeframes aligned — full close only follows a
-// second disagreement or the 5m signal itself flipping. Off by default —
-// every trade risks a flat 1.0x weight, matching every prior backtest run.
+// --smart-size combines a per-trade weight (fraction of standard capital
+// risked) with an early de-risk exit. Off by default — every trade risks a
+// flat 1.0x weight and only fully closes on a real flip, matching every
+// prior backtest run.
 const SMART_SIZE = process.argv.includes("--smart-size");
+// Tunable knobs for the smart-size formula, exposed so they can be swept
+// from the CLI instead of edited in source.
+//
+// Two earlier formulas were tried and rejected by backtest before landing on
+// these defaults:
+//   1. Letting weight exceed 1.0 on strong confirmation/conviction/low-vol
+//      ("size up when everything agrees") just added implicit leverage —
+//      return and max drawdown rose together, and the return/drawdown ratio
+//      ended up *worse* than flat 1x sizing (e.g. 54.69%/11.69% vs the flat
+//      baseline's 52.15%/8.49% — ratio 4.68 vs 6.14).
+//   2. A volatility-based multiplier (inverse of ATR-normalized vol vs its
+//      own trailing average) was tested at every tried strength and always
+//      made the return/drawdown ratio worse, never better — so it's wired
+//      in but disabled by default (--size-vol-min/-max both default to 1.0,
+//      a no-op) rather than removed, since the flag is there to sweep.
+// What DID help, confirmed by sweep: (a) sizing down — never up — on weak
+// confirmation/conviction, capped at a 1.0 ceiling, and (b) fully closing
+// (not partially scaling out) the instant a fully-agreed trade sees its
+// first 15m/30m disagreement, rather than waiting for a second disagreement
+// or the 5m flip itself. That combination (defaults below) beat flat sizing
+// on every axis: 52.60% return / 6.96% drawdown / 1.41 profit factor vs the
+// flat baseline's 52.15% / 8.49% / 1.33 — ratio 7.56 vs 6.14.
+function flagFloat(name, def) {
+  const idx = process.argv.indexOf(name);
+  return idx !== -1 ? parseFloat(process.argv[idx + 1]) : def;
+}
+const SIZE_BASE_PARTIAL = flagFloat("--size-base-partial", 0.5); // weight tier when only 1 of 15m/30m agrees
+const SIZE_CONV_COEF = flagFloat("--size-conv-coef", 0.2); // sigma-strength needed to reach full (1.0) weight
+const SIZE_CONV_MIN = flagFloat("--size-conv-min", 0.6);
+const SIZE_CONV_MAX = flagFloat("--size-conv-max", 1.0);
+const SIZE_VOL_MIN = flagFloat("--size-vol-min", 1.0); // disabled by default — see note above
+const SIZE_VOL_MAX = flagFloat("--size-vol-max", 1.0);
+const SIZE_WEIGHT_MIN = flagFloat("--size-weight-min", 0.3);
+const SIZE_WEIGHT_MAX = flagFloat("--size-weight-max", 1.0);
+const SIZE_SCALEOUT_FRAC = flagFloat("--size-scaleout-frac", 1.0); // fraction of weight shed on first disagreement (1.0 = full close)
 
 const NKB = {
   length: 30,
@@ -263,7 +296,7 @@ function calcVolMultiplier(atrNorm, period = 100) {
     if (window.length < 10) continue;
     const avg = window.reduce((a, b) => a + b, 0) / window.length;
     if (avg <= 0) continue;
-    out[i] = Math.min(1.5, Math.max(0.5, avg / atrNorm[i]));
+    out[i] = Math.min(SIZE_VOL_MAX, Math.max(SIZE_VOL_MIN, avg / atrNorm[i]));
   }
   return out;
 }
@@ -298,10 +331,13 @@ function computeTakeProfitPrice(dir, entryPrice) {
 // the flip bar, times the volatility multiplier. Clamped to a sane range so
 // one extreme reading can't blow up position size.
 function computeWeight(confirmedBy, strengthAtFlip, volMult) {
-  const base = confirmedBy.length === 2 ? 1.0 : 0.6;
-  const convictionMult = Math.min(1.5, Math.max(0.7, 1 + strengthAtFlip * 0.3));
+  const base = confirmedBy.length === 2 ? 1.0 : SIZE_BASE_PARTIAL;
+  // Weak signals (low sigma-strength at the flip) shrink size toward
+  // SIZE_CONV_MIN; strong signals (>= SIZE_CONV_COEF sigma) reach full (1.0)
+  // weight — but never above it, so conviction can only de-risk a trade.
+  const convictionMult = Math.min(SIZE_CONV_MAX, Math.max(SIZE_CONV_MIN, strengthAtFlip / SIZE_CONV_COEF));
   const vol = volMult ?? 1;
-  return Math.min(2.0, Math.max(0.3, base * convictionMult * vol));
+  return Math.min(SIZE_WEIGHT_MAX, Math.max(SIZE_WEIGHT_MIN, base * convictionMult * vol));
 }
 
 function runBacktest(candles5, state5, state15Aligned, state30Aligned, strength5, trendAligned, volMult5) {
@@ -356,7 +392,7 @@ function runBacktest(candles5, state5, state15Aligned, state30Aligned, strength5
           position.dir === 1
             ? (exitPrice - position.entryPrice) / position.entryPrice
             : (position.entryPrice - exitPrice) / position.entryPrice;
-        const scaleWeight = position.weight / 2;
+        const scaleWeight = position.weight * SIZE_SCALEOUT_FRAC;
         trades.push({
           dir: position.dir,
           entryTime: position.entryTime,
