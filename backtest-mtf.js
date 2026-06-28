@@ -13,8 +13,14 @@
 // through 2025, so each row's timestamp is normalized by digit count below
 // rather than assuming one fixed unit across all files.
 //
-// Usage: node backtest-mtf.js [kernel] [stopLossPct]
+// Usage: node backtest-mtf.js [kernel] [stopLossPct] [--trace N]
 //   node backtest-mtf.js tricube 0.3
+//   node backtest-mtf.js tricube 0.3 --trace 10   (print first 10 trades'
+//                                                   entry/exit reasoning so
+//                                                   the confirmation/exit
+//                                                   logic itself can be
+//                                                   sanity-checked, not just
+//                                                   the aggregate P&L)
 
 import { readFileSync, readdirSync } from "fs";
 import path from "path";
@@ -22,6 +28,8 @@ import path from "path";
 const DATA_DIR = "backtest-data";
 const KERNEL_NAME = (process.argv[2] || "tricube").toLowerCase();
 const STOP_LOSS_PCT = parseFloat(process.argv[3] || "0.3");
+const traceIdx = process.argv.indexOf("--trace");
+const TRACE_N = traceIdx !== -1 ? parseInt(process.argv[traceIdx + 1] || "10") : 0;
 
 const NKB = {
   length: 30,
@@ -219,12 +227,12 @@ function runBacktest(candles5, state5, state15Aligned, state30Aligned) {
     if (position) {
       const stopHit =
         position.dir === 1 ? bar.low <= position.stopPrice : bar.high >= position.stopPrice;
-      const flippedAgainst =
-        (s5 !== 0 && s5 !== position.dir) ||
-        (s15 !== 0 && s15 !== position.dir) ||
-        (s30 !== 0 && s30 !== position.dir);
+      const flippedBy = [];
+      if (s5 !== 0 && s5 !== position.dir) flippedBy.push("5m");
+      if (s15 !== 0 && s15 !== position.dir) flippedBy.push("15m");
+      if (s30 !== 0 && s30 !== position.dir) flippedBy.push("30m");
 
-      if (stopHit || flippedAgainst) {
+      if (stopHit || flippedBy.length > 0) {
         const exitPrice = stopHit ? position.stopPrice : bar.close;
         const pct =
           position.dir === 1
@@ -238,18 +246,23 @@ function runBacktest(candles5, state5, state15Aligned, state30Aligned) {
           exitPrice,
           pct,
           reason: stopHit ? "stop" : "flip",
+          confirmedBy: position.confirmedBy,
+          flippedBy: stopHit ? [] : flippedBy,
         });
         position = null;
       }
     }
 
     if (!position && s5 !== prevState5 && s5 !== 0) {
-      const confirmed = s15 === s5 || s30 === s5;
-      if (confirmed) {
+      const confirmedBy = [];
+      if (s15 === s5) confirmedBy.push("15m");
+      if (s30 === s5) confirmedBy.push("30m");
+      if (confirmedBy.length > 0) {
         position = {
           dir: s5,
           entryPrice: bar.close,
           entryTime: bar.time,
+          confirmedBy,
           stopPrice: computeStopPrice(s5, bar.close),
         };
       }
@@ -323,3 +336,19 @@ if (stats.n > 0) {
   console.log(`Exits via flip    : ${stats.flipExits}`);
 }
 console.log("──────────────────────────────────────────────────────────\n");
+
+if (TRACE_N > 0) {
+  console.log(`── Logic trace: first ${Math.min(TRACE_N, trades.length)} trades ──────────────\n`);
+  for (const t of trades.slice(0, TRACE_N)) {
+    const dirLabel = t.dir === 1 ? "LONG" : "SHORT";
+    console.log(
+      `${dirLabel.padEnd(5)} entry ${new Date(t.entryTime).toISOString()} @ ${t.entryPrice.toFixed(2)}` +
+      ` | confirmed by: ${t.confirmedBy.join(", ")}`,
+    );
+    console.log(
+      `      exit  ${new Date(t.exitTime).toISOString()} @ ${t.exitPrice.toFixed(2)}` +
+      ` | reason: ${t.reason}${t.flippedBy.length ? ` (${t.flippedBy.join(", ")} flipped against)` : ""}` +
+      ` | pnl: ${(t.pct * 100).toFixed(3)}%\n`,
+    );
+  }
+}
