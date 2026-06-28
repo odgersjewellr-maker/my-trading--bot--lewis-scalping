@@ -43,6 +43,12 @@ const convictionIdx = process.argv.indexOf("--conviction");
 // bar before the signal counts as an entry — 0 = off (any crossing counts,
 // current default), 0.5 = needs to clear the band by an extra half-sigma.
 const CONVICTION = convictionIdx !== -1 ? parseFloat(process.argv[convictionIdx + 1]) : 0;
+const trendTfIdx = process.argv.indexOf("--trend-tf");
+// Higher-timeframe (minutes) trend filter — 0 = off (default). When set, an
+// entry additionally requires this timeframe's NKB state to already agree
+// with the 5m signal's direction (a *mandatory* gate, separate from the
+// 15m/30m OR/AND confirmation, meant to block counter-trend noise).
+const TREND_TF = trendTfIdx !== -1 ? parseInt(process.argv[trendTfIdx + 1]) : 0;
 
 const NKB = {
   length: 30,
@@ -238,7 +244,7 @@ function computeStopPrice(dir, entryPrice) {
   return dir === 1 ? entryPrice * (1 - STOP_LOSS_PCT / 100) : entryPrice * (1 + STOP_LOSS_PCT / 100);
 }
 
-function runBacktest(candles5, state5, state15Aligned, state30Aligned, strength5) {
+function runBacktest(candles5, state5, state15Aligned, state30Aligned, strength5, trendAligned) {
   const trades = [];
   let position = null; // { dir, entryPrice, entryTime, stopPrice }
   let prevState5 = 0;
@@ -287,8 +293,9 @@ function runBacktest(candles5, state5, state15Aligned, state30Aligned, strength5
       if (s30 === s5) confirmedBy.push("30m");
       const confirmed = CONFIRM_MODE === "and" ? confirmedBy.length === 2 : confirmedBy.length > 0;
       const convictionMet = strength5[i] >= CONVICTION;
+      const trendOk = TREND_TF === 0 || (trendAligned[i] !== 0 && trendAligned[i] === s5);
 
-      if (confirmed && convictionMet) {
+      if (confirmed && convictionMet && trendOk) {
         position = {
           dir: s5,
           entryPrice: bar.close,
@@ -343,7 +350,10 @@ const candles5 = resample(candles1m, 5);
 const candles15 = resample(candles1m, 15);
 const candles30 = resample(candles1m, 30);
 console.log(`Resampled: 5m=${candles5.length} 15m=${candles15.length} 30m=${candles30.length} bars`);
-console.log(`Kernel: ${KERNEL_NAME}  |  Stop loss: ${STOP_LOSS_PCT}%  |  Exit mode: ${EXIT_MODE}  |  Confirm mode: ${CONFIRM_MODE}\n`);
+console.log(
+  `Kernel: ${KERNEL_NAME}  |  Stop loss: ${STOP_LOSS_PCT}%  |  Exit mode: ${EXIT_MODE}  |  Confirm mode: ${CONFIRM_MODE}` +
+  (TREND_TF > 0 ? `  |  Trend filter: ${TREND_TF}m` : "") + "\n",
+);
 
 const { states: state5, strength: strength5 } = calcNKBStates(candles5);
 const { states: state15 } = calcNKBStates(candles15);
@@ -352,7 +362,14 @@ const { states: state30 } = calcNKBStates(candles30);
 const state15Aligned = alignStates(candles5, candles15, state15);
 const state30Aligned = alignStates(candles5, candles30, state30);
 
-const trades = runBacktest(candles5, state5, state15Aligned, state30Aligned, strength5);
+let trendAligned = null;
+if (TREND_TF > 0) {
+  const candlesTrend = resample(candles1m, TREND_TF);
+  const { states: stateTrend } = calcNKBStates(candlesTrend);
+  trendAligned = alignStates(candles5, candlesTrend, stateTrend);
+}
+
+const trades = runBacktest(candles5, state5, state15Aligned, state30Aligned, strength5, trendAligned);
 const stats = summarize(trades);
 
 // candles1m.length / 1440, not (lastTime - firstTime), since the 5 months
