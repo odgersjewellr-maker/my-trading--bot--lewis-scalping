@@ -13,7 +13,7 @@
 // through 2025, so each row's timestamp is normalized by digit count below
 // rather than assuming one fixed unit across all files.
 //
-// Usage: node backtest-mtf.js [kernel] [stopLossPct] [--trace N]
+// Usage: node backtest-mtf.js [kernel] [stopLossPct] [--trace N] [--smart-size]
 //   node backtest-mtf.js tricube 0.3
 //   node backtest-mtf.js tricube 0.3 --trace 10   (print first 10 trades'
 //                                                   entry/exit reasoning so
@@ -21,6 +21,14 @@
 //                                                   logic itself can be
 //                                                   sanity-checked, not just
 //                                                   the aggregate P&L)
+//   node backtest-mtf.js tricube 0.3 --smart-size  (dynamic position weight
+//                                                    from confirmation tier +
+//                                                    conviction + volatility,
+//                                                    plus a 50% scale-out the
+//                                                    first time a fully-agreed
+//                                                    trade sees one of 15m/30m
+//                                                    disagree, before any full
+//                                                    close)
 
 import { readFileSync, readdirSync } from "fs";
 import path from "path";
@@ -60,6 +68,13 @@ const trailIdx = process.argv.indexOf("--trail-pct");
 // favor as price moves but never loosens, e.g. 0.3 means "stop sits 0.3%
 // behind the best price seen so far," locking in gains as a trend runs.
 const TRAIL_PCT = trailIdx !== -1 ? parseFloat(process.argv[trailIdx + 1]) : 0;
+// --smart-size combines three sizing signals into a per-trade weight
+// (fraction of standard capital risked), and scales a position OUT (not
+// fully closed) the first time one of 15m/30m disagrees with a trade that
+// originally had all three timeframes aligned — full close only follows a
+// second disagreement or the 5m signal itself flipping. Off by default —
+// every trade risks a flat 1.0x weight, matching every prior backtest run.
+const SMART_SIZE = process.argv.includes("--smart-size");
 
 const NKB = {
   length: 30,
@@ -232,7 +247,25 @@ function calcNKBStates(candles) {
             : 0;
     }
   }
-  return { states, strength };
+  return { states, strength, atrNorm };
+}
+
+// Sizing multiplier from recent ATR-normalized volatility, relative to its
+// own trailing average: below-average vol -> bigger size (cap 1.5x),
+// above-average vol -> smaller size (floor 0.5x). A simple vol-targeting
+// proxy, not a calibrated risk model.
+function calcVolMultiplier(atrNorm, period = 100) {
+  const out = new Array(atrNorm.length).fill(1);
+  for (let i = 0; i < atrNorm.length; i++) {
+    if (atrNorm[i] == null) continue;
+    const start = Math.max(0, i - period + 1);
+    const window = atrNorm.slice(start, i + 1).filter((v) => v != null);
+    if (window.length < 10) continue;
+    const avg = window.reduce((a, b) => a + b, 0) / window.length;
+    if (avg <= 0) continue;
+    out[i] = Math.min(1.5, Math.max(0.5, avg / atrNorm[i]));
+  }
+  return out;
 }
 
 // Aligns a higher-timeframe state series onto a lower-timeframe candle index:
@@ -259,9 +292,21 @@ function computeTakeProfitPrice(dir, entryPrice) {
   return dir === 1 ? entryPrice * (1 + TAKE_PROFIT_PCT / 100) : entryPrice * (1 - TAKE_PROFIT_PCT / 100);
 }
 
-function runBacktest(candles5, state5, state15Aligned, state30Aligned, strength5, trendAligned) {
+// Composite sizing weight at entry, gated entirely behind SMART_SIZE: base
+// tier from confirmation strength (both 15m+30m agree -> full size, only one
+// -> reduced), times a conviction multiplier from the 5m strength reading at
+// the flip bar, times the volatility multiplier. Clamped to a sane range so
+// one extreme reading can't blow up position size.
+function computeWeight(confirmedBy, strengthAtFlip, volMult) {
+  const base = confirmedBy.length === 2 ? 1.0 : 0.6;
+  const convictionMult = Math.min(1.5, Math.max(0.7, 1 + strengthAtFlip * 0.3));
+  const vol = volMult ?? 1;
+  return Math.min(2.0, Math.max(0.3, base * convictionMult * vol));
+}
+
+function runBacktest(candles5, state5, state15Aligned, state30Aligned, strength5, trendAligned, volMult5) {
   const trades = [];
-  let position = null; // { dir, entryPrice, entryTime, stopPrice }
+  let position = null; // { dir, entryPrice, entryTime, stopPrice, weight, fullyAgreed, scaledOut }
   let prevState5 = 0;
   const warmup = NKB.length + NKB.bandLen + NKB.bandSmooth; // let indicators stabilize
 
@@ -299,7 +344,34 @@ function runBacktest(candles5, state5, state15Aligned, state30Aligned, strength5
         if (s30 !== 0 && s30 !== position.dir) flippedBy.push("30m");
       }
 
-      if (stopHit || tpHit || flippedBy.length > 0) {
+      const isHardExit = stopHit || tpHit || flippedBy.includes("5m");
+      const softFlipCount = flippedBy.filter((f) => f !== "5m").length;
+
+      if (SMART_SIZE && position.fullyAgreed && !position.scaledOut && !isHardExit && softFlipCount === 1) {
+        // First disagreement on a fully-agreed trade: scale OUT half the
+        // remaining weight at the current mark instead of closing fully —
+        // the original full-confirmation thesis isn't dead yet, just weaker.
+        const exitPrice = bar.close;
+        const pct =
+          position.dir === 1
+            ? (exitPrice - position.entryPrice) / position.entryPrice
+            : (position.entryPrice - exitPrice) / position.entryPrice;
+        const scaleWeight = position.weight / 2;
+        trades.push({
+          dir: position.dir,
+          entryTime: position.entryTime,
+          exitTime: bar.time,
+          entryPrice: position.entryPrice,
+          exitPrice,
+          pct,
+          weight: scaleWeight,
+          reason: "scale-out",
+          confirmedBy: position.confirmedBy,
+          flippedBy,
+        });
+        position.weight -= scaleWeight;
+        position.scaledOut = true;
+      } else if (stopHit || tpHit || flippedBy.length > 0) {
         const exitPrice = stopHit ? position.stopPrice : tpHit ? position.tpPrice : bar.close;
         const pct =
           position.dir === 1
@@ -312,6 +384,7 @@ function runBacktest(candles5, state5, state15Aligned, state30Aligned, strength5
           entryPrice: position.entryPrice,
           exitPrice,
           pct,
+          weight: position.weight,
           reason: stopHit ? "stop" : tpHit ? "take-profit" : "flip",
           confirmedBy: position.confirmedBy,
           flippedBy: stopHit || tpHit ? [] : flippedBy,
@@ -336,6 +409,9 @@ function runBacktest(candles5, state5, state15Aligned, state30Aligned, strength5
           confirmedBy,
           stopPrice: computeStopPrice(s5, bar.close),
           tpPrice: TAKE_PROFIT_PCT > 0 ? computeTakeProfitPrice(s5, bar.close) : null,
+          weight: SMART_SIZE ? computeWeight(confirmedBy, strength5[i], volMult5 ? volMult5[i] : 1) : 1,
+          fullyAgreed: confirmedBy.length === 2,
+          scaledOut: false,
         };
       }
     }
@@ -347,15 +423,18 @@ function runBacktest(candles5, state5, state15Aligned, state30Aligned, strength5
 function summarize(trades) {
   const n = trades.length;
   if (n === 0) return { n: 0 };
+  // weight defaults to 1 so every pre-smart-sizing trade record (and every
+  // run with --smart-size absent) compounds exactly as before.
+  const w = (t) => t.weight ?? 1;
   const wins = trades.filter((t) => t.pct > 0);
   const losses = trades.filter((t) => t.pct <= 0);
-  const totalReturn = trades.reduce((acc, t) => acc * (1 + t.pct), 1) - 1;
-  const grossWin = wins.reduce((s, t) => s + t.pct, 0);
-  const grossLoss = Math.abs(losses.reduce((s, t) => s + t.pct, 0));
+  const totalReturn = trades.reduce((acc, t) => acc * (1 + t.pct * w(t)), 1) - 1;
+  const grossWin = wins.reduce((s, t) => s + t.pct * w(t), 0);
+  const grossLoss = Math.abs(losses.reduce((s, t) => s + t.pct * w(t), 0));
 
   let equity = 1, peak = 1, maxDD = 0;
   for (const t of trades) {
-    equity *= 1 + t.pct;
+    equity *= 1 + t.pct * w(t);
     peak = Math.max(peak, equity);
     maxDD = Math.max(maxDD, (peak - equity) / peak);
   }
@@ -372,6 +451,7 @@ function summarize(trades) {
     stopExits: trades.filter((t) => t.reason === "stop").length,
     flipExits: trades.filter((t) => t.reason === "flip").length,
     tpExits: trades.filter((t) => t.reason === "take-profit").length,
+    scaleOutExits: trades.filter((t) => t.reason === "scale-out").length,
   };
 }
 
@@ -389,15 +469,17 @@ console.log(
   `Kernel: ${KERNEL_NAME}  |  Stop loss: ${STOP_LOSS_PCT}%  |  Exit mode: ${EXIT_MODE}  |  Confirm mode: ${CONFIRM_MODE}` +
   (TREND_TF > 0 ? `  |  Trend filter: ${TREND_TF}m` : "") +
   (TAKE_PROFIT_PCT > 0 ? `  |  Take profit: ${TAKE_PROFIT_PCT}%` : "") +
-  (TRAIL_PCT > 0 ? `  |  Trailing stop: ${TRAIL_PCT}%` : "") + "\n",
+  (TRAIL_PCT > 0 ? `  |  Trailing stop: ${TRAIL_PCT}%` : "") +
+  (SMART_SIZE ? `  |  Smart sizing: on` : "") + "\n",
 );
 
-const { states: state5, strength: strength5 } = calcNKBStates(candles5);
+const { states: state5, strength: strength5, atrNorm: atrNorm5 } = calcNKBStates(candles5);
 const { states: state15 } = calcNKBStates(candles15);
 const { states: state30 } = calcNKBStates(candles30);
 
 const state15Aligned = alignStates(candles5, candles15, state15);
 const state30Aligned = alignStates(candles5, candles30, state30);
+const volMult5 = SMART_SIZE ? calcVolMultiplier(atrNorm5) : null;
 
 let trendAligned = null;
 if (TREND_TF > 0) {
@@ -406,7 +488,7 @@ if (TREND_TF > 0) {
   trendAligned = alignStates(candles5, candlesTrend, stateTrend);
 }
 
-const trades = runBacktest(candles5, state5, state15Aligned, state30Aligned, strength5, trendAligned);
+const trades = runBacktest(candles5, state5, state15Aligned, state30Aligned, strength5, trendAligned, volMult5);
 const stats = summarize(trades);
 
 // candles1m.length / 1440, not (lastTime - firstTime), since the 5 months
@@ -425,6 +507,7 @@ if (stats.n > 0) {
   console.log(`Exits via stop    : ${stats.stopExits}`);
   console.log(`Exits via flip    : ${stats.flipExits}`);
   console.log(`Exits via TP      : ${stats.tpExits}`);
+  if (SMART_SIZE) console.log(`Scale-out exits   : ${stats.scaleOutExits}`);
 }
 console.log("──────────────────────────────────────────────────────────\n");
 
