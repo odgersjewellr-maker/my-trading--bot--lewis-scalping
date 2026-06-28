@@ -54,6 +54,12 @@ const takeProfitIdx = process.argv.indexOf("--take-profit");
 // a flip/exit signal same as losers). When set, locks in the win the
 // instant price reaches +TP%/-TP% from entry, regardless of NKB state.
 const TAKE_PROFIT_PCT = takeProfitIdx !== -1 ? parseFloat(process.argv[takeProfitIdx + 1]) : 0;
+const trailIdx = process.argv.indexOf("--trail-pct");
+// Trailing stop % behind the favorable peak/trough since entry — 0 = off
+// (default, fixed stop only). Once set, the stop ratchets in the trade's
+// favor as price moves but never loosens, e.g. 0.3 means "stop sits 0.3%
+// behind the best price seen so far," locking in gains as a trend runs.
+const TRAIL_PCT = trailIdx !== -1 ? parseFloat(process.argv[trailIdx + 1]) : 0;
 
 const NKB = {
   length: 30,
@@ -266,6 +272,18 @@ function runBacktest(candles5, state5, state15Aligned, state30Aligned, strength5
     const s30 = state30Aligned[i];
 
     if (position) {
+      // Ratchet the stop toward the favorable extreme seen this bar — never
+      // loosens. Using the same bar's high/low to both tighten the trail and
+      // then test for a stop-out is a known bar-based-backtest approximation
+      // (a real trailing stop updates continuously intrabar); it can look
+      // slightly optimistic on bars with a wide range in the trade's favor.
+      if (TRAIL_PCT > 0) {
+        position.stopPrice =
+          position.dir === 1
+            ? Math.max(position.stopPrice, bar.high * (1 - TRAIL_PCT / 100))
+            : Math.min(position.stopPrice, bar.low * (1 + TRAIL_PCT / 100));
+      }
+
       // Conservative ordering: if a bar's range covers both the stop and the
       // take-profit, assume the stop hit first (can't know intrabar path
       // from OHLC alone, so don't credit the best-case outcome).
@@ -370,7 +388,8 @@ console.log(`Resampled: 5m=${candles5.length} 15m=${candles15.length} 30m=${cand
 console.log(
   `Kernel: ${KERNEL_NAME}  |  Stop loss: ${STOP_LOSS_PCT}%  |  Exit mode: ${EXIT_MODE}  |  Confirm mode: ${CONFIRM_MODE}` +
   (TREND_TF > 0 ? `  |  Trend filter: ${TREND_TF}m` : "") +
-  (TAKE_PROFIT_PCT > 0 ? `  |  Take profit: ${TAKE_PROFIT_PCT}%` : "") + "\n",
+  (TAKE_PROFIT_PCT > 0 ? `  |  Take profit: ${TAKE_PROFIT_PCT}%` : "") +
+  (TRAIL_PCT > 0 ? `  |  Trailing stop: ${TRAIL_PCT}%` : "") + "\n",
 );
 
 const { states: state5, strength: strength5 } = calcNKBStates(candles5);
