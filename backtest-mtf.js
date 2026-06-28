@@ -49,6 +49,11 @@ const trendTfIdx = process.argv.indexOf("--trend-tf");
 // with the 5m signal's direction (a *mandatory* gate, separate from the
 // 15m/30m OR/AND confirmation, meant to block counter-trend noise).
 const TREND_TF = trendTfIdx !== -1 ? parseInt(process.argv[trendTfIdx + 1]) : 0;
+const takeProfitIdx = process.argv.indexOf("--take-profit");
+// Fixed take-profit % from entry — 0 = off (default, winners only close on
+// a flip/exit signal same as losers). When set, locks in the win the
+// instant price reaches +TP%/-TP% from entry, regardless of NKB state.
+const TAKE_PROFIT_PCT = takeProfitIdx !== -1 ? parseFloat(process.argv[takeProfitIdx + 1]) : 0;
 
 const NKB = {
   length: 30,
@@ -244,6 +249,10 @@ function computeStopPrice(dir, entryPrice) {
   return dir === 1 ? entryPrice * (1 - STOP_LOSS_PCT / 100) : entryPrice * (1 + STOP_LOSS_PCT / 100);
 }
 
+function computeTakeProfitPrice(dir, entryPrice) {
+  return dir === 1 ? entryPrice * (1 + TAKE_PROFIT_PCT / 100) : entryPrice * (1 - TAKE_PROFIT_PCT / 100);
+}
+
 function runBacktest(candles5, state5, state15Aligned, state30Aligned, strength5, trendAligned) {
   const trades = [];
   let position = null; // { dir, entryPrice, entryTime, stopPrice }
@@ -257,8 +266,14 @@ function runBacktest(candles5, state5, state15Aligned, state30Aligned, strength5
     const s30 = state30Aligned[i];
 
     if (position) {
+      // Conservative ordering: if a bar's range covers both the stop and the
+      // take-profit, assume the stop hit first (can't know intrabar path
+      // from OHLC alone, so don't credit the best-case outcome).
       const stopHit =
         position.dir === 1 ? bar.low <= position.stopPrice : bar.high >= position.stopPrice;
+      const tpHit =
+        TAKE_PROFIT_PCT > 0 && !stopHit &&
+        (position.dir === 1 ? bar.high >= position.tpPrice : bar.low <= position.tpPrice);
       const flippedBy = [];
       if (s5 !== 0 && s5 !== position.dir) flippedBy.push("5m");
       if (EXIT_MODE === "any") {
@@ -266,8 +281,8 @@ function runBacktest(candles5, state5, state15Aligned, state30Aligned, strength5
         if (s30 !== 0 && s30 !== position.dir) flippedBy.push("30m");
       }
 
-      if (stopHit || flippedBy.length > 0) {
-        const exitPrice = stopHit ? position.stopPrice : bar.close;
+      if (stopHit || tpHit || flippedBy.length > 0) {
+        const exitPrice = stopHit ? position.stopPrice : tpHit ? position.tpPrice : bar.close;
         const pct =
           position.dir === 1
             ? (exitPrice - position.entryPrice) / position.entryPrice
@@ -279,9 +294,9 @@ function runBacktest(candles5, state5, state15Aligned, state30Aligned, strength5
           entryPrice: position.entryPrice,
           exitPrice,
           pct,
-          reason: stopHit ? "stop" : "flip",
+          reason: stopHit ? "stop" : tpHit ? "take-profit" : "flip",
           confirmedBy: position.confirmedBy,
-          flippedBy: stopHit ? [] : flippedBy,
+          flippedBy: stopHit || tpHit ? [] : flippedBy,
         });
         position = null;
       }
@@ -302,6 +317,7 @@ function runBacktest(candles5, state5, state15Aligned, state30Aligned, strength5
           entryTime: bar.time,
           confirmedBy,
           stopPrice: computeStopPrice(s5, bar.close),
+          tpPrice: TAKE_PROFIT_PCT > 0 ? computeTakeProfitPrice(s5, bar.close) : null,
         };
       }
     }
@@ -337,6 +353,7 @@ function summarize(trades) {
     maxDrawdownPct: maxDD * 100,
     stopExits: trades.filter((t) => t.reason === "stop").length,
     flipExits: trades.filter((t) => t.reason === "flip").length,
+    tpExits: trades.filter((t) => t.reason === "take-profit").length,
   };
 }
 
@@ -352,7 +369,8 @@ const candles30 = resample(candles1m, 30);
 console.log(`Resampled: 5m=${candles5.length} 15m=${candles15.length} 30m=${candles30.length} bars`);
 console.log(
   `Kernel: ${KERNEL_NAME}  |  Stop loss: ${STOP_LOSS_PCT}%  |  Exit mode: ${EXIT_MODE}  |  Confirm mode: ${CONFIRM_MODE}` +
-  (TREND_TF > 0 ? `  |  Trend filter: ${TREND_TF}m` : "") + "\n",
+  (TREND_TF > 0 ? `  |  Trend filter: ${TREND_TF}m` : "") +
+  (TAKE_PROFIT_PCT > 0 ? `  |  Take profit: ${TAKE_PROFIT_PCT}%` : "") + "\n",
 );
 
 const { states: state5, strength: strength5 } = calcNKBStates(candles5);
@@ -387,6 +405,7 @@ if (stats.n > 0) {
   console.log(`Max drawdown      : ${stats.maxDrawdownPct.toFixed(2)}%`);
   console.log(`Exits via stop    : ${stats.stopExits}`);
   console.log(`Exits via flip    : ${stats.flipExits}`);
+  console.log(`Exits via TP      : ${stats.tpExits}`);
 }
 console.log("──────────────────────────────────────────────────────────\n");
 
