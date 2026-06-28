@@ -30,6 +30,14 @@ const KERNEL_NAME = (process.argv[2] || "tricube").toLowerCase();
 const STOP_LOSS_PCT = parseFloat(process.argv[3] || "0.3");
 const traceIdx = process.argv.indexOf("--trace");
 const TRACE_N = traceIdx !== -1 ? parseInt(process.argv[traceIdx + 1] || "10") : 0;
+const exitModeIdx = process.argv.indexOf("--exit-mode");
+// "any" = exit when ANY of 5m/15m/30m flips against the position (default).
+// "5m"  = exit only when the 5m signal itself flips (15m/30m flips ignored).
+const EXIT_MODE = exitModeIdx !== -1 ? process.argv[exitModeIdx + 1] : "any";
+const confirmModeIdx = process.argv.indexOf("--confirm-mode");
+// "or"  = either 15m or 30m agreeing is enough (default, current live logic).
+// "and" = both 15m AND 30m must agree — fewer, higher-conviction entries.
+const CONFIRM_MODE = confirmModeIdx !== -1 ? process.argv[confirmModeIdx + 1] : "or";
 
 const NKB = {
   length: 30,
@@ -229,8 +237,10 @@ function runBacktest(candles5, state5, state15Aligned, state30Aligned) {
         position.dir === 1 ? bar.low <= position.stopPrice : bar.high >= position.stopPrice;
       const flippedBy = [];
       if (s5 !== 0 && s5 !== position.dir) flippedBy.push("5m");
-      if (s15 !== 0 && s15 !== position.dir) flippedBy.push("15m");
-      if (s30 !== 0 && s30 !== position.dir) flippedBy.push("30m");
+      if (EXIT_MODE === "any") {
+        if (s15 !== 0 && s15 !== position.dir) flippedBy.push("15m");
+        if (s30 !== 0 && s30 !== position.dir) flippedBy.push("30m");
+      }
 
       if (stopHit || flippedBy.length > 0) {
         const exitPrice = stopHit ? position.stopPrice : bar.close;
@@ -257,7 +267,8 @@ function runBacktest(candles5, state5, state15Aligned, state30Aligned) {
       const confirmedBy = [];
       if (s15 === s5) confirmedBy.push("15m");
       if (s30 === s5) confirmedBy.push("30m");
-      if (confirmedBy.length > 0) {
+      const confirmed = CONFIRM_MODE === "and" ? confirmedBy.length === 2 : confirmedBy.length > 0;
+      if (confirmed) {
         position = {
           dir: s5,
           entryPrice: bar.close,
@@ -312,7 +323,7 @@ const candles5 = resample(candles1m, 5);
 const candles15 = resample(candles1m, 15);
 const candles30 = resample(candles1m, 30);
 console.log(`Resampled: 5m=${candles5.length} 15m=${candles15.length} 30m=${candles30.length} bars`);
-console.log(`Kernel: ${KERNEL_NAME}  |  Stop loss: ${STOP_LOSS_PCT}%\n`);
+console.log(`Kernel: ${KERNEL_NAME}  |  Stop loss: ${STOP_LOSS_PCT}%  |  Exit mode: ${EXIT_MODE}  |  Confirm mode: ${CONFIRM_MODE}\n`);
 
 const state5 = calcNKBStates(candles5);
 const state15 = calcNKBStates(candles15);
@@ -324,8 +335,13 @@ const state30Aligned = alignStates(candles5, candles30, state30);
 const trades = runBacktest(candles5, state5, state15Aligned, state30Aligned);
 const stats = summarize(trades);
 
+// candles1m.length / 1440, not (lastTime - firstTime), since the 5 months
+// are non-contiguous — using the calendar span would count the gap months
+// between them as "trading days" and understate trades/day.
+const days = candles1m.length / 1440;
+
 console.log("── Multi-timeframe NKB confirmation backtest ───────────────");
-console.log(`Trades            : ${stats.n}`);
+console.log(`Trades            : ${stats.n}  (≈${(stats.n / days).toFixed(1)}/day over ${days.toFixed(0)} days)`);
 if (stats.n > 0) {
   console.log(`Win rate          : ${stats.winRate.toFixed(1)}% (${stats.wins}W / ${stats.losses}L)`);
   console.log(`Total return      : ${stats.totalReturnPct.toFixed(2)}% (compounded, no leverage/fees)`);
