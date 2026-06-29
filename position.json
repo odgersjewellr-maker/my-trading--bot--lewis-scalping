@@ -1,1 +1,9 @@
-null
+{
+  "side": "short",
+  "entryPrice": 59935.92,
+  "quantity": 0.008732,
+  "stopLossPrice": 60115.727759999994,
+  "sizeUSD": 523.3487363840006,
+  "openedAt": "2026-06-29T09:52:08.070Z",
+  "orderId": "PAPER-1782726728070"
+}
