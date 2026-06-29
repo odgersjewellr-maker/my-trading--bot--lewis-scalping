@@ -4732,6 +4732,21 @@
       "orderPlaced": true,
       "orderId": "PAPER-1782706026625",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-06-29T04:18:03.489Z",
+      "type": "exit",
+      "symbol": "BTCUSDT",
+      "side": "buy",
+      "quantity": 0.008733,
+      "price": 59960,
+      "sizeUSD": 523.4328442640007,
+      "pnlUSD": -0.1991124000000254,
+      "pnlPct": -0.03803972222644865,
+      "reason": "NKB webhook reversal",
+      "orderPlaced": true,
+      "orderId": "PAPER-1782706683489",
+      "paperTrading": true
     }
   ]
 }
