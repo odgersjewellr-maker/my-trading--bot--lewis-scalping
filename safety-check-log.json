@@ -5307,6 +5307,19 @@
       "orderPlaced": true,
       "orderId": "PAPER-1782724323519",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-06-29T09:12:07.060Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "side": "buy",
+      "quantity": 0.008753,
+      "price": 59893.29,
+      "sizeUSD": 524.2637169520007,
+      "portfolioValue": 655.3296461900007,
+      "orderPlaced": true,
+      "orderId": "PAPER-1782724327060",
+      "paperTrading": true
     }
   ]
 }
