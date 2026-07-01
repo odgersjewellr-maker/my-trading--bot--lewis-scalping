@@ -42,6 +42,7 @@ jobs:
           NKB_BAND_MULT=3.0
           NKB_BANDWIDTH=6.0
           NKB_ATR_STOP_MULT=1.0
+          RISK_PCT=5
           PAPER_TRADING=true
           EOF
 

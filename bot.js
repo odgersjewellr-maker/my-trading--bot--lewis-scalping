@@ -77,6 +77,7 @@ export const CONFIG = {
   timeframe: process.env.TIMEFRAME || "4H",
   portfolioValue: parseFloat(process.env.PORTFOLIO_VALUE_USD || "1000"),
   tradeSizePct: parseFloat(process.env.TRADE_SIZE_PCT || "80") / 100,
+  riskPct: parseFloat(process.env.RISK_PCT || "5") / 100, // % of portfolio to risk per trade (stop-loss basis)
   maxTradeSizeUSD: parseFloat(process.env.MAX_TRADE_SIZE_USD || "5000"),
   maxTradesPerDay: parseInt(process.env.MAX_TRADES_PER_DAY || "3"),
   paperTrading: process.env.PAPER_TRADING !== "false",
@@ -788,8 +789,10 @@ async function run() {
     const nextThreshold = PYRAMID_THRESHOLD * (alreadyPyramided + 1);
 
     if (alreadyPyramided < MAX_PYRAMIDS && unrealisedPct >= nextThreshold && adxStrong && atr) {
-      const addSizeUSD = portfolioValue * CONFIG.tradeSizePct * 0.5;
-      const addQty     = addSizeUSD / price;
+      // Pyramid add: risk half the normal riskPct on each add, capped at 50% portfolio notional
+      const addRisk    = portfolioValue * CONFIG.riskPct * 0.5;
+      const addQty     = Math.min(addRisk / (atr * NKB.atrStopMult), (portfolioValue * 0.5) / price);
+      const addSizeUSD = addQty * price;
       const addSide    = position.side === "long" ? "buy" : "sell";
       console.log(`\n📈 PYRAMID #${alreadyPyramided + 1} — unrealised ${(unrealisedPct * 100).toFixed(1)}% ≥ ${(nextThreshold * 100).toFixed(0)}%, ADX ${adxValue.toFixed(1)} — adding $${addSizeUSD.toFixed(2)}`);
 
@@ -866,18 +869,21 @@ async function run() {
   console.log("\n── NKB Signal ───────────────────────────────────────────\n");
 
   const canShort = CONFIG.tradeMode === "futures";
-  // CONFIG.tradeSizePct of current portfolio value, re-evaluated each trade
-  const tradeSize = portfolioValue * CONFIG.tradeSizePct;
 
   async function openPosition(side, positionSide, signalNote) {
-    const quantity = parseFloat((tradeSize / price).toFixed(6));
-    // ATR dynamic stop: price ± ATR×1.5 — gives position room to breathe through
-    // normal 15m noise (~$200) instead of being stopped out by a single candle.
+    // Fixed % risk sizing: risk riskPct of portfolio on this trade
+    // Position size = riskAmount / stopDist — so a stop hit loses exactly riskPct
     const stopDist = atrStopDist ?? (price * (CONFIG.stopLossPct / 100));
+    const riskAmount = portfolioValue * CONFIG.riskPct;
+    const riskBasedQty = stopDist > 0 ? riskAmount / stopDist : 0;
+    // Cap notional at 100% of portfolio (leverage=1 safety ceiling)
+    const maxQty = portfolioValue / price;
+    const quantity = parseFloat(Math.min(riskBasedQty, maxQty).toFixed(6));
+    const tradeSize = quantity * price;
     const stopLossPrice = positionSide === "long" ? price - stopDist : price + stopDist;
     console.log(`✅ ${side.toUpperCase()} SIGNAL — ${signalNote}`);
-    console.log(`   Trade size: $${tradeSize.toFixed(2)} (${(CONFIG.tradeSizePct * 100).toFixed(0)}% of $${portfolioValue.toFixed(2)})`);
-    console.log(`   Stop loss: $${stopLossPrice.toFixed(2)} (ATR×${NKB.atrStopMult} = $${stopDist.toFixed(2)})`);
+    console.log(`   Risk: $${riskAmount.toFixed(2)} (${(CONFIG.riskPct * 100).toFixed(0)}% of $${portfolioValue.toFixed(2)}) | Stop dist: $${stopDist.toFixed(2)} | Size: $${tradeSize.toFixed(2)}`);
+    console.log(`   Stop loss: $${stopLossPrice.toFixed(2)} (ATR×${NKB.atrStopMult})`);
     console.log(`\n${CONFIG.paperTrading ? "📋 PAPER TRADE" : "🔴 PLACING LIVE ORDER"} — ${side.toUpperCase()} ~$${tradeSize.toFixed(2)} ${CONFIG.symbol}`);
     if (CONFIG.paperTrading) console.log(`   (Set PAPER_TRADING=false in .env to place real orders)`);
 
