@@ -30,7 +30,7 @@
 //                                                    disagree, before any full
 //                                                    close)
 
-import { readFileSync, readdirSync } from "fs";
+import { readFileSync, readdirSync, writeFileSync } from "fs";
 import path from "path";
 
 const DATA_DIR = "backtest-data";
@@ -108,6 +108,9 @@ const SIZE_VOL_MAX = flagFloat("--size-vol-max", 1.0);
 const SIZE_WEIGHT_MIN = flagFloat("--size-weight-min", 0.3);
 const SIZE_WEIGHT_MAX = flagFloat("--size-weight-max", 1.0);
 const SIZE_SCALEOUT_FRAC = flagFloat("--size-scaleout-frac", 1.0); // fraction of weight shed on first disagreement (1.0 = full close)
+const ANALYSE = process.argv.includes("--analyse");
+const csvIdx = process.argv.indexOf("--csv");
+const CSV_FILE = csvIdx !== -1 ? process.argv[csvIdx + 1] : null;
 
 const NKB = {
   length: 30,
@@ -491,6 +494,147 @@ function summarize(trades) {
   };
 }
 
+// ─── Trade analysis ─────────────────────────────────────────────────────────
+
+function groupStats(trades) {
+  const n = trades.length;
+  if (n === 0) return { n: 0, wr: 0, avgPct: 0 };
+  const wins = trades.filter((t) => t.pct > 0).length;
+  const avgPct = trades.reduce((s, t) => s + t.pct, 0) / n;
+  return { n, wr: (wins / n) * 100, avgPct: avgPct * 100 };
+}
+
+function printRow(label, g, extra = "") {
+  if (g.n === 0) return;
+  const sign = g.avgPct >= 0 ? "+" : "";
+  console.log(
+    `  ${label.padEnd(22)} ${String(g.n).padStart(5)} trades  WR ${g.wr.toFixed(1).padStart(5)}%  avg ${sign}${g.avgPct.toFixed(3)}%${extra}`,
+  );
+}
+
+function analyse(trades) {
+  if (trades.length === 0) return;
+  const sep = "──────────────────────────────────────────────────────────";
+  console.log(`── Trade analysis ─────────────────────────────────────────`);
+
+  // ── Direction ──
+  console.log("\n  Direction:");
+  printRow("LONG", groupStats(trades.filter((t) => t.dir === 1)));
+  printRow("SHORT", groupStats(trades.filter((t) => t.dir === -1)));
+
+  // ── Confirmation tier ──
+  console.log("\n  Confirmation tier (how many of 15m/30m agreed at entry):");
+  printRow("Both 15m+30m (full)", groupStats(trades.filter((t) => t.confirmedBy.length === 2)));
+  printRow("Only one (partial)",  groupStats(trades.filter((t) => t.confirmedBy.length === 1)));
+  printRow("  └ 15m only",        groupStats(trades.filter((t) => t.confirmedBy.length === 1 && t.confirmedBy.includes("15m"))));
+  printRow("  └ 30m only",        groupStats(trades.filter((t) => t.confirmedBy.length === 1 && t.confirmedBy.includes("30m"))));
+
+  // ── Exit reason & avg P&L per reason ──
+  console.log("\n  Exit reason:");
+  for (const reason of ["flip", "scale-out", "stop", "take-profit"]) {
+    const g = groupStats(trades.filter((t) => t.reason === reason));
+    if (g.n > 0) printRow(reason, g);
+  }
+  // Which timeframe caused the flip exit?
+  const flips = trades.filter((t) => t.reason === "flip" || t.reason === "scale-out");
+  console.log("\n  Flip-exit trigger (which TF disagreed):");
+  for (const tf of ["5m", "15m", "30m"]) {
+    printRow(`  ${tf} in flippedBy`, groupStats(flips.filter((t) => t.flippedBy.includes(tf))));
+  }
+  printRow("  multiple TFs",      groupStats(flips.filter((t) => t.flippedBy.length > 1)));
+
+  // ── Trade duration ──
+  console.log("\n  Trade duration (entry → exit on 5m bars):");
+  const dur = (t) => (t.exitTime - t.entryTime) / 60000; // minutes
+  const buckets = [
+    ["≤5 min (1 bar)",   (t) => dur(t) <=   5],
+    ["6–15 min",         (t) => dur(t) >   5 && dur(t) <=  15],
+    ["16–30 min",        (t) => dur(t) >  15 && dur(t) <=  30],
+    ["31–60 min",        (t) => dur(t) >  30 && dur(t) <=  60],
+    ["61–180 min",       (t) => dur(t) >  60 && dur(t) <= 180],
+    [">3 hours",         (t) => dur(t) > 180],
+  ];
+  for (const [label, fn] of buckets) {
+    const g = groupStats(trades.filter(fn));
+    if (g.n > 0) printRow(label, g, `  (avg hold ${(trades.filter(fn).reduce((s, t) => s + dur(t), 0) / g.n).toFixed(0)} min)`);
+  }
+
+  // ── Hour of day (UTC) ──
+  console.log("\n  Hour of day (UTC) — entry hour:");
+  const hourData = Array.from({ length: 24 }, (_, h) => ({
+    h,
+    g: groupStats(trades.filter((t) => new Date(t.entryTime).getUTCHours() === h)),
+  })).filter((d) => d.g.n > 0);
+  for (const { h, g } of hourData) {
+    const bar = "█".repeat(Math.round(g.wr / 5));
+    printRow(`${String(h).padStart(2)}:00 UTC`, g, `  ${bar}`);
+  }
+
+  // ── Day of week ──
+  const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  console.log("\n  Day of week (UTC):");
+  for (let d = 0; d < 7; d++) {
+    printRow(DAYS[d], groupStats(trades.filter((t) => new Date(t.entryTime).getUTCDay() === d)));
+  }
+
+  // ── Monthly breakdown ──
+  console.log("\n  Monthly breakdown:");
+  const months = {};
+  for (const t of trades) {
+    const key = new Date(t.entryTime).toISOString().slice(0, 7);
+    (months[key] = months[key] || []).push(t);
+  }
+  for (const [m, ts] of Object.entries(months).sort()) {
+    printRow(m, groupStats(ts));
+  }
+
+  // ── Streak analysis ──
+  console.log("\n  Win/loss streaks:");
+  let curStreak = 0, maxWin = 0, maxLoss = 0;
+  const streaks = [];
+  for (const t of trades) {
+    const win = t.pct > 0;
+    if (curStreak === 0) {
+      curStreak = win ? 1 : -1;
+    } else if (win && curStreak > 0) {
+      curStreak++;
+    } else if (!win && curStreak < 0) {
+      curStreak--;
+    } else {
+      streaks.push(curStreak);
+      curStreak = win ? 1 : -1;
+    }
+    maxWin  = Math.max(maxWin, curStreak > 0 ? curStreak : 0);
+    maxLoss = Math.max(maxLoss, curStreak < 0 ? -curStreak : 0);
+  }
+  if (curStreak !== 0) streaks.push(curStreak);
+  const winStreaks  = streaks.filter((s) => s > 0);
+  const lossStreaks = streaks.filter((s) => s < 0).map((s) => -s);
+  const avgWin  = winStreaks.length  ? (winStreaks.reduce((a, b) => a + b, 0)  / winStreaks.length).toFixed(1)  : "—";
+  const avgLoss = lossStreaks.length ? (lossStreaks.reduce((a, b) => a + b, 0) / lossStreaks.length).toFixed(1) : "—";
+  console.log(`  ${"Max win streak".padEnd(22)} ${maxWin}  (avg ${avgWin})`);
+  console.log(`  ${"Max loss streak".padEnd(22)} ${maxLoss}  (avg ${avgLoss})`);
+  const lastDir = curStreak > 0 ? `${curStreak} wins` : `${-curStreak} losses`;
+  console.log(`  ${"Current streak".padEnd(22)} ${lastDir}`);
+
+  // ── Best and worst trades ──
+  const sorted = [...trades].sort((a, b) => b.pct - a.pct);
+  console.log("\n  Top 5 best trades:");
+  for (const t of sorted.slice(0, 5)) {
+    const entry = new Date(t.entryTime).toISOString().slice(0, 16);
+    const dirL = t.dir === 1 ? "L" : "S";
+    console.log(`    ${entry}  ${dirL}  ${(t.pct * 100).toFixed(3)}%  (${t.reason})`);
+  }
+  console.log("\n  Top 5 worst trades:");
+  for (const t of sorted.slice(-5).reverse()) {
+    const entry = new Date(t.entryTime).toISOString().slice(0, 16);
+    const dirL = t.dir === 1 ? "L" : "S";
+    console.log(`    ${entry}  ${dirL}  ${(t.pct * 100).toFixed(3)}%  (${t.reason})`);
+  }
+
+  console.log(`\n${sep}\n`);
+}
+
 // ─── Main ───────────────────────────────────────────────────────────────────
 
 console.log(`Loading 1m candles from ${DATA_DIR}/ ...`);
@@ -561,4 +705,25 @@ if (TRACE_N > 0) {
       ` | pnl: ${(t.pct * 100).toFixed(3)}%\n`,
     );
   }
+}
+
+if (ANALYSE) analyse(trades);
+
+if (CSV_FILE) {
+  const header = "dir,entryTime,exitTime,durationMin,entryPrice,exitPrice,pctRaw,weight,reason,confirmedBy,flippedBy";
+  const rows = trades.map((t) => [
+    t.dir === 1 ? "LONG" : "SHORT",
+    new Date(t.entryTime).toISOString(),
+    new Date(t.exitTime).toISOString(),
+    (((t.exitTime - t.entryTime) / 60000).toFixed(0)),
+    t.entryPrice.toFixed(4),
+    t.exitPrice.toFixed(4),
+    (t.pct * 100).toFixed(4),
+    (t.weight ?? 1).toFixed(4),
+    t.reason,
+    t.confirmedBy.join("+"),
+    t.flippedBy.join("+"),
+  ].join(","));
+  writeFileSync(CSV_FILE, [header, ...rows].join("\n") + "\n");
+  console.log(`Wrote ${trades.length} trades to ${CSV_FILE}`);
 }
