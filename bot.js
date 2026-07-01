@@ -626,10 +626,38 @@ async function run() {
   // (see calcNKB) — it only changes on a genuine opposite-band close, same as
   // the Pine script. We still track the previously-saved state across runs so
   // we only act once per transition instead of re-firing every 5 minutes.
-  const prevNKBState = loadNKBState();
-  const buySignal  = nkb.state === 1  && prevNKBState !== 1;
-  const sellSignal = nkb.state === -1 && prevNKBState !== -1;
-  saveNKBState(nkb.state);
+  // Load full state file to track consecutive bars and pending signals
+  const stateFile     = existsSync(STATE_FILE) ? JSON.parse(readFileSync(STATE_FILE, "utf8")) : {};
+  const prevNKBState  = stateFile.state ?? 0;
+  const prevPending   = stateFile.pendingSignal ?? null; // "BUY" | "SELL" | null
+  const pendingBars   = stateFile.pendingBars   ?? 0;
+
+  const flippedBull = nkb.state === 1  && prevNKBState !== 1;
+  const flippedBear = nkb.state === -1 && prevNKBState !== -1;
+
+  // On a new flip, start a pending signal counter (1 bar so far).
+  // If state holds from last run, increment the counter.
+  // Fire the signal only once it has held for 2+ consecutive bars.
+  let newPending   = prevPending;
+  let newPendingBars = pendingBars;
+  if (flippedBull)                        { newPending = "BUY";  newPendingBars = 1; }
+  else if (flippedBear)                   { newPending = "SELL"; newPendingBars = 1; }
+  else if (nkb.state === prevNKBState)    { newPendingBars = pendingBars + 1; }
+  else                                    { newPending = null; newPendingBars = 0; }
+
+  writeFileSync(STATE_FILE, JSON.stringify({
+    state: nkb.state, pendingSignal: newPending, pendingBars: newPendingBars,
+    updatedAt: new Date().toISOString(),
+  }, null, 2));
+
+  // ── Active hours filter: 08:00–20:00 UTC ──────────────────────────────────
+  const utcHour = new Date().getUTCHours();
+  const inActiveHours = utcHour >= 8 && utcHour < 20;
+  if (!inActiveHours) console.log(`  Outside active hours (UTC ${utcHour}:xx) — holding off`);
+
+  // Fire when signal has been pending for 2+ bars AND we're in active hours
+  const buySignal  = newPending === "BUY"  && newPendingBars >= 2 && inActiveHours;
+  const sellSignal = newPending === "SELL" && newPendingBars >= 2 && inActiveHours;
 
   const stateLabel = nkb.state === 1 ? "BULLISH" : nkb.state === -1 ? "BEARISH" : "NEUTRAL";
   console.log(`\n  Portfolio value: $${portfolioValue.toFixed(2)}`);

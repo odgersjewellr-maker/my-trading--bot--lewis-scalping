@@ -1,4 +1,6 @@
 {
   "state": -1,
-  "updatedAt": "2026-07-01T06:15:07.586Z"
+  "pendingSignal": null,
+  "pendingBars": 0,
+  "updatedAt": "2026-07-01T00:00:00.000Z"
 }

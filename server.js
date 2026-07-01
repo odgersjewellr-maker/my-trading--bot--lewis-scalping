@@ -190,6 +190,13 @@ async function executeTrade(signal) {
   const prevNKBState = stateFile?.data?.state ?? 0;
   const tradeLog     = logFile?.data ?? { trades: [] };
 
+  // Active hours filter: 08:00–20:00 UTC only
+  const utcHour = new Date().getUTCHours();
+  if (utcHour < 8 || utcHour >= 20) {
+    out(`Outside active hours (UTC ${utcHour}:xx) — signal ignored`);
+    return log.join("\n");
+  }
+
   const buySignal  = signal === "BUY";
   const sellSignal = signal === "SELL";
 
