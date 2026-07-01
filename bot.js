@@ -737,6 +737,47 @@ async function run() {
     const pnlPct = (pnlUSD / position.sizeUSD) * 100;
     console.log(`  Unrealized P&L: $${pnlUSD.toFixed(2)} (${pnlPct.toFixed(2)}%)`);
 
+    // Trailing stop — ratchet 3×ATR each run to lock in profits
+    const TRAIL_MULT = 3.0;
+    if (atr) {
+      const trailDist = atr * TRAIL_MULT;
+      if (position.side === "long") {
+        const newStop = price - trailDist;
+        if (newStop > (position.stopLossPrice ?? 0)) {
+          console.log(`  Trailing stop ratcheted: $${(position.stopLossPrice ?? 0).toFixed(2)} → $${newStop.toFixed(2)}`);
+          position.stopLossPrice = newStop;
+        }
+      } else {
+        const newStop = price + trailDist;
+        if (position.stopLossPrice == null || newStop < position.stopLossPrice) {
+          console.log(`  Trailing stop ratcheted: $${(position.stopLossPrice ?? Infinity).toFixed(2)} → $${newStop.toFixed(2)}`);
+          position.stopLossPrice = newStop;
+        }
+      }
+    }
+    console.log(`  Stop loss: $${position.stopLossPrice != null ? position.stopLossPrice.toFixed(2) : "N/A"}`);
+
+    // Paper-mode stop hit check (live trades: BitGet enforces the preset stop)
+    if (CONFIG.paperTrading && position.stopLossPrice != null) {
+      const stopHit = position.side === "long"
+        ? price <= position.stopLossPrice
+        : price >= position.stopLossPrice;
+      if (stopHit) {
+        const stopPnl = position.side === "long"
+          ? (position.stopLossPrice - position.entryPrice) * position.quantity
+          : (position.entryPrice - position.stopLossPrice) * position.quantity;
+        portfolioValue += stopPnl;
+        savePortfolio(portfolioValue);
+        console.log(`  ⛔ STOP HIT at $${position.stopLossPrice.toFixed(2)} — P&L $${stopPnl.toFixed(2)} | Portfolio: $${portfolioValue.toFixed(2)}`);
+        log.trades.push({ timestamp: new Date().toISOString(), type: "stop", symbol: CONFIG.symbol, side: position.side, price: position.stopLossPrice, pnlUSD: stopPnl, reason: "trailing stop hit", paperTrading: true });
+        saveLog(log);
+        savePosition(null);
+        position = null;
+        console.log("═══════════════════════════════════════════════════════════\n");
+        return;
+      }
+    }
+
     // ADX hold: if trend is still strong (ADX > 25), ignore the NKB flip and stay in
     if (crossExit && adxStrong) {
       console.log(`  NKB flip detected BUT ADX ${adxValue.toFixed(1)} > 25 — trend still strong, holding`);
