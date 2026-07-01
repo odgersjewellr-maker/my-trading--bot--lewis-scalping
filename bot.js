@@ -780,7 +780,7 @@ async function run() {
 
     // Pyramid — add to position when winning and trend is strong
     const PYRAMID_THRESHOLD = 0.10; // add every 10% of unrealised profit
-    const MAX_PYRAMIDS      = 2;
+    const MAX_PYRAMIDS      = 3;
     const alreadyPyramided  = position.pyramided ?? 0;
     const unrealisedPct = position.side === "long"
       ? (price - position.entryPrice) / position.entryPrice
