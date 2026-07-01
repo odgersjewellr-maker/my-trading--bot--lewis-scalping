@@ -778,6 +778,41 @@ async function run() {
       }
     }
 
+    // Pyramid — add to position when winning and trend is strong
+    const PYRAMID_THRESHOLD = 0.10; // add every 10% of unrealised profit
+    const MAX_PYRAMIDS      = 2;
+    const alreadyPyramided  = position.pyramided ?? 0;
+    const unrealisedPct = position.side === "long"
+      ? (price - position.entryPrice) / position.entryPrice
+      : (position.entryPrice - price) / position.entryPrice;
+    const nextThreshold = PYRAMID_THRESHOLD * (alreadyPyramided + 1);
+
+    if (alreadyPyramided < MAX_PYRAMIDS && unrealisedPct >= nextThreshold && adxStrong && atr) {
+      const addSizeUSD = portfolioValue * CONFIG.tradeSizePct * 0.5;
+      const addQty     = addSizeUSD / price;
+      const addSide    = position.side === "long" ? "buy" : "sell";
+      console.log(`\n📈 PYRAMID #${alreadyPyramided + 1} — unrealised ${(unrealisedPct * 100).toFixed(1)}% ≥ ${(nextThreshold * 100).toFixed(0)}%, ADX ${adxValue.toFixed(1)} — adding $${addSizeUSD.toFixed(2)}`);
+
+      let addOrder;
+      try {
+        addOrder = await executeOrder(addSide, addQty.toFixed(6));
+      } catch (err) {
+        console.log(`❌ PYRAMID ORDER FAILED — ${err.message}`);
+        addOrder = null;
+      }
+
+      if (addOrder) {
+        const totalQty = position.quantity + addQty;
+        position.entryPrice = (position.entryPrice * position.quantity + price * addQty) / totalQty;
+        position.quantity   = totalQty;
+        position.sizeUSD    = (position.sizeUSD ?? 0) + addSizeUSD;
+        position.pyramided  = alreadyPyramided + 1;
+        console.log(`  Blended entry: $${position.entryPrice.toFixed(2)} | Total qty: ${position.quantity.toFixed(6)} | Pyramids: ${position.pyramided}`);
+        log.trades.push({ timestamp: new Date().toISOString(), type: "pyramid", symbol: CONFIG.symbol, side: addSide, quantity: addQty, price, sizeUSD: addSizeUSD, pyramidNum: position.pyramided, orderId: addOrder.orderId, paperTrading: CONFIG.paperTrading });
+        saveLog(log);
+      }
+    }
+
     // ADX hold: if trend is still strong (ADX > 25), ignore the NKB flip and stay in
     if (crossExit && adxStrong) {
       console.log(`  NKB flip detected BUT ADX ${adxValue.toFixed(1)} > 25 — trend still strong, holding`);
@@ -857,7 +892,7 @@ async function run() {
       return;
     }
 
-    savePosition({ side: positionSide, entryPrice: price, quantity, sizeUSD: tradeSize, stopLossPrice, openedAt: new Date().toISOString(), orderId: order.orderId });
+    savePosition({ side: positionSide, entryPrice: price, quantity, sizeUSD: tradeSize, stopLossPrice, openedAt: new Date().toISOString(), orderId: order.orderId, pyramided: 0 });
     log.trades.push({ timestamp: new Date().toISOString(), type: "entry", symbol: CONFIG.symbol, side, quantity, price, sizeUSD: tradeSize, portfolioValue, nkb, orderPlaced: true, orderId: order.orderId, paperTrading: CONFIG.paperTrading });
     saveLog(log);
     writeCsvRow({ side: side.toUpperCase(), quantity, price, totalUSD: tradeSize, orderId: order.orderId, mode: CONFIG.paperTrading ? "PAPER" : "LIVE", notes: `NKB ${signalNote} | Portfolio: $${portfolioValue.toFixed(2)}` });
