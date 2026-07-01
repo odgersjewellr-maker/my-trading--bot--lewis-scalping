@@ -281,6 +281,37 @@ function calcStddevSeries(values, period) {
   return out;
 }
 
+// ADX (Wilder smoothing) — returns final ADX value for the last candle
+function calcADX(candles, period = 14) {
+  const n = candles.length;
+  if (n < period * 2) return null;
+  const plusDM = [], minusDM = [], tr = [];
+  for (let i = 1; i < n; i++) {
+    const c = candles[i], p = candles[i - 1];
+    tr.push(Math.max(c.high - c.low, Math.abs(c.high - p.close), Math.abs(c.low - p.close)));
+    const up = c.high - p.high, dn = p.low - c.low;
+    plusDM.push(up > dn && up > 0 ? up : 0);
+    minusDM.push(dn > up && dn > 0 ? dn : 0);
+  }
+  // initial Wilder sum
+  let smTR = tr.slice(0, period).reduce((a, b) => a + b, 0);
+  let smP  = plusDM.slice(0, period).reduce((a, b) => a + b, 0);
+  let smM  = minusDM.slice(0, period).reduce((a, b) => a + b, 0);
+  const dx = [];
+  for (let i = period; i < tr.length; i++) {
+    smTR = smTR - smTR / period + tr[i];
+    smP  = smP  - smP  / period + plusDM[i];
+    smM  = smM  - smM  / period + minusDM[i];
+    const pdi = smTR ? 100 * smP / smTR : 0;
+    const mdi = smTR ? 100 * smM / smTR : 0;
+    dx.push((pdi + mdi) > 0 ? 100 * Math.abs(pdi - mdi) / (pdi + mdi) : 0);
+  }
+  // ADX = Wilder smooth of DX
+  let adx = dx.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i < dx.length; i++) adx = (adx * (period - 1) + dx[i]) / period;
+  return adx;
+}
+
 // Faithful port of the Neural Kernel Bands [JOAT] Pine script. Replays the
 // full fetched window so `lastState` ends up exactly where the indicator's
 // persistent `var int lastState` would be — it only flips on a genuine
@@ -628,11 +659,14 @@ async function run() {
   console.log(`  Current price: $${price.toFixed(2)}`);
 
   const nkb = calcNKB(candles);
+  const adxValue = calcADX(candles, 14);
+  const adxStrong = adxValue != null && adxValue >= 25;
   console.log(`  Kernel MA:    $${nkb.kernelMA.toFixed(2)}`);
   console.log(`  Upper Band:   $${nkb.upperBand.toFixed(2)}`);
   console.log(`  Lower Band:   $${nkb.lowerBand.toFixed(2)}`);
   console.log(`  Band σ:       $${nkb.sigma.toFixed(2)}`);
   console.log(`  State:        ${nkb.state === 1 ? "BULLISH" : nkb.state === -1 ? "BEARISH" : "NEUTRAL"}`);
+  console.log(`  ADX(14):      ${adxValue != null ? adxValue.toFixed(1) : "N/A"}${adxStrong ? " 💪 STRONG TREND" : " (weak)"}`);
   console.log(`  ATR(${CONFIG.atrPeriod}):      ${atr ? "$" + atr.toFixed(2) : "N/A"}`);
 
   // ── Volume filter ──────────────────────────────────────────────────────────
@@ -703,9 +737,17 @@ async function run() {
     const pnlPct = (pnlUSD / position.sizeUSD) * 100;
     console.log(`  Unrealized P&L: $${pnlUSD.toFixed(2)} (${pnlPct.toFixed(2)}%)`);
 
+    // ADX hold: if trend is still strong (ADX > 25), ignore the NKB flip and stay in
+    if (crossExit && adxStrong) {
+      console.log(`  NKB flip detected BUT ADX ${adxValue.toFixed(1)} > 25 — trend still strong, holding`);
+      savePosition(position);
+      console.log("═══════════════════════════════════════════════════════════\n");
+      return;
+    }
+
     if (crossExit) {
       const closeSide = position.side === "long" ? "sell" : "buy";
-      console.log(`  NKB reversal signal — closing position`);
+      console.log(`  NKB reversal signal — closing position (ADX ${adxValue != null ? adxValue.toFixed(1) : "N/A"} ≤ 25, trend weak)`);
       console.log(`\n${CONFIG.paperTrading ? "📋 PAPER" : "🔴 LIVE"} CLOSE — ${closeSide.toUpperCase()} ${position.quantity} ${CONFIG.symbol} at ~$${price.toFixed(2)}`);
 
       let order;

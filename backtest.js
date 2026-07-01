@@ -11,24 +11,23 @@ import { resolve } from "path";
 
 // ─── Load CSV ─────────────────────────────────────────────────────────────────
 
-const csvPath = process.argv[2] || "C:/Users/odger/Downloads/HistoricalData_1782898498599.csv";
 const OPTIMIZE = process.argv.includes("--optimize");
+const csvPath = process.argv.filter(a => !a.startsWith("--"))[2] || "btc-daily-binance.csv";
 
 const lines = readFileSync(resolve(csvPath), "utf8").trim().split("\n").slice(1); // skip header
 const candles = lines
   .map((l) => {
-    const [date, close, , open, high, low] = l.split(",");
+    const [date, open, high, low, close, volume] = l.split(",");
     return {
       date: date.trim(),
       open:  parseFloat(open),
       high:  parseFloat(high),
       low:   parseFloat(low),
       close: parseFloat(close),
-      volume: 1, // no volume in dataset — treat as uniform
+      volume: parseFloat(volume),
     };
   })
-  .filter((c) => !isNaN(c.close))
-  .reverse(); // CSV is newest-first; flip to oldest-first
+  .filter((c) => !isNaN(c.close)); // Binance CSV is already oldest-first
 
 // ─── Indicator helpers ────────────────────────────────────────────────────────
 
@@ -59,6 +58,91 @@ function calcEMASeries(values, period) {
     out[i] = ema;
   }
   return out;
+}
+
+// ADX series — returns { adx, plusDI, minusDI } arrays
+function calcADXSeries(candles, period = 14) {
+  const n = candles.length;
+  const plusDM  = new Array(n).fill(null);
+  const minusDM = new Array(n).fill(null);
+  const tr      = new Array(n).fill(null);
+
+  for (let i = 1; i < n; i++) {
+    const c = candles[i], p = candles[i - 1];
+    tr[i] = Math.max(c.high - c.low, Math.abs(c.high - p.close), Math.abs(c.low - p.close));
+    const upMove   = c.high - p.high;
+    const downMove = p.low  - c.low;
+    plusDM[i]  = (upMove > downMove && upMove > 0)   ? upMove   : 0;
+    minusDM[i] = (downMove > upMove && downMove > 0) ? downMove : 0;
+  }
+
+  // Wilder smoothing (same as ATR)
+  const smTR = new Array(n).fill(null);
+  const smPlus = new Array(n).fill(null);
+  const smMinus = new Array(n).fill(null);
+  let initTR = 0, initPlus = 0, initMinus = 0;
+  for (let i = 1; i <= period; i++) { initTR += tr[i]; initPlus += plusDM[i]; initMinus += minusDM[i]; }
+  smTR[period] = initTR; smPlus[period] = initPlus; smMinus[period] = initMinus;
+  for (let i = period + 1; i < n; i++) {
+    smTR[i]    = smTR[i-1]    - smTR[i-1]    / period + tr[i];
+    smPlus[i]  = smPlus[i-1]  - smPlus[i-1]  / period + plusDM[i];
+    smMinus[i] = smMinus[i-1] - smMinus[i-1] / period + minusDM[i];
+  }
+
+  const plusDI  = new Array(n).fill(null);
+  const minusDI = new Array(n).fill(null);
+  const dx      = new Array(n).fill(null);
+  for (let i = period; i < n; i++) {
+    if (!smTR[i]) continue;
+    plusDI[i]  = 100 * smPlus[i]  / smTR[i];
+    minusDI[i] = 100 * smMinus[i] / smTR[i];
+    const diSum = plusDI[i] + minusDI[i];
+    dx[i] = diSum > 0 ? 100 * Math.abs(plusDI[i] - minusDI[i]) / diSum : 0;
+  }
+
+  // ADX = Wilder-smoothed DX
+  const adx = new Array(n).fill(null);
+  const start = period * 2;
+  if (start >= n) return { adx, plusDI, minusDI };
+  let sumDX = 0;
+  for (let i = period; i < start; i++) sumDX += dx[i] ?? 0;
+  adx[start - 1] = sumDX / period;
+  for (let i = start; i < n; i++) adx[i] = (adx[i-1] * (period - 1) + (dx[i] ?? 0)) / period;
+
+  return { adx, plusDI, minusDI };
+}
+
+// MACD series — returns { macd, signal, hist } arrays
+function calcMACDSeries(candles, fast = 12, slow = 26, sigPeriod = 9) {
+  const closes = candles.map(c => c.close);
+  const emaFast = calcEMASeries(closes, fast);
+  const emaSlow = calcEMASeries(closes, slow);
+  const macd    = emaFast.map((f, i) => f != null && emaSlow[i] != null ? f - emaSlow[i] : null);
+  const signal  = calcEMASeries(macd, sigPeriod);
+  const hist    = macd.map((m, i) => m != null && signal[i] != null ? m - signal[i] : null);
+  return { macd, signal, hist };
+}
+
+// Rolling Volume Profile POC — returns price level of highest-volume bucket over lookback bars
+function calcPOCSeries(candles, lookback = 50, buckets = 40) {
+  const n = candles.length;
+  const poc = new Array(n).fill(null);
+  for (let i = lookback; i < n; i++) {
+    const window = candles.slice(i - lookback, i);
+    const lo = Math.min(...window.map(c => c.low));
+    const hi = Math.max(...window.map(c => c.high));
+    const bucketSize = (hi - lo) / buckets;
+    if (bucketSize === 0) continue;
+    const vol = new Array(buckets).fill(0);
+    for (const c of window) {
+      const mid = (c.high + c.low) / 2;
+      const b = Math.min(Math.floor((mid - lo) / bucketSize), buckets - 1);
+      vol[b] += c.volume;
+    }
+    const maxBucket = vol.indexOf(Math.max(...vol));
+    poc[i] = lo + (maxBucket + 0.5) * bucketSize;
+  }
+  return poc;
 }
 
 function calcStddevSeries(values, period) {
@@ -123,6 +207,11 @@ function calcNKBSeries(candles, cfg) {
 
 function runBacktest(candles, cfg, verbose = false) {
   const { state, atrArr } = calcNKBSeries(candles, cfg);
+  const pocArr = cfg.usePOC ? calcPOCSeries(candles, cfg.pocLookback || 50) : new Array(candles.length).fill(null);
+  const POC_ZONE = cfg.pocZonePct || 0.005;
+  const macdData = cfg.useMACDHold ? calcMACDSeries(candles, cfg.macdFast || 12, cfg.macdSlow || 26, cfg.macdSignal || 9) : null;
+  const adxData  = cfg.useADXHold  ? calcADXSeries(candles, cfg.adxPeriod || 14) : null;
+  const ADX_HOLD = cfg.adxHoldThreshold || 25; // hold trade while ADX above this
   const n = candles.length;
 
   let portfolio   = 1000; // starting $1000
@@ -151,8 +240,22 @@ function runBacktest(candles, cfg, verbose = false) {
 
     prevState = curState;
 
-    const buySignal  = pendingSignal === "BUY"  && pendingBars >= cfg.confirmBars;
-    const sellSignal = pendingSignal === "SELL" && pendingBars >= cfg.confirmBars;
+    const rawBuy  = pendingSignal === "BUY"  && pendingBars >= cfg.confirmBars;
+    const rawSell = pendingSignal === "SELL" && pendingBars >= cfg.confirmBars;
+
+    // POC filter: skip if price is within POC dead zone AND moving toward it
+    const poc = pocArr[i];
+    let pocBlocked = false;
+    if (poc && cfg.usePOC) {
+      const nearPOC = Math.abs(price - poc) / poc < POC_ZONE;
+      // Trading INTO poc = buying below poc heading up to it, or selling above heading down
+      const buyingIntoPOC  = rawBuy  && price < poc && nearPOC;
+      const sellingIntoPOC = rawSell && price > poc && nearPOC;
+      pocBlocked = buyingIntoPOC || sellingIntoPOC;
+    }
+
+    const buySignal  = rawBuy  && !pocBlocked;
+    const sellSignal = rawSell && !pocBlocked;
 
     // Check stop loss on open position
     if (position) {
@@ -169,8 +272,30 @@ function runBacktest(candles, cfg, verbose = false) {
       }
     }
 
-    // Close + flip on NKB signal
-    if (position && ((position.side === "long" && sellSignal) || (position.side === "short" && buySignal))) {
+    // ADX hold — stay in trade while trend is still strong
+    let adxHolding = false;
+    if (cfg.useADXHold && adxData && position) {
+      const adxVal = adxData.adx[i];
+      if (adxVal != null && adxVal >= ADX_HOLD) {
+        if (position.side === "long"  && sellSignal) adxHolding = true;
+        if (position.side === "short" && buySignal)  adxHolding = true;
+      }
+    }
+
+    // MACD hold — stay in if momentum still aligned
+    let macdHolding = false;
+    if (cfg.useMACDHold && macdData && position && !adxHolding) {
+      const m = macdData.macd[i], s = macdData.signal[i];
+      if (m != null && s != null) {
+        if (position.side === "long"  && sellSignal && m > s)  macdHolding = true;
+        if (position.side === "short" && buySignal  && m <= s) macdHolding = true;
+      }
+    }
+
+    const holding = adxHolding || macdHolding;
+
+    // Close + flip on NKB signal (unless hold filter active)
+    if (!holding && position && ((position.side === "long" && sellSignal) || (position.side === "short" && buySignal))) {
       const pnl = position.side === "long"
         ? (price - position.entry) * position.qty
         : (position.entry - price) * position.qty;
@@ -178,6 +303,11 @@ function runBacktest(candles, cfg, verbose = false) {
       trades.push({ date, type: "signal", side: position.side, entry: position.entry, exit: price, pnl, portfolio });
       if (verbose) console.log(`  CLOSE     ${date}  ${position.side.toUpperCase()} exit $${price.toFixed(0)}  P&L $${pnl.toFixed(0)}  Portfolio $${portfolio.toFixed(0)}`);
       position = null;
+    }
+    if (holding && verbose) {
+      const adxVal = adxData?.adx[i];
+      const reason = adxHolding ? `ADX ${adxVal?.toFixed(1)} > ${ADX_HOLD}` : `MACD momentum`;
+      console.log(`  HOLD      ${date}  ${reason} — NKB flip ignored`);
     }
 
     // Open new position
@@ -238,31 +368,46 @@ function runBacktest(candles, cfg, verbose = false) {
 // ─── Single run ───────────────────────────────────────────────────────────────
 
 const BASE_CFG = {
-  length: 30, bandwidth: 6.0, adaptive: true, atrLen: 14,
-  smooth: 3, bandMult: 3.0, bandLen: 24, bandSmooth: 5,
-  atrStopMult: 1.0, confirmBars: 2, tradeSizePct: 0.80,
+  length: 30, bandwidth: 10.0, adaptive: true, atrLen: 14,
+  smooth: 3, bandMult: 1.5, bandLen: 24, bandSmooth: 5,
+  atrStopMult: 1.5, confirmBars: 1, tradeSizePct: 0.80,
+  usePOC: false, pocLookback: 50, pocZonePct: 0.04, // 4% zone — p20 of daily BTC POC distance
 };
 
 if (!OPTIMIZE) {
   console.log("\n═══════════════════════════════════════════════════════════");
-  console.log("  NKB Backtest — Daily BTC/USD  2019–2026");
-  console.log("═══════════════════════════════════════════════════════════\n");
-  console.log(`  Candles:      ${candles.length} daily bars`);
-  console.log(`  Period:       ${candles[0].date} → ${candles[candles.length - 1].date}`);
-  console.log(`  Start equity: $1,000\n`);
+  console.log("  NKB Backtest — Daily BTC/USD  (with real volume)");
+  console.log("═══════════════════════════════════════════════════════════");
+  console.log(`  Candles: ${candles.length} bars  |  ${candles[0].date} → ${candles[candles.length - 1].date}\n`);
 
-  const r = runBacktest(candles, BASE_CFG, true);
+  const r1  = runBacktest(candles, { ...BASE_CFG, useADXHold: false });
+  const r20 = runBacktest(candles, { ...BASE_CFG, useADXHold: true, adxHoldThreshold: 20 });
+  const r25 = runBacktest(candles, { ...BASE_CFG, useADXHold: true, adxHoldThreshold: 25 });
+  const r30 = runBacktest(candles, { ...BASE_CFG, useADXHold: true, adxHoldThreshold: 30 });
 
-  console.log("\n── Results ───────────────────────────────────────────────\n");
-  console.log(`  Final portfolio:  $${r.portfolio.toFixed(2)}`);
-  console.log(`  Total P&L:        $${r.totalPnl.toFixed(2)} (${((r.portfolio - 1000) / 1000 * 100).toFixed(1)}%)`);
-  console.log(`  Total trades:     ${r.trades}`);
-  console.log(`  Win rate:         ${r.winRate}%`);
-  console.log(`  Avg win:          $${r.avgWin}`);
-  console.log(`  Avg loss:         $${r.avgLoss}`);
-  console.log(`  Profit factor:    ${r.profitFactor}`);
-  console.log(`  Max drawdown:     ${r.maxDD}%`);
-  console.log(`  Sharpe ratio:     ${r.sharpe}`);
+  const fmt = (r, label) => {
+    const ret = ((r.portfolio - 1000) / 10).toFixed(1);
+    return `  ${label.padEnd(22)} $${r.portfolio.toFixed(0).padStart(8)}  ${(ret+"%").padStart(8)}  ${String(r.trades).padStart(6)}  ${(r.winRate+"%").padStart(7)}  ${String(r.profitFactor).padStart(5)}  ${(r.maxDD+"%").padStart(7)}  ${r.sharpe}`;
+  };
+
+  console.log(`  ${"Label".padEnd(22)} ${"Portfolio".padStart(9)}  ${"Return".padStart(8)}  ${"Trades".padStart(6)}  ${"WinRate".padStart(7)}  ${"PF".padStart(5)}  ${"MaxDD".padStart(7)}  Sharpe`);
+  console.log("  " + "─".repeat(90));
+  console.log(fmt(r1,  "NKB only"));
+  console.log(fmt(r20, "NKB + ADX hold >20"));
+  console.log(fmt(r25, "NKB + ADX hold >25"));
+  console.log(fmt(r30, "NKB + ADX hold >30"));
+
+  // Find best
+  const best = [
+    { label: "NKB only",           r: r1  },
+    { label: "ADX hold >20",       r: r20 },
+    { label: "ADX hold >25",       r: r25 },
+    { label: "ADX hold >30",       r: r30 },
+  ].sort((a, b) => parseFloat(b.r.sharpe) - parseFloat(a.r.sharpe))[0];
+  console.log(`\n  Best Sharpe: ${best.label} (${best.r.sharpe})`);
+
+  console.log("\n── NKB + ADX hold >25 — full trade log ──────────────────\n");
+  runBacktest(candles, { ...BASE_CFG, useADXHold: true, adxHoldThreshold: 25 }, true);
   console.log("\n═══════════════════════════════════════════════════════════\n");
 }
 
