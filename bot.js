@@ -190,18 +190,19 @@ export async function fetchCandles(symbol, interval, limit = 100) {
 // ─── Neural Kernel Bands — Indicator Calculations ────────────────────────────
 
 const NKB = {
-  length:      parseInt(process.env.NKB_LENGTH      || "30"),
-  bandwidth:   parseFloat(process.env.NKB_BANDWIDTH  || "8.0"),
-  adaptive:    process.env.NKB_ADAPTIVE !== "false",
-  atrLen:      parseInt(process.env.NKB_ATR_LEN     || "14"),
-  smooth:      parseInt(process.env.NKB_SMOOTH       || "3"),
-  bandMult:    parseFloat(process.env.NKB_BAND_MULT  || "1.0"),
-  bandLen:     parseInt(process.env.NKB_BAND_LEN     || "24"),
-  bandSmooth:  parseInt(process.env.NKB_BAND_SMOOTH  || "5"),
-  // gaussian (infinite tail, smoothest/laggiest) | epanechnikov (compact support,
-  // hard cutoff, most reactive) | tricube (compact support, smooth taper — a
-  // middle ground between the other two). See KERNELS below for the math.
-  kernel:      (process.env.NKB_KERNEL || "gaussian").toLowerCase(),
+  length:         parseInt(process.env.NKB_LENGTH       || "30"),
+  bandwidth:      parseFloat(process.env.NKB_BANDWIDTH   || "8.0"),
+  adaptive:       process.env.NKB_ADAPTIVE !== "false",
+  atrLen:         parseInt(process.env.NKB_ATR_LEN      || "14"),
+  smooth:         parseInt(process.env.NKB_SMOOTH        || "3"),
+  bandMult:       parseFloat(process.env.NKB_BAND_MULT   || "2.0"), // 2σ — wider bands cut false signals
+  bandLen:        parseInt(process.env.NKB_BAND_LEN      || "24"),
+  bandSmooth:     parseInt(process.env.NKB_BAND_SMOOTH   || "5"),
+  volumeWeighted: process.env.NKB_VOLUME_WEIGHTED !== "false",       // weight kernel by bar volume
+  volumeFilter:   parseFloat(process.env.NKB_VOLUME_FILTER || "0.8"), // skip if vol < SMA×this
+  volumeSMA:      parseInt(process.env.NKB_VOLUME_SMA    || "20"),   // bars for volume SMA
+  atrStopMult:    parseFloat(process.env.NKB_ATR_STOP_MULT || "1.5"), // dynamic stop = ATR × this
+  kernel:         (process.env.NKB_KERNEL || "gaussian").toLowerCase(),
 };
 
 // u = distance-from-current-bar / bandwidth. Gaussian never reaches zero so every
@@ -284,9 +285,23 @@ function calcStddevSeries(values, period) {
 // full fetched window so `lastState` ends up exactly where the indicator's
 // persistent `var int lastState` would be — it only flips on a genuine
 // opposite-band close, not on every dip back inside the bands.
+// Volume SMA — used by calcNKB volume filter and volume-weighted kernel
+function calcVolumeSMA(candles, period) {
+  return candles.map((_, i) => {
+    if (i < period - 1) return null;
+    const slice = candles.slice(i - period + 1, i + 1);
+    return slice.reduce((s, c) => s + c.volume, 0) / period;
+  });
+}
+
 function calcNKB(candles) {
-  const closes = candles.map((c) => c.close);
+  const closes  = candles.map((c) => c.close);
+  const volumes = candles.map((c) => c.volume);
   const n = closes.length;
+
+  // Normalise volumes to [0,1] range so they act as weights without dominating
+  const maxVol = Math.max(...volumes.filter(Boolean));
+  const normVol = volumes.map((v) => (maxVol > 0 ? v / maxVol : 1));
 
   const atrArr = calcATRSeries(candles, NKB.atrLen);
   const atrNorm = atrArr.map((a, i) => (a != null ? a / closes[i] : null));
@@ -296,7 +311,9 @@ function calcNKB(candles) {
     NKB.bandwidth * (NKB.adaptive ? 1 + (f ?? 0) * 200 : 1),
   );
 
-  // Nadaraya-Watson kernel regression — computed at every bar
+  // Nadaraya-Watson kernel regression — optionally volume-weighted
+  // High-volume bars pull the kernel line toward them more strongly,
+  // anchoring the regression to price action that actually matters.
   const kernelFn = KERNELS[NKB.kernel];
   const nwRaw = new Array(n);
   for (let i = 0; i < n; i++) {
@@ -304,7 +321,7 @@ function calcNKB(candles) {
     let sumW = 0, sumWC = 0;
     const lookback = Math.min(NKB.length, i + 1);
     for (let j = 0; j < lookback; j++) {
-      const kw = kernelFn(j, hi);
+      const kw = kernelFn(j, hi) * (NKB.volumeWeighted ? normVol[i - j] : 1);
       sumWC += kw * closes[i - j];
       sumW  += kw;
     }
@@ -618,6 +635,16 @@ async function run() {
   console.log(`  State:        ${nkb.state === 1 ? "BULLISH" : nkb.state === -1 ? "BEARISH" : "NEUTRAL"}`);
   console.log(`  ATR(${CONFIG.atrPeriod}):      ${atr ? "$" + atr.toFixed(2) : "N/A"}`);
 
+  // ── Volume filter ──────────────────────────────────────────────────────────
+  const volSMAArr  = calcVolumeSMA(candles, NKB.volumeSMA);
+  const currentVol = candles[candles.length - 1].volume;
+  const volSMA     = volSMAArr[volSMAArr.length - 1];
+  const volOk      = volSMA == null || currentVol >= volSMA * NKB.volumeFilter;
+  console.log(`  Volume:       ${currentVol.toFixed(2)} (SMA${NKB.volumeSMA}: ${volSMA?.toFixed(2) ?? "N/A"}) ${volOk ? "✅" : "🚫 LOW — no trade"}`);
+
+  // ── ATR dynamic stop distance ──────────────────────────────────────────────
+  const atrStopDist = atr ? atr * NKB.atrStopMult : null;
+
   const log = loadLog();
   let position = loadPosition();
   let portfolioValue = loadPortfolio();
@@ -655,9 +682,9 @@ async function run() {
   const inActiveHours = utcHour >= 8 && utcHour < 20;
   if (!inActiveHours) console.log(`  Outside active hours (UTC ${utcHour}:xx) — holding off`);
 
-  // Fire when signal has been pending for 2+ bars AND we're in active hours
-  const buySignal  = newPending === "BUY"  && newPendingBars >= 2 && inActiveHours;
-  const sellSignal = newPending === "SELL" && newPendingBars >= 2 && inActiveHours;
+  // Fire when signal confirmed 2+ bars, in active hours, AND volume is healthy
+  const buySignal  = newPending === "BUY"  && newPendingBars >= 2 && inActiveHours && volOk;
+  const sellSignal = newPending === "SELL" && newPendingBars >= 2 && inActiveHours && volOk;
 
   const stateLabel = nkb.state === 1 ? "BULLISH" : nkb.state === -1 ? "BEARISH" : "NEUTRAL";
   console.log(`\n  Portfolio value: $${portfolioValue.toFixed(2)}`);
@@ -726,10 +753,13 @@ async function run() {
 
   async function openPosition(side, positionSide, signalNote) {
     const quantity = parseFloat((tradeSize / price).toFixed(6));
-    const stopLossPrice = computeStopLossPrice(positionSide, price);
+    // ATR dynamic stop: price ± ATR×1.5 — gives position room to breathe through
+    // normal 15m noise (~$200) instead of being stopped out by a single candle.
+    const stopDist = atrStopDist ?? (price * (CONFIG.stopLossPct / 100));
+    const stopLossPrice = positionSide === "long" ? price - stopDist : price + stopDist;
     console.log(`✅ ${side.toUpperCase()} SIGNAL — ${signalNote}`);
     console.log(`   Trade size: $${tradeSize.toFixed(2)} (${(CONFIG.tradeSizePct * 100).toFixed(0)}% of $${portfolioValue.toFixed(2)})`);
-    console.log(`   Stop loss: $${stopLossPrice.toFixed(2)} (${CONFIG.stopLossPct}%)`);
+    console.log(`   Stop loss: $${stopLossPrice.toFixed(2)} (ATR×${NKB.atrStopMult} = $${stopDist.toFixed(2)})`);
     console.log(`\n${CONFIG.paperTrading ? "📋 PAPER TRADE" : "🔴 PLACING LIVE ORDER"} — ${side.toUpperCase()} ~$${tradeSize.toFixed(2)} ${CONFIG.symbol}`);
     if (CONFIG.paperTrading) console.log(`   (Set PAPER_TRADING=false in .env to place real orders)`);
 
