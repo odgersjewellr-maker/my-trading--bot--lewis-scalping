@@ -98,10 +98,10 @@ export const CONFIG = {
   },
 };
 
-export const LOG_FILE = "safety-check-log.json";
-export const POSITION_FILE = "position.json";
-export const PORTFOLIO_FILE = "portfolio.json";
-export const STATE_FILE = "nkb-state.json";
+export const LOG_FILE       = `safety-check-log-${CONFIG.symbol}.json`;
+export const POSITION_FILE  = `position-${CONFIG.symbol}.json`;
+export const PORTFOLIO_FILE = `portfolio-${CONFIG.symbol}.json`;
+export const STATE_FILE     = `nkb-state-${CONFIG.symbol}.json`;
 
 // ─── Logging ────────────────────────────────────────────────────────────────
 
@@ -546,7 +546,7 @@ async function executeOrder(side, quantity, stopLossPrice, positionSide) {
 
 // ─── Tax CSV Logging ─────────────────────────────────────────────────────────
 
-export const CSV_FILE = "trades.csv";
+export const CSV_FILE = `trades-${CONFIG.symbol}.csv`;
 
 // Always ensure trades.csv exists with headers — open it in Excel/Sheets any time
 function initCsv() {

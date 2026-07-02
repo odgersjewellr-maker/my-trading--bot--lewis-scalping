@@ -8,13 +8,12 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: run-bot
-  cancel-in-progress: false
-
 jobs:
-  run:
+  run-btc:
     runs-on: ubuntu-latest
+    concurrency:
+      group: run-bot-BTCUSDT
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
@@ -54,18 +53,81 @@ jobs:
           rm -f .env
           git config user.name "trading-bot"
           git config user.email "actions@users.noreply.github.com"
-          for f in position.json trades.csv safety-check-log.json nkb-state.json portfolio.json; do
+          for f in position-BTCUSDT.json trades-BTCUSDT.csv safety-check-log-BTCUSDT.json nkb-state-BTCUSDT.json portfolio-BTCUSDT.json; do
             [ -f "$f" ] && git add "$f"
           done
           if git diff --cached --quiet; then
             exit 0
           fi
-          git commit -m "Bot run $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git commit -m "BTC run $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           for i in 1 2 3 4 5; do
             if git push; then
               exit 0
             fi
-            echo "Push rejected (attempt $i) — webhook likely committed concurrently. Rebasing onto latest main and retrying..."
+            echo "Push rejected (attempt $i) — rebasing onto latest main..."
+            git fetch origin main
+            git rebase origin/main
+            sleep $((i * 2))
+          done
+          echo "::error::git push failed after retries"
+          exit 1
+
+  run-sol:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: run-bot-SOLUSDT
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - run: npm install
+
+      - name: Write .env
+        run: |
+          cat <<EOF > .env
+          BITGET_API_KEY=${{ secrets.BITGET_API_KEY }}
+          BITGET_SECRET_KEY=${{ secrets.BITGET_SECRET_KEY }}
+          BITGET_PASSPHRASE=${{ secrets.BITGET_PASSPHRASE }}
+          BITGET_BASE_URL=https://api.bitget.com
+          TRADE_MODE=futures
+          LEVERAGE=1
+          TRADE_SIZE_PCT=80
+          PORTFOLIO_VALUE_USD=1000
+          MAX_TRADES_PER_DAY=0
+          SYMBOL=SOLUSDT
+          TIMEFRAME=15m
+          NKB_KERNEL=gaussian
+          NKB_BAND_MULT=3.0
+          NKB_BANDWIDTH=6.0
+          NKB_ATR_STOP_MULT=1.0
+          RISK_PCT=5
+          PAPER_TRADING=true
+          EOF
+
+      - name: Run bot
+        run: node bot.js
+
+      - name: Persist state back to repo
+        run: |
+          rm -f .env
+          git config user.name "trading-bot"
+          git config user.email "actions@users.noreply.github.com"
+          for f in position-SOLUSDT.json trades-SOLUSDT.csv safety-check-log-SOLUSDT.json nkb-state-SOLUSDT.json portfolio-SOLUSDT.json; do
+            [ -f "$f" ] && git add "$f"
+          done
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "SOL run $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          for i in 1 2 3 4 5; do
+            if git push; then
+              exit 0
+            fi
+            echo "Push rejected (attempt $i) — rebasing onto latest main..."
             git fetch origin main
             git rebase origin/main
             sleep $((i * 2))

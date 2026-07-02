@@ -1,0 +1,14 @@
+{
+  "trades": [
+    {
+      "timestamp": "2026-07-02T00:19:27.147Z",
+      "type": "stop",
+      "symbol": "BTCUSDT",
+      "side": "long",
+      "price": 60238.59071428572,
+      "pnlUSD": 21.43062006000003,
+      "reason": "trailing stop hit",
+      "paperTrading": true
+    }
+  ]
+}
