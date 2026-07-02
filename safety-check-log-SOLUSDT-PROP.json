@@ -1,0 +1,24 @@
+{
+  "trades": [
+    {
+      "timestamp": "2026-07-02T12:28:08.368Z",
+      "type": "entry",
+      "symbol": "SOLUSDT",
+      "side": "buy",
+      "quantity": 1368.523949,
+      "price": 81.83,
+      "sizeUSD": 111986.31474666999,
+      "portfolioValue": 99910.41094820267,
+      "nkb": {
+        "kernelMA": 81.00508991915981,
+        "sigma": 0.8699441655539053,
+        "upperBand": 83.61492241582152,
+        "lowerBand": 78.3952574224981,
+        "state": 1
+      },
+      "orderPlaced": true,
+      "orderId": "PAPER-1782995288368",
+      "paperTrading": true
+    }
+  ]
+}
