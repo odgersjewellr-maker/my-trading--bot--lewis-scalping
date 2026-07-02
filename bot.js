@@ -777,6 +777,7 @@ async function run() {
         console.log(`  ⛔ STOP HIT at $${position.stopLossPrice.toFixed(2)} — P&L $${stopPnl.toFixed(2)} | Portfolio: $${portfolioValue.toFixed(2)}`);
         log.trades.push({ timestamp: new Date().toISOString(), type: "stop", symbol: CONFIG.symbol, side: position.side, price: position.stopLossPrice, pnlUSD: stopPnl, reason: "trailing stop hit", paperTrading: true });
         saveLog(log);
+        writeCsvRow({ side: (position.side === "long" ? "sell" : "buy").toUpperCase(), quantity: position.quantity, price: position.stopLossPrice, totalUSD: position.sizeUSD, orderId: "PAPER-STOP", mode: "PAPER", notes: `Trailing stop hit — P&L $${stopPnl.toFixed(2)} (${((stopPnl / position.sizeUSD) * 100).toFixed(2)}%) | Portfolio: $${portfolioValue.toFixed(2)}` });
         savePosition(null);
         position = null;
 
@@ -831,6 +832,7 @@ async function run() {
         console.log(`  Blended entry: $${position.entryPrice.toFixed(2)} | Total qty: ${position.quantity.toFixed(6)} | Pyramids: ${position.pyramided}`);
         log.trades.push({ timestamp: new Date().toISOString(), type: "pyramid", symbol: CONFIG.symbol, side: addSide, quantity: addQty, price, sizeUSD: addSizeUSD, pyramidNum: position.pyramided, orderId: addOrder.orderId, paperTrading: CONFIG.paperTrading });
         saveLog(log);
+        writeCsvRow({ side: addSide.toUpperCase(), quantity: addQty, price, totalUSD: addSizeUSD, orderId: addOrder.orderId, mode: CONFIG.paperTrading ? "PAPER" : "LIVE", notes: `Pyramid #${position.pyramided} add | Portfolio: $${portfolioValue.toFixed(2)}` });
       }
     }
 

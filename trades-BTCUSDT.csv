@@ -1,1 +1,2 @@
 Date,Time (UTC),Exchange,Symbol,Side,Quantity,Price,Total USD,Fee (est.),Net Amount,Order ID,Mode,Notes
+2026-07-02,00:19:27,BitGet,BTCUSDT,SELL,,60238.59,,,,BACKFILL,PAPER,"Trailing stop hit — P&L $21.43 | Portfolio: $1021.43 | Backfilled from safety-check-log (CSV write was missing on stop path; quantity unrecorded)"
