@@ -11,6 +11,7 @@
 
 import "dotenv/config";
 import { readFileSync, writeFileSync, existsSync, appendFileSync } from "fs";
+import { vtPlaceMarketOrder, vtPlaceStopOrder, vtReplaceStopOrder, vtSafeCancelStop, vtAccountMetrics, vtHasOpenPosition } from "./velotrade.js";
 import crypto from "crypto";
 import { execSync } from "child_process";
 import { pathToFileURL } from "url";
@@ -98,6 +99,9 @@ export const CONFIG = {
   propDailyLimitPct: parseFloat(process.env.PROP_DAILY_LIMIT_PCT || "0"), // 0 = firm has no daily loss rule
   propDailyGuard: parseFloat(process.env.PROP_DAILY_GUARD || "0.7"),      // flatten+halt day at this fraction of daily limit
   propLevCap: parseFloat(process.env.PROP_LEV_CAP || "2"),                // firm notional leverage cap
+  // Execution venue for LIVE orders: "bitget" (default) or "velotrade" (prop account).
+  // Paper mode ignores this entirely.
+  broker: (process.env.BROKER || "bitget").toLowerCase(),
   tradeMode: process.env.TRADE_MODE || "spot",
   // Sent to BitGet as presetStopLossPrice on the entry order itself (see
   // computeStopLossPrice) — enforced by the exchange on real trades, not by us.
@@ -584,6 +588,21 @@ async function executeOrder(side, quantity, stopLossPrice, positionSide) {
   if (CONFIG.paperTrading) {
     return { orderId: `PAPER-${Date.now()}`, paper: true };
   }
+  if (CONFIG.broker === "velotrade") {
+    // Entry calls pass positionSide; close calls don't.
+    const order = await vtPlaceMarketOrder(side, quantity, positionSide ? "OPEN" : "CLOSE");
+    let stopOrderId = null;
+    if (stopLossPrice != null && positionSide) {
+      // Protective stop rests on the firm's book — the bot only wakes every 15m,
+      // and a gap between runs must not be able to breach the daily/max limits.
+      try {
+        stopOrderId = await vtPlaceStopOrder(positionSide === "long" ? "sell" : "buy", quantity, stopLossPrice);
+      } catch (err) {
+        console.log(`  ⚠️ Velotrade protective stop failed (bot-side stop still active): ${err.message}`);
+      }
+    }
+    return { orderId: order.orderId, stopOrderId, paper: false };
+  }
   const order = await placeBitGetOrder(CONFIG.symbol, side, quantity, stopLossPrice, positionSide);
   return { orderId: order.orderId, paper: false };
 }
@@ -804,6 +823,41 @@ async function run() {
     console.log(`  Regime gate:  [${CONFIG.regimeGate}] ${regimeAllows ? "✅ entries allowed" : "🚦 entries blocked"} — ${regimeNote}`);
   }
 
+  // ── Velotrade live: reconcile with the firm's account before anything else ──
+  let vtLiveEquity = null;
+  if (CONFIG.broker === "velotrade" && !CONFIG.paperTrading) {
+    // If our position file says open but the firm shows flat, the resting
+    // protective stop filled between runs — book it as a stop exit.
+    if (position) {
+      try {
+        const stillOpen = await vtHasOpenPosition();
+        if (!stillOpen) {
+          const exitPrice = position.stopLossPrice ?? price;
+          const pnl = position.side === "long"
+            ? (exitPrice - position.entryPrice) * position.quantity
+            : (position.entryPrice - exitPrice) * position.quantity;
+          console.log(`  ⛔ Velotrade: position closed exchange-side (stop filled) — est. P&L $${pnl.toFixed(2)}`);
+          log.trades.push({ timestamp: new Date().toISOString(), type: "stop", symbol: CONFIG.symbol, side: position.side, price: exitPrice, pnlUSD: pnl, reason: "protective stop filled exchange-side", paperTrading: false });
+          saveLog(log);
+          writeCsvRow({ side: (position.side === "long" ? "sell" : "buy").toUpperCase(), quantity: position.quantity, price: exitPrice, totalUSD: position.sizeUSD, orderId: position.stopOrderId ?? "VT-STOP", mode: "LIVE", notes: `Protective stop filled exchange-side — est. P&L $${pnl.toFixed(2)}` });
+          savePosition(null);
+          position = null;
+        }
+      } catch (err) {
+        console.log(`  ⚠️ Velotrade position reconciliation failed: ${err.message} — continuing with local state`);
+      }
+    }
+    // The firm's balance/equity are authoritative for sizing and prop guards
+    try {
+      const m = await vtAccountMetrics();
+      if (m.balance != null) { portfolioValue = m.balance; savePortfolio(portfolioValue); }
+      if (m.equity != null) vtLiveEquity = m.equity;
+      console.log(`  Velotrade account: equity $${m.equity != null ? m.equity.toFixed(2) : "N/A"} | balance $${m.balance != null ? m.balance.toFixed(2) : "N/A"}`);
+    } catch (err) {
+      console.log(`  ⚠️ Velotrade metrics fetch failed: ${err.message}`);
+    }
+  }
+
   // ── Prop mode guards — run BEFORE any position management ──────────────────
   let prop = null;
   if (CONFIG.propMode) {
@@ -819,7 +873,8 @@ async function run() {
     const unreal = position
       ? (position.side === "long" ? (price - position.entryPrice) * position.quantity : (position.entryPrice - price) * position.quantity)
       : 0;
-    let equity = portfolioValue + unreal;
+    // On a live Velotrade account, guard on the firm's own equity number
+    let equity = vtLiveEquity ?? (portfolioValue + unreal);
     const today = new Date().toISOString().slice(0, 10);
     if (prop.dayDate !== today) { prop.dayDate = today; prop.dayStartEquity = equity; prop.dayHalted = false; }
 
@@ -849,6 +904,7 @@ async function run() {
       log.trades.push({ timestamp: new Date().toISOString(), type: "exit", symbol: CONFIG.symbol, side: closeSide, quantity: position.quantity, price, sizeUSD: position.sizeUSD, pnlUSD: pnl, reason: `prop: ${reason}`, orderPlaced: true, orderId: order.orderId, paperTrading: CONFIG.paperTrading });
       saveLog(log);
       writeCsvRow({ side: closeSide.toUpperCase(), quantity: position.quantity, price, totalUSD: position.sizeUSD, orderId: order.orderId, mode: CONFIG.paperTrading ? "PAPER" : "LIVE", notes: `PROP ${reason} — P&L $${pnl.toFixed(2)} | Portfolio: $${portfolioValue.toFixed(2)}` });
+      if (CONFIG.broker === "velotrade" && !CONFIG.paperTrading) await vtSafeCancelStop(position.stopOrderId);
       savePosition(null);
       position = null;
       equity = portfolioValue;
@@ -928,6 +984,7 @@ async function run() {
 
     // Trailing stop — ratchet 3×ATR each run to lock in profits
     const TRAIL_MULT = 3.0;
+    let stopMoved = false;
     if (atr) {
       const trailDist = atr * TRAIL_MULT;
       if (position.side === "long") {
@@ -935,13 +992,29 @@ async function run() {
         if (newStop > (position.stopLossPrice ?? 0)) {
           console.log(`  Trailing stop ratcheted: $${(position.stopLossPrice ?? 0).toFixed(2)} → $${newStop.toFixed(2)}`);
           position.stopLossPrice = newStop;
+          stopMoved = true;
         }
       } else {
         const newStop = price + trailDist;
         if (position.stopLossPrice == null || newStop < position.stopLossPrice) {
           console.log(`  Trailing stop ratcheted: $${(position.stopLossPrice ?? Infinity).toFixed(2)} → $${newStop.toFixed(2)}`);
           position.stopLossPrice = newStop;
+          stopMoved = true;
         }
+      }
+    }
+    // Live Velotrade: keep the resting protective stop in sync with the ratchet
+    if (stopMoved && CONFIG.broker === "velotrade" && !CONFIG.paperTrading) {
+      try {
+        position.stopOrderId = await vtReplaceStopOrder(
+          position.stopOrderId,
+          position.side === "long" ? "sell" : "buy",
+          position.quantity,
+          position.stopLossPrice,
+        );
+        savePosition(position);
+      } catch (err) {
+        console.log(`  ⚠️ Velotrade stop replace failed (bot-side stop still active): ${err.message}`);
       }
     }
     console.log(`  Stop loss: $${position.stopLossPrice != null ? position.stopLossPrice.toFixed(2) : "N/A"}`);
@@ -1060,6 +1133,7 @@ async function run() {
       log.trades.push({ timestamp: new Date().toISOString(), type: "exit", symbol: CONFIG.symbol, side: closeSide, quantity: position.quantity, price, sizeUSD: position.sizeUSD, pnlUSD, pnlPct, reason: "NKB reversal", orderPlaced: true, orderId: order.orderId, paperTrading: CONFIG.paperTrading });
       saveLog(log);
       writeCsvRow({ side: closeSide.toUpperCase(), quantity: position.quantity, price, totalUSD: position.sizeUSD, orderId: order.orderId, mode: CONFIG.paperTrading ? "PAPER" : "LIVE", notes: `NKB reversal exit — P&L $${pnlUSD.toFixed(2)} (${pnlPct.toFixed(2)}%) | Portfolio: $${portfolioValue.toFixed(2)}` });
+      if (CONFIG.broker === "velotrade" && !CONFIG.paperTrading) await vtSafeCancelStop(position.stopOrderId);
       savePosition(null);
       position = null;
       console.log(`\n✅ Position closed — now opening new position in opposite direction`);
@@ -1119,7 +1193,7 @@ async function run() {
       return;
     }
 
-    savePosition({ side: positionSide, entryPrice: price, quantity, sizeUSD: tradeSize, stopLossPrice, openedAt: new Date().toISOString(), orderId: order.orderId, pyramided: 0 });
+    savePosition({ side: positionSide, entryPrice: price, quantity, sizeUSD: tradeSize, stopLossPrice, openedAt: new Date().toISOString(), orderId: order.orderId, stopOrderId: order.stopOrderId ?? null, pyramided: 0 });
     paperFee(tradeSize);
     savePortfolio(portfolioValue);
     log.trades.push({ timestamp: new Date().toISOString(), type: "entry", symbol: CONFIG.symbol, side, quantity, price, sizeUSD: tradeSize, portfolioValue, nkb, orderPlaced: true, orderId: order.orderId, paperTrading: CONFIG.paperTrading });
