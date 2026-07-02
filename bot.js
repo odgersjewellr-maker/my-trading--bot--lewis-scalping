@@ -785,8 +785,8 @@ async function run() {
           const reOrderSide = stoppedSide === "long" ? "buy" : "sell";
           const mtfOk = stoppedSide === "long" ? mtfOkLong : mtfOkShort;
           if (mtfOk) {
-            console.log(`  ♻️  ADX ${adxValue.toFixed(1)} still strong — re-entering ${stoppedSide.toUpperCase()} at half size`);
-            await openPosition(reOrderSide, stoppedSide, "Re-entry after stop (ADX strong)", 0.5);
+            console.log(`  ♻️  ADX ${adxValue.toFixed(1)} still strong — re-entering ${stoppedSide.toUpperCase()} at full size`);
+            await openPosition(reOrderSide, stoppedSide, "Re-entry after stop (ADX strong)", 1.0);
           } else {
             console.log(`  ADX ${adxValue.toFixed(1)} strong but 4H trend flipped — skipping re-entry`);
           }
