@@ -657,6 +657,10 @@ async function run() {
   const price = closes[closes.length - 1];
   const atr = calcATR(candles, CONFIG.atrPeriod);
 
+  // 4H MTF filter — only trade with the higher-timeframe trend
+  const candles4h = await fetchCandles(CONFIG.symbol, "4H", 100);
+  const nkb4h = calcNKB(candles4h);
+
   console.log(`  Current price: $${price.toFixed(2)}`);
 
   const nkb = calcNKB(candles);
@@ -669,6 +673,7 @@ async function run() {
   console.log(`  State:        ${nkb.state === 1 ? "BULLISH" : nkb.state === -1 ? "BEARISH" : "NEUTRAL"}`);
   console.log(`  ADX(14):      ${adxValue != null ? adxValue.toFixed(1) : "N/A"}${adxStrong ? " 💪 STRONG TREND" : " (weak)"}`);
   console.log(`  ATR(${CONFIG.atrPeriod}):      ${atr ? "$" + atr.toFixed(2) : "N/A"}`);
+  console.log(`  4H State:     ${nkb4h.state === 1 ? "🟢 BULLISH" : nkb4h.state === -1 ? "🔴 BEARISH" : "⚪ NEUTRAL"} (MTF filter)`);
 
   // ── Volume filter ──────────────────────────────────────────────────────────
   const volSMAArr  = calcVolumeSMA(candles, NKB.volumeSMA);
@@ -712,14 +717,13 @@ async function run() {
     updatedAt: new Date().toISOString(),
   }, null, 2));
 
-  // ── Active hours filter: 08:00–20:00 UTC ──────────────────────────────────
-  const utcHour = new Date().getUTCHours();
-  const inActiveHours = utcHour >= 8 && utcHour < 20;
-  if (!inActiveHours) console.log(`  Outside active hours (UTC ${utcHour}:xx) — holding off`);
+  // 4H MTF: only trade with the higher-timeframe trend (neutral 4H allows both directions)
+  const mtfOkLong  = nkb4h.state >= 0; // 4H bullish or neutral
+  const mtfOkShort = nkb4h.state <= 0; // 4H bearish or neutral
 
-  // Fire when signal confirmed 2+ bars, in active hours, AND volume is healthy
-  const buySignal  = newPending === "BUY"  && newPendingBars >= 2 && inActiveHours && volOk;
-  const sellSignal = newPending === "SELL" && newPendingBars >= 2 && inActiveHours && volOk;
+  // Fire when signal confirmed 2+ bars, 4H aligned, AND volume is healthy
+  const buySignal  = newPending === "BUY"  && newPendingBars >= 2 && volOk && mtfOkLong;
+  const sellSignal = newPending === "SELL" && newPendingBars >= 2 && volOk && mtfOkShort;
 
   const stateLabel = nkb.state === 1 ? "BULLISH" : nkb.state === -1 ? "BEARISH" : "NEUTRAL";
   console.log(`\n  Portfolio value: $${portfolioValue.toFixed(2)}`);
@@ -764,6 +768,7 @@ async function run() {
         ? price <= position.stopLossPrice
         : price >= position.stopLossPrice;
       if (stopHit) {
+        const stoppedSide = position.side;
         const stopPnl = position.side === "long"
           ? (position.stopLossPrice - position.entryPrice) * position.quantity
           : (position.entryPrice - position.stopLossPrice) * position.quantity;
@@ -774,6 +779,19 @@ async function run() {
         saveLog(log);
         savePosition(null);
         position = null;
+
+        // Re-entry: if ADX still strong, immediately re-enter same direction at half size
+        if (adxStrong) {
+          const reOrderSide = stoppedSide === "long" ? "buy" : "sell";
+          const mtfOk = stoppedSide === "long" ? mtfOkLong : mtfOkShort;
+          if (mtfOk) {
+            console.log(`  ♻️  ADX ${adxValue.toFixed(1)} still strong — re-entering ${stoppedSide.toUpperCase()} at half size`);
+            await openPosition(reOrderSide, stoppedSide, "Re-entry after stop (ADX strong)", 0.5);
+          } else {
+            console.log(`  ADX ${adxValue.toFixed(1)} strong but 4H trend flipped — skipping re-entry`);
+          }
+        }
+
         console.log("═══════════════════════════════════════════════════════════\n");
         return;
       }
@@ -870,11 +888,11 @@ async function run() {
 
   const canShort = CONFIG.tradeMode === "futures";
 
-  async function openPosition(side, positionSide, signalNote) {
+  async function openPosition(side, positionSide, signalNote, sizeMult = 1.0) {
     // Fixed % risk sizing: risk riskPct of portfolio on this trade
     // Position size = riskAmount / stopDist — so a stop hit loses exactly riskPct
     const stopDist = atrStopDist ?? (price * (CONFIG.stopLossPct / 100));
-    const riskAmount = portfolioValue * CONFIG.riskPct;
+    const riskAmount = portfolioValue * CONFIG.riskPct * sizeMult;
     const riskBasedQty = stopDist > 0 ? riskAmount / stopDist : 0;
     // Cap notional at 100% of portfolio (leverage=1 safety ceiling)
     const maxQty = portfolioValue / price;
