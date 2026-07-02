@@ -115,7 +115,8 @@ jobs:
           PROP_TARGET_PCT=10
           PROP_MAX_DD_PCT=6
           PROP_DD_GUARD=0.9
-          PROP_DAILY_LIMIT_PCT=0
+          PROP_DAILY_LIMIT_PCT=4
+          PROP_DAILY_GUARD=0.7
           PROP_LEV_CAP=2
           EOF
 
