@@ -177,12 +177,13 @@ async function executeTrade(signal) {
   const price   = candles[candles.length - 1].close;
   out(`Price: $${price.toFixed(2)}`);
 
-  // Load all state from GitHub
+  // Load all state from GitHub (symbol-prefixed files)
+  const sym = CONFIG.symbol;
   const [posFile, portFile, stateFile, logFile] = await Promise.all([
-    loadState("position.json"),
-    loadState("portfolio.json"),
-    loadState("nkb-state.json"),
-    loadState("safety-check-log.json"),
+    loadState(`position-${sym}.json`),
+    loadState(`portfolio-${sym}.json`),
+    loadState(`nkb-state-${sym}.json`),
+    loadState(`safety-check-log-${sym}.json`),
   ]);
 
   let position      = posFile?.data ?? null;
@@ -202,7 +203,7 @@ async function executeTrade(signal) {
 
   // Save new NKB state
   const newNKBState = buySignal ? 1 : -1;
-  await saveState("nkb-state.json",
+  await saveState(`nkb-state-${sym}.json`,
     { state: newNKBState, updatedAt: new Date().toISOString() },
     stateFile?.sha
   );
@@ -247,9 +248,9 @@ async function executeTrade(signal) {
     // commit gets rejected with a 409 (confirmed in Railway logs: GitHub
     // returned the just-created sibling commit's sha as the conflict).
     // They must run sequentially, one commit at a time.
-    await saveState("portfolio.json", { value: portfolioValue, updatedAt: new Date().toISOString() }, portFile?.sha);
-    await saveState("position.json", null, posFile?.sha);
-    await saveState("safety-check-log.json", tradeLog, logFile?.sha);
+    await saveState(`portfolio-${sym}.json`, { value: portfolioValue, updatedAt: new Date().toISOString() }, portFile?.sha);
+    await saveState(`position-${sym}.json`, null, posFile?.sha);
+    await saveState(`safety-check-log-${sym}.json`, tradeLog, logFile?.sha);
     position = null;
     out(`Portfolio: $${portfolioValue.toFixed(2)}`);
 
@@ -297,16 +298,14 @@ async function executeTrade(signal) {
 
   // Reload SHAs after the close writes above
   const [freshPosFile, freshPortFile, freshLogFile] = await Promise.all([
-    loadState("position.json"),
-    loadState("portfolio.json"),
-    loadState("safety-check-log.json"),
+    loadState(`position-${sym}.json`),
+    loadState(`portfolio-${sym}.json`),
+    loadState(`safety-check-log-${sym}.json`),
   ]);
 
-  // Sequential for the same reason as the close block above — concurrent
-  // commits to the same branch race for the HEAD and 409 on each other.
-  await saveState("position.json", newPosition, freshPosFile?.sha);
-  await saveState("portfolio.json", { value: portfolioValue, updatedAt: new Date().toISOString() }, freshPortFile?.sha);
-  await saveState("safety-check-log.json", tradeLog, freshLogFile?.sha);
+  await saveState(`position-${sym}.json`, newPosition, freshPosFile?.sha);
+  await saveState(`portfolio-${sym}.json`, { value: portfolioValue, updatedAt: new Date().toISOString() }, freshPortFile?.sha);
+  await saveState(`safety-check-log-${sym}.json`, tradeLog, freshLogFile?.sha);
 
   out(`✅ ${positionSide.toUpperCase()} opened at $${price.toFixed(2)} | Order: ${order.orderId}`);
 
@@ -406,155 +405,168 @@ function formatEasternFromIso(isoStr) {
   return toEastern(new Date(isoStr));
 }
 
-async function buildDashboardHtml() {
-  const [portFile, posFile, logFile, csvText] = await Promise.all([
-    loadState("portfolio.json"),
-    loadState("position.json"),
-    loadState("safety-check-log.json"),
-    loadRawText("trades.csv"),
+const DASHBOARD_SYMBOLS = ["BTCUSDT", "SOLUSDT"];
+
+async function buildSymbolCard(sym) {
+  const [portFile, posFile, logFile] = await Promise.all([
+    loadState(`portfolio-${sym}.json`),
+    loadState(`position-${sym}.json`),
+    loadState(`safety-check-log-${sym}.json`),
   ]);
 
-  const tradeLog = logFile?.data ?? { trades: [] };
-  const stats = computePerformanceStats(tradeLog);
+  const tradeLog      = logFile?.data ?? { trades: [] };
+  const portfolioValue = portFile?.data?.value ?? 1000;
+  const position      = posFile?.data ?? null;
+  const startVal      = 1000;
+  const totalPct      = ((portfolioValue - startVal) / startVal * 100).toFixed(2);
+  const pnlClass      = portfolioValue >= startVal ? "pos" : "neg";
 
+  // Stats
+  const allClosed = tradeLog.trades.filter(t => t.type === "exit" || t.type === "stop");
+  const wins      = allClosed.filter(t => (t.pnlUSD ?? 0) > 0).length;
+  const winRate   = allClosed.length > 0 ? (wins / allClosed.length * 100).toFixed(1) : null;
+  const totalPnl  = allClosed.reduce((s, t) => s + (t.pnlUSD ?? 0), 0);
+
+  // Position
+  let posHtml;
+  if (position) {
+    let currentPrice = null;
+    try {
+      const c = await fetchCandles(sym, "15m", 5);
+      currentPrice = c[c.length - 1].close;
+    } catch {}
+    const pnlUSD = currentPrice === null ? null
+      : position.side === "long"
+        ? (currentPrice - position.entryPrice) * position.quantity
+        : (position.entryPrice - currentPrice) * position.quantity;
+    const pnlPct = pnlUSD === null ? null : (pnlUSD / position.sizeUSD) * 100;
+    const { date, time } = formatEasternFromIso(position.openedAt);
+    posHtml = `
+      <div class="stat"><span>Side</span><strong>${position.side.toUpperCase()}</strong></div>
+      <div class="stat"><span>Entry</span><strong>$${position.entryPrice.toFixed(2)}</strong></div>
+      <div class="stat"><span>Current</span><strong>${currentPrice !== null ? "$" + currentPrice.toFixed(2) : "N/A"}</strong></div>
+      <div class="stat"><span>Size</span><strong>$${(position.sizeUSD ?? 0).toFixed(2)}</strong></div>
+      <div class="stat"><span>Unrealized P&amp;L</span><strong class="${pnlUSD !== null && pnlUSD >= 0 ? "pos" : "neg"}">${pnlUSD !== null ? `$${pnlUSD.toFixed(2)} (${pnlPct.toFixed(2)}%)` : "N/A"}</strong></div>
+      <div class="stat"><span>Stop</span><strong>$${position.stopLossPrice != null ? position.stopLossPrice.toFixed(2) : "N/A"}</strong></div>
+      <div class="stat"><span>Pyramids</span><strong>${position.pyramided ?? 0} / 3</strong></div>
+      <div class="stat"><span>Opened</span><strong>${date} ${time} ET</strong></div>`;
+  } else {
+    posHtml = `<div class="empty">No open position</div>`;
+  }
+
+  // Recent trades from log
+  const recent = tradeLog.trades
+    .filter(t => ["entry","exit","stop","pyramid"].includes(t.type))
+    .slice(-10).reverse();
+  const tradesHtml = recent.length
+    ? `<table>
+        <tr><th>Time (ET)</th><th>Type</th><th>Side</th><th>Price</th><th>Size</th><th>P&amp;L</th></tr>
+        ${recent.map(t => {
+          const { date, time } = formatEasternFromIso(t.timestamp);
+          const pnl = t.pnlUSD != null
+            ? `<span class="${t.pnlUSD >= 0 ? "pos" : "neg"}">${t.pnlUSD >= 0 ? "+" : ""}$${t.pnlUSD.toFixed(2)}</span>`
+            : "—";
+          const typeClass = t.type === "stop" ? "neg" : t.type === "entry" ? "" : "pos";
+          return `<tr>
+            <td>${escapeHtml(date)} ${escapeHtml(time)}</td>
+            <td class="${typeClass}">${escapeHtml(t.type.toUpperCase())}</td>
+            <td>${escapeHtml((t.side||"").toUpperCase())}</td>
+            <td>${t.price != null ? "$"+t.price.toFixed(2) : "—"}</td>
+            <td>${t.sizeUSD != null ? "$"+t.sizeUSD.toFixed(2) : "—"}</td>
+            <td>${pnl}</td>
+          </tr>`;
+        }).join("")}
+      </table>`
+    : `<div class="empty">No trades logged yet</div>`;
+
+  return `
+  <div class="symbol-section">
+    <div class="symbol-header">
+      <span class="symbol-name">${escapeHtml(sym)}</span>
+      <span class="badge badge-paper">PAPER</span>
+    </div>
+    <div class="cards-row">
+      <div class="card">
+        <h2>Portfolio</h2>
+        <div class="stat"><span>Value</span><strong>$${portfolioValue.toFixed(2)}</strong></div>
+        <div class="stat"><span>Return</span><strong class="${pnlClass}">${totalPct >= 0 ? "+" : ""}${totalPct}%</strong></div>
+        <div class="stat"><span>Closed trades</span><strong>${allClosed.length}</strong></div>
+        <div class="stat"><span>Win rate</span><strong>${winRate !== null ? winRate + "%" : "—"}</strong></div>
+        <div class="stat"><span>Total P&amp;L</span><strong class="${totalPnl >= 0 ? "pos" : "neg"}">${allClosed.length > 0 ? (totalPnl >= 0 ? "+" : "") + "$" + totalPnl.toFixed(2) : "—"}</strong></div>
+      </div>
+      <div class="card">
+        <h2>Open Position</h2>
+        ${posHtml}
+      </div>
+    </div>
+    <div class="card">
+      <h2>Recent Trades — ${escapeHtml(sym)}</h2>
+      ${tradesHtml}
+    </div>
+  </div>`;
+}
+
+async function buildDashboardHtml() {
   let balanceHtml;
   try {
     const data = await fetchBalance();
-    if (CONFIG.tradeMode === "spot") {
-      const { usdtTotal, otherHoldings } = summarizeSpotBalance(data);
-      balanceHtml = `
-        <div class="stat"><span>USDT balance</span><strong>$${usdtTotal.toFixed(2)}</strong></div>
-        ${otherHoldings.length ? `<div class="stat"><span>Other holdings</span><strong>${otherHoldings.map((h) => `${h.amount} ${h.coin}`).join(", ")}</strong></div>` : ""}
-      `;
+    if (CONFIG.tradeMode === "futures") {
+      balanceHtml = `<pre style="font-size:12px;color:#aaa;overflow:auto;max-height:120px">${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
     } else {
-      balanceHtml = `<pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+      const usdt = data.find(a => a.coin === "USDT");
+      const bal = usdt ? parseFloat(usdt.available) + parseFloat(usdt.frozen) : 0;
+      balanceHtml = `<div class="stat"><span>USDT balance</span><strong>$${bal.toFixed(2)}</strong></div>`;
     }
   } catch (err) {
     balanceHtml = `<div class="error">Could not fetch live balance: ${escapeHtml(err.message)}</div>`;
   }
 
-  const position = posFile?.data ?? null;
-  let positionHtml;
-  if (position) {
-    let currentPrice = null;
-    try {
-      const candles = await fetchCandles(CONFIG.symbol, CONFIG.timeframe, 5);
-      currentPrice = candles[candles.length - 1].close;
-    } catch {}
-
-    const pnlUSD =
-      currentPrice === null
-        ? null
-        : position.side === "long"
-          ? (currentPrice - position.entryPrice) * position.quantity
-          : (position.entryPrice - currentPrice) * position.quantity;
-    const pnlPct = pnlUSD === null ? null : (pnlUSD / position.sizeUSD) * 100;
-
-    const stopLossPrice =
-      position.stopLossPrice ??
-      (position.side === "long"
-        ? position.entryPrice * (1 - CONFIG.stopLossPct / 100)
-        : position.entryPrice * (1 + CONFIG.stopLossPct / 100));
-
-    positionHtml = `
-      <div class="stat"><span>Side</span><strong>${position.side.toUpperCase()}</strong></div>
-      <div class="stat"><span>Entry price</span><strong>$${position.entryPrice.toFixed(2)}</strong></div>
-      <div class="stat"><span>Current price</span><strong>${currentPrice !== null ? "$" + currentPrice.toFixed(2) : "N/A"}</strong></div>
-      <div class="stat"><span>Quantity</span><strong>${position.quantity}</strong></div>
-      <div class="stat"><span>Size (USD)</span><strong>$${position.sizeUSD.toFixed(2)}</strong></div>
-      <div class="stat"><span>Unrealized P&amp;L</span><strong class="${pnlUSD >= 0 ? "pos" : "neg"}">${pnlUSD !== null ? `$${pnlUSD.toFixed(2)} (${pnlPct.toFixed(2)}%)` : "N/A"}</strong></div>
-      <div class="stat"><span>Stop loss</span><strong>$${stopLossPrice.toFixed(2)}</strong></div>
-      <div class="stat"><span>Opened</span><strong>${(() => { const { date, time } = formatEasternFromIso(position.openedAt); return `${date} ${time} ET`; })()}</strong></div>
-    `;
-  } else {
-    positionHtml = `<div class="empty">No open position</div>`;
-  }
-
-  const trades = parseTradesCsv(csvText, 10);
-  const tradesHtml = trades.length
-    ? `
-      <table>
-        <tr><th>Date</th><th>Time (ET)</th><th>Side</th><th>Qty</th><th>Price</th><th>Total USD</th><th>Mode</th><th>Notes</th></tr>
-        ${trades
-          .map(
-            (r) => {
-              const { date, time } = formatEasternFromParts(r[0], r[1]);
-              return `
-          <tr>
-            <td>${escapeHtml(date)}</td>
-            <td>${escapeHtml(time)}</td>
-            <td>${escapeHtml(r[4])}</td>
-            <td>${escapeHtml(r[5])}</td>
-            <td>${escapeHtml(r[6])}</td>
-            <td>${escapeHtml(r[7])}</td>
-            <td class="mode-${escapeHtml((r[11] || "").toLowerCase())}">${escapeHtml(r[11])}</td>
-            <td>${escapeHtml(r[12] || "").replace(/^"|"$/g, "")}</td>
-          </tr>`;
-            },
-          )
-          .join("")}
-      </table>
-    `
-    : `<div class="empty">No trades logged yet</div>`;
-
-  const portfolioValue = portFile?.data?.value ?? CONFIG.portfolioValue;
-  const profitUSD = portfolioValue - CONFIG.portfolioValue;
-  const profitPct = (profitUSD / CONFIG.portfolioValue) * 100;
+  const symbolCards = await Promise.all(DASHBOARD_SYMBOLS.map(buildSymbolCard));
+  const { date, time } = toEastern(new Date());
 
   return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
-<meta http-equiv="refresh" content="30">
+<meta http-equiv="refresh" content="300">
 <title>Trading Bot Dashboard</title>
 <style>
-  body { font-family: -apple-system, Segoe UI, Arial, sans-serif; background: #0f1115; color: #e6e6e6; margin: 0; padding: 32px; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, Segoe UI, Arial, sans-serif; background: #0f1115; color: #e6e6e6; margin: 0; padding: 24px 32px; }
   h1 { font-size: 20px; margin-bottom: 4px; }
   .subtitle { color: #888; margin-bottom: 28px; font-size: 13px; }
-  .card { background: #1a1d24; border: 1px solid #2a2e38; border-radius: 10px; padding: 20px; margin-bottom: 20px; }
-  .card h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; color: #999; margin: 0 0 14px; }
-  .stat { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #23262e; font-size: 14px; }
+  .card { background: #1a1d24; border: 1px solid #2a2e38; border-radius: 10px; padding: 18px 20px; margin-bottom: 16px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #999; margin: 0 0 12px; }
+  .stat { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #23262e; font-size: 14px; }
   .stat:last-child { border-bottom: none; }
   .stat span { color: #999; }
   .pos { color: #4ade80; }
   .neg { color: #f87171; }
-  .empty { color: #777; font-style: italic; }
-  .error { color: #f87171; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #23262e; }
+  .empty { color: #777; font-style: italic; font-size: 13px; }
+  .error { color: #f87171; font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 7px 5px; border-bottom: 1px solid #23262e; }
   th { color: #999; font-weight: 500; }
-  .mode-paper { color: #60a5fa; }
-  .mode-live { color: #4ade80; }
-  .mode-blocked { color: #888; }
   .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
   .badge-paper { background: #1e3a5f; color: #60a5fa; }
   .badge-live { background: #1e3a2a; color: #4ade80; }
+  .symbol-section { margin-bottom: 36px; }
+  .symbol-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .symbol-name { font-size: 18px; font-weight: 700; letter-spacing: 0.03em; }
+  .cards-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  hr { border: none; border-top: 1px solid #2a2e38; margin: 32px 0; }
 </style>
 </head>
 <body>
-  <h1>Claude Trading Bot — ${escapeHtml(CONFIG.symbol)} <span class="badge ${CONFIG.paperTrading ? "badge-paper" : "badge-live"}">${CONFIG.paperTrading ? "PAPER" : "LIVE"}</span></h1>
-  <div class="subtitle">Generated ${(() => { const { date, time } = toEastern(new Date()); return `${date} ${time} ET`; })()} · Strategy: VWAP + RSI(3) + EMA(8) · Timeframe: ${escapeHtml(CONFIG.timeframe)}</div>
+  <h1>Claude Trading Bot</h1>
+  <div class="subtitle">Generated ${date} ${time} ET · NKB + ADX + Trail 3×ATR + Pyramid 3× + 4H MTF · 15m · Paper · refreshes every 5 min</div>
 
-  <div class="card">
-    <h2>Account</h2>
+  <div class="card" style="margin-bottom:28px">
+    <h2>BitGet Account</h2>
     ${balanceHtml}
-    <div class="stat"><span>Tracked portfolio value</span><strong>$${portfolioValue.toFixed(2)}</strong></div>
-    <div class="stat"><span>Profit on starting capital</span><strong class="${profitUSD >= 0 ? "pos" : "neg"}">${profitUSD >= 0 ? "+" : ""}$${profitUSD.toFixed(2)} (${profitPct >= 0 ? "+" : ""}${profitPct.toFixed(2)}% of $${CONFIG.portfolioValue.toFixed(2)})</strong></div>
-    <div class="stat"><span>Max trades / day</span><strong>${CONFIG.maxTradesPerDay === 0 ? "No limit" : CONFIG.maxTradesPerDay}</strong></div>
-    <div class="stat"><span>Trade frequency</span><strong>${stats.tradesPerDay !== null ? `${stats.tradesPerDay.toFixed(2)} / day (${stats.entryCount} opened total)` : "No trades opened yet"}</strong></div>
-    <div class="stat"><span>Total P&amp;L (closed trades)</span><strong class="${stats.totalPnlUSD >= 0 ? "pos" : "neg"}">${stats.exitCount > 0 ? `$${stats.totalPnlUSD.toFixed(2)}` : "No closed trades yet"}</strong></div>
-    <div class="stat"><span>Trade accuracy</span><strong>${stats.winRate !== null ? `${stats.winRate.toFixed(1)}% (${stats.wins}/${stats.exitCount} wins)` : "No closed trades yet"}</strong></div>
   </div>
 
-  <div class="card">
-    <h2>Current Position</h2>
-    ${positionHtml}
-  </div>
-
-  <div class="card">
-    <h2>Recent Trades</h2>
-    ${tradesHtml}
-  </div>
+  ${symbolCards.join("<hr>")}
 </body>
 </html>`;
 }
