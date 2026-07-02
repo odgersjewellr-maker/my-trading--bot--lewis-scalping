@@ -88,6 +88,16 @@ export const CONFIG = {
   // "off" | "chop" | "markov" | "chop+markov". Blocks NEW entries (incl. re-entries)
   // in choppy/sideways regimes; never blocks exits.
   regimeGate: (process.env.REGIME_GATE || "off").toLowerCase(),
+  // Prop mode — challenge risk architecture, Board-approved 2026-07-02.
+  // Validated in trading-firm/backtests/prop-challenge-sim.mjs (+ Breakout variant).
+  propMode: process.env.PROP_MODE === "true",
+  propRiskPct: parseFloat(process.env.PROP_RISK_PCT || "1.0"),            // % of INITIAL balance risked per trade
+  propTargetPct: parseFloat(process.env.PROP_TARGET_PCT || "10"),         // profit target, closed-balance basis
+  propMaxDdPct: parseFloat(process.env.PROP_MAX_DD_PCT || "6"),           // firm max drawdown (equity, static)
+  propDdGuard: parseFloat(process.env.PROP_DD_GUARD || "0.9"),            // flatten+halt at this fraction of max DD
+  propDailyLimitPct: parseFloat(process.env.PROP_DAILY_LIMIT_PCT || "0"), // 0 = firm has no daily loss rule
+  propDailyGuard: parseFloat(process.env.PROP_DAILY_GUARD || "0.7"),      // flatten+halt day at this fraction of daily limit
+  propLevCap: parseFloat(process.env.PROP_LEV_CAP || "2"),                // firm notional leverage cap
   tradeMode: process.env.TRADE_MODE || "spot",
   // Sent to BitGet as presetStopLossPrice on the entry order itself (see
   // computeStopLossPrice) — enforced by the exchange on real trades, not by us.
@@ -105,10 +115,22 @@ export const CONFIG = {
   },
 };
 
-export const LOG_FILE       = `safety-check-log-${CONFIG.symbol}.json`;
-export const POSITION_FILE  = `position-${CONFIG.symbol}.json`;
-export const PORTFOLIO_FILE = `portfolio-${CONFIG.symbol}.json`;
-export const STATE_FILE     = `nkb-state-${CONFIG.symbol}.json`;
+// INSTANCE_ID lets multiple books trade the same symbol without sharing state
+// (e.g. the SOLUSDT live-paper book and the SOLUSDT-PROP challenge book).
+const FILE_KEY = process.env.INSTANCE_ID || CONFIG.symbol;
+export const LOG_FILE        = `safety-check-log-${FILE_KEY}.json`;
+export const POSITION_FILE   = `position-${FILE_KEY}.json`;
+export const PORTFOLIO_FILE  = `portfolio-${FILE_KEY}.json`;
+export const STATE_FILE      = `nkb-state-${FILE_KEY}.json`;
+export const PROP_STATE_FILE = `prop-state-${FILE_KEY}.json`;
+
+function loadPropState() {
+  if (!existsSync(PROP_STATE_FILE)) return null;
+  return JSON.parse(readFileSync(PROP_STATE_FILE, "utf8"));
+}
+function savePropState(p) {
+  writeFileSync(PROP_STATE_FILE, JSON.stringify(p, null, 2));
+}
 
 // ─── Logging ────────────────────────────────────────────────────────────────
 
@@ -568,7 +590,7 @@ async function executeOrder(side, quantity, stopLossPrice, positionSide) {
 
 // ─── Tax CSV Logging ─────────────────────────────────────────────────────────
 
-export const CSV_FILE = `trades-${CONFIG.symbol}.csv`;
+export const CSV_FILE = `trades-${FILE_KEY}.csv`;
 
 // Always ensure trades.csv exists with headers — open it in Excel/Sheets any time
 function initCsv() {
@@ -782,6 +804,111 @@ async function run() {
     console.log(`  Regime gate:  [${CONFIG.regimeGate}] ${regimeAllows ? "✅ entries allowed" : "🚦 entries blocked"} — ${regimeNote}`);
   }
 
+  // ── Prop mode guards — run BEFORE any position management ──────────────────
+  let prop = null;
+  if (CONFIG.propMode) {
+    prop = loadPropState() ?? {
+      startedAt: new Date().toISOString(),
+      initialBalance: portfolioValue,
+      status: "active",
+      dayDate: null,
+      dayStartEquity: portfolioValue,
+      dayHalted: false,
+    };
+    const initial = prop.initialBalance;
+    const unreal = position
+      ? (position.side === "long" ? (price - position.entryPrice) * position.quantity : (position.entryPrice - price) * position.quantity)
+      : 0;
+    let equity = portfolioValue + unreal;
+    const today = new Date().toISOString().slice(0, 10);
+    if (prop.dayDate !== today) { prop.dayDate = today; prop.dayStartEquity = equity; prop.dayHalted = false; }
+
+    const targetAbs = initial * (1 + CONFIG.propTargetPct / 100);
+    const firmFloor = initial * (1 - CONFIG.propMaxDdPct / 100);
+    const guardFloor = initial * (1 - (CONFIG.propMaxDdPct / 100) * CONFIG.propDdGuard);
+
+    // Flatten at market — used only by prop guards. Returns false if the close order fails.
+    const flatten = async (reason) => {
+      const closeSide = position.side === "long" ? "sell" : "buy";
+      console.log(`  PROP FLATTEN (${reason}) — closing ${position.side.toUpperCase()} ${position.quantity} at ~$${price.toFixed(2)}`);
+      let order;
+      try {
+        order = await executeOrder(closeSide, position.quantity);
+      } catch (err) {
+        console.log(`  ❌ PROP FLATTEN FAILED — ${err.message} (will retry next run)`);
+        log.trades.push({ timestamp: new Date().toISOString(), type: "exit", symbol: CONFIG.symbol, side: closeSide, orderPlaced: false, error: err.message, reason: `prop: ${reason}`, paperTrading: CONFIG.paperTrading });
+        saveLog(log);
+        return false;
+      }
+      const pnl = position.side === "long"
+        ? (price - position.entryPrice) * position.quantity
+        : (position.entryPrice - price) * position.quantity;
+      portfolioValue += pnl;
+      paperFee(price * position.quantity);
+      savePortfolio(portfolioValue);
+      log.trades.push({ timestamp: new Date().toISOString(), type: "exit", symbol: CONFIG.symbol, side: closeSide, quantity: position.quantity, price, sizeUSD: position.sizeUSD, pnlUSD: pnl, reason: `prop: ${reason}`, orderPlaced: true, orderId: order.orderId, paperTrading: CONFIG.paperTrading });
+      saveLog(log);
+      writeCsvRow({ side: closeSide.toUpperCase(), quantity: position.quantity, price, totalUSD: position.sizeUSD, orderId: order.orderId, mode: CONFIG.paperTrading ? "PAPER" : "LIVE", notes: `PROP ${reason} — P&L $${pnl.toFixed(2)} | Portfolio: $${portfolioValue.toFixed(2)}` });
+      savePosition(null);
+      position = null;
+      equity = portfolioValue;
+      return true;
+    };
+
+    console.log(`\n── PROP MODE ────────────────────────────────────────────\n`);
+    console.log(`  Status: ${prop.status} | Equity: $${equity.toFixed(2)} | Target: $${targetAbs.toFixed(2)} | Guard floor: $${guardFloor.toFixed(2)} (firm floor $${firmFloor.toFixed(2)})`);
+
+    if (prop.status !== "active") {
+      savePropState(prop);
+      console.log(`  Challenge status "${prop.status}" — trading stopped. Board action required.`);
+      console.log("═══════════════════════════════════════════════════════════\n");
+      return;
+    }
+
+    // Target lock: flatten to convert floating gain to closed balance (firms measure target on balance)
+    if (equity >= targetAbs) {
+      if (position && !(await flatten("target lock"))) { savePropState(prop); return; }
+      if (portfolioValue >= targetAbs) {
+        prop.status = "passed";
+        savePropState(prop);
+        console.log(`  🎉 TARGET REACHED — closed balance $${portfolioValue.toFixed(2)} ≥ $${targetAbs.toFixed(2)}. Trading stopped.`);
+        console.log("═══════════════════════════════════════════════════════════\n");
+        return;
+      }
+    }
+
+    // Max-DD guard: halt before the firm's floor is breached
+    if (equity <= guardFloor) {
+      if (position && !(await flatten("max-DD guard"))) { savePropState(prop); return; }
+      prop.status = "halted-dd";
+      savePropState(prop);
+      console.log(`  🛑 MAX-DD GUARD — equity $${equity.toFixed(2)} ≤ guard floor $${guardFloor.toFixed(2)}. Trading halted BEFORE firm breach. Board review required.`);
+      console.log("═══════════════════════════════════════════════════════════\n");
+      return;
+    }
+
+    // Daily circuit breaker (only for firms with a daily loss rule)
+    if (CONFIG.propDailyLimitPct > 0) {
+      const dayLoss = prop.dayStartEquity - equity;
+      const guardAt = initial * (CONFIG.propDailyLimitPct / 100) * CONFIG.propDailyGuard;
+      if (!prop.dayHalted && dayLoss >= guardAt) {
+        if (position && !(await flatten("daily circuit breaker"))) { savePropState(prop); return; }
+        prop.dayHalted = true;
+        savePropState(prop);
+        console.log(`  🛑 DAILY BREAKER — day loss $${dayLoss.toFixed(2)} ≥ $${guardAt.toFixed(2)}. Flat until next UTC day.`);
+        console.log("═══════════════════════════════════════════════════════════\n");
+        return;
+      }
+      if (prop.dayHalted) {
+        savePropState(prop);
+        console.log(`  Day halted by circuit breaker — no trading until next UTC day.`);
+        console.log("═══════════════════════════════════════════════════════════\n");
+        return;
+      }
+    }
+    savePropState(prop);
+  }
+
   const stateLabel = nkb.state === 1 ? "BULLISH" : nkb.state === -1 ? "BEARISH" : "NEUTRAL";
   console.log(`\n  Portfolio value: $${portfolioValue.toFixed(2)}`);
   console.log(`  NKB state: ${stateLabel} (prev: ${prevNKBState === 1 ? "BULLISH" : prevNKBState === -1 ? "BEARISH" : "NEUTRAL"})${buySignal ? " → 🟢 BUY SIGNAL" : sellSignal ? " → 🔴 SELL SIGNAL" : ""}`);
@@ -840,7 +967,8 @@ async function run() {
         position = null;
 
         // Re-entry: if ADX still strong, immediately re-enter same direction at half size
-        if (adxStrong) {
+        // (disabled in prop mode — the validated challenge sim has no re-entries)
+        if (adxStrong && !CONFIG.propMode) {
           const reOrderSide = stoppedSide === "long" ? "buy" : "sell";
           const mtfOk = stoppedSide === "long" ? mtfOkLong : mtfOkShort;
           if (mtfOk && !regimeAllows) {
@@ -870,7 +998,7 @@ async function run() {
       : (position.entryPrice - price) / position.entryPrice;
     const nextThreshold = PYRAMID_THRESHOLD * (alreadyPyramided + 1);
 
-    if (alreadyPyramided < MAX_PYRAMIDS && unrealisedPct >= nextThreshold && adxStrong && atr) {
+    if (alreadyPyramided < MAX_PYRAMIDS && unrealisedPct >= nextThreshold && adxStrong && atr && !CONFIG.propMode) {
       // Pyramid add: risk half the normal riskPct on each add, capped at 50% portfolio notional
       const addRisk    = portfolioValue * CONFIG.riskPct * 0.5;
       const addQty     = Math.min(addRisk / (atr * NKB.atrStopMult), (portfolioValue * 0.5) / price);
@@ -960,10 +1088,17 @@ async function run() {
     // Fixed % risk sizing: risk riskPct of portfolio on this trade
     // Position size = riskAmount / stopDist — so a stop hit loses exactly riskPct
     const stopDist = atrStopDist ?? (price * (CONFIG.stopLossPct / 100));
-    const riskAmount = portfolioValue * CONFIG.riskPct * sizeMult;
+    // Prop mode risks a fixed % of the INITIAL balance (predictable daily-loss math);
+    // normal mode risks % of current portfolio.
+    const riskBase = CONFIG.propMode && prop
+      ? prop.initialBalance * (CONFIG.propRiskPct / 100)
+      : portfolioValue * CONFIG.riskPct;
+    const riskAmount = riskBase * sizeMult;
     const riskBasedQty = stopDist > 0 ? riskAmount / stopDist : 0;
-    // Cap notional at 100% of portfolio (leverage=1 safety ceiling)
-    const maxQty = portfolioValue / price;
+    // Notional cap: prop mode uses the firm's leverage cap; normal mode 1x portfolio
+    const maxQty = CONFIG.propMode
+      ? (portfolioValue * CONFIG.propLevCap) / price
+      : portfolioValue / price;
     const quantity = parseFloat(Math.min(riskBasedQty, maxQty).toFixed(6));
     const tradeSize = quantity * price;
     const stopLossPrice = positionSide === "long" ? price - stopDist : price + stopDist;
