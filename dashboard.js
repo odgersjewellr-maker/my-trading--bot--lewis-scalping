@@ -11,7 +11,7 @@ import { execSync } from "child_process";
 import { createServer } from "http";
 import { CONFIG, signBitGet, fetchCandles } from "./bot.js";
 
-const REFRESH_SECONDS = 30;
+const REFRESH_SECONDS = 300; // 5 minutes
 const SERVE_PORT = process.env.DASHBOARD_PORT || 4787;
 const SYMBOLS = (process.env.SYMBOLS || "BTCUSDT,SOLUSDT").split(",");
 
