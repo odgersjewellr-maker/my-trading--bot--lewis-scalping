@@ -81,6 +81,13 @@ export const CONFIG = {
   maxTradeSizeUSD: parseFloat(process.env.MAX_TRADE_SIZE_USD || "5000"),
   maxTradesPerDay: parseInt(process.env.MAX_TRADES_PER_DAY || "3"),
   paperTrading: process.env.PAPER_TRADING !== "false",
+  // Paper mode only — estimated taker fee + slippage deducted per side so paper
+  // P&L tracks what live-money results would be (live fees come from the exchange).
+  paperFeeRate: parseFloat(process.env.PAPER_FEE_RATE || "0.0008"),
+  // Regime gate (idea #1 backtest, trading-firm institutional memory 2026-07-02):
+  // "off" | "chop" | "markov" | "chop+markov". Blocks NEW entries (incl. re-entries)
+  // in choppy/sideways regimes; never blocks exits.
+  regimeGate: (process.env.REGIME_GATE || "off").toLowerCase(),
   tradeMode: process.env.TRADE_MODE || "spot",
   // Sent to BitGet as presetStopLossPrice on the entry order itself (see
   // computeStopLossPrice) — enforced by the exchange on real trades, not by us.
@@ -186,6 +193,21 @@ export async function fetchCandles(symbol, interval, limit = 100) {
     close: parseFloat(k[4]),
     volume: parseFloat(k[5]),
   }));
+}
+
+// Choppiness Index over the last `period` completed candles: 100 = pure chop, 0 = pure trend
+export function calcChop(candles, period = 14) {
+  if (candles.length < period + 1) return null;
+  const seg = candles.slice(-(period + 1));
+  let sumTR = 0, hi = -Infinity, lo = Infinity;
+  for (let i = 1; i < seg.length; i++) {
+    const c = seg[i], p = seg[i - 1];
+    sumTR += Math.max(c.high - c.low, Math.abs(c.high - p.close), Math.abs(c.low - p.close));
+    if (c.high > hi) hi = c.high;
+    if (c.low < lo) lo = c.low;
+  }
+  if (hi - lo <= 0 || sumTR <= 0) return null;
+  return 100 * Math.log10(sumTR / (hi - lo)) / Math.log10(period);
 }
 
 // ─── Neural Kernel Bands — Indicator Calculations ────────────────────────────
@@ -689,6 +711,15 @@ async function run() {
   let position = loadPosition();
   let portfolioValue = loadPortfolio();
 
+  // Paper-mode fee: deduct estimated taker fee + slippage per side from the paper
+  // portfolio so paper results don't overstate live-money results.
+  const paperFee = (notional) => {
+    if (!CONFIG.paperTrading || !notional || CONFIG.paperFeeRate <= 0) return;
+    const fee = notional * CONFIG.paperFeeRate;
+    portfolioValue -= fee;
+    console.log(`  Paper fee: -$${fee.toFixed(2)} (${(CONFIG.paperFeeRate * 100).toFixed(2)}% of $${notional.toFixed(2)})`);
+  };
+
   // nkb.state is now a sticky replay of the indicator's persistent lastState
   // (see calcNKB) — it only changes on a genuine opposite-band close, same as
   // the Pine script. We still track the previously-saved state across runs so
@@ -724,6 +755,32 @@ async function run() {
   // Fire when signal confirmed 2+ bars, 4H aligned, AND volume is healthy
   const buySignal  = newPending === "BUY"  && newPendingBars >= 2 && volOk && mtfOkLong;
   const sellSignal = newPending === "SELL" && newPendingBars >= 2 && volOk && mtfOkShort;
+
+  // ── Regime gate — blocks new entries (and re-entries) in chop/sideways; never exits
+  let regimeAllows = true;
+  let regimeNote = "off";
+  if (CONFIG.regimeGate !== "off") {
+    const parts = [];
+    if (CONFIG.regimeGate.includes("chop")) {
+      const candles1h = await fetchCandles(CONFIG.symbol, "1H", 40);
+      const chopVal = calcChop(candles1h.slice(0, -1), 14); // completed 1H bars only
+      const chopOk = chopVal == null || chopVal < 61.8;
+      if (!chopOk) regimeAllows = false;
+      parts.push(`CHOP(14,1H) ${chopVal != null ? chopVal.toFixed(1) : "N/A"} ${chopOk ? "<" : "≥"} 61.8`);
+    }
+    if (CONFIG.regimeGate.includes("markov")) {
+      const daily = await fetchCandles(CONFIG.symbol, "1D", 30);
+      const completed = daily.slice(0, -1); // exclude forming day
+      if (completed.length >= 21) {
+        const ret20 = completed[completed.length - 1].close / completed[completed.length - 21].close - 1;
+        const trending = Math.abs(ret20) > 0.05; // Bull >+5% / Bear <−5%; Sideways blocks
+        if (!trending) regimeAllows = false;
+        parts.push(`20d ret ${(ret20 * 100).toFixed(1)}% ${trending ? "(trending)" : "(sideways)"}`);
+      }
+    }
+    regimeNote = parts.join(" | ");
+    console.log(`  Regime gate:  [${CONFIG.regimeGate}] ${regimeAllows ? "✅ entries allowed" : "🚦 entries blocked"} — ${regimeNote}`);
+  }
 
   const stateLabel = nkb.state === 1 ? "BULLISH" : nkb.state === -1 ? "BEARISH" : "NEUTRAL";
   console.log(`\n  Portfolio value: $${portfolioValue.toFixed(2)}`);
@@ -773,6 +830,7 @@ async function run() {
           ? (position.stopLossPrice - position.entryPrice) * position.quantity
           : (position.entryPrice - position.stopLossPrice) * position.quantity;
         portfolioValue += stopPnl;
+        paperFee(position.stopLossPrice * position.quantity);
         savePortfolio(portfolioValue);
         console.log(`  ⛔ STOP HIT at $${position.stopLossPrice.toFixed(2)} — P&L $${stopPnl.toFixed(2)} | Portfolio: $${portfolioValue.toFixed(2)}`);
         log.trades.push({ timestamp: new Date().toISOString(), type: "stop", symbol: CONFIG.symbol, side: position.side, price: position.stopLossPrice, pnlUSD: stopPnl, reason: "trailing stop hit", paperTrading: true });
@@ -785,7 +843,12 @@ async function run() {
         if (adxStrong) {
           const reOrderSide = stoppedSide === "long" ? "buy" : "sell";
           const mtfOk = stoppedSide === "long" ? mtfOkLong : mtfOkShort;
-          if (mtfOk) {
+          if (mtfOk && !regimeAllows) {
+            console.log(`  🚦 REGIME GATE — re-entry blocked (${regimeNote})`);
+            log.gateBlocks = log.gateBlocks || [];
+            log.gateBlocks.push({ timestamp: new Date().toISOString(), signal: `re-entry ${stoppedSide}`, note: regimeNote });
+            saveLog(log);
+          } else if (mtfOk) {
             console.log(`  ♻️  ADX ${adxValue.toFixed(1)} still strong — re-entering ${stoppedSide.toUpperCase()} at full size`);
             await openPosition(reOrderSide, stoppedSide, "Re-entry after stop (ADX strong)", 1.0);
           } else {
@@ -832,6 +895,8 @@ async function run() {
         console.log(`  Blended entry: $${position.entryPrice.toFixed(2)} | Total qty: ${position.quantity.toFixed(6)} | Pyramids: ${position.pyramided}`);
         log.trades.push({ timestamp: new Date().toISOString(), type: "pyramid", symbol: CONFIG.symbol, side: addSide, quantity: addQty, price, sizeUSD: addSizeUSD, pyramidNum: position.pyramided, orderId: addOrder.orderId, paperTrading: CONFIG.paperTrading });
         saveLog(log);
+        paperFee(addSizeUSD);
+        savePortfolio(portfolioValue);
         writeCsvRow({ side: addSide.toUpperCase(), quantity: addQty, price, totalUSD: addSizeUSD, orderId: addOrder.orderId, mode: CONFIG.paperTrading ? "PAPER" : "LIVE", notes: `Pyramid #${position.pyramided} add | Portfolio: $${portfolioValue.toFixed(2)}` });
       }
     }
@@ -860,6 +925,7 @@ async function run() {
       }
 
       portfolioValue = portfolioValue + pnlUSD;
+      paperFee(price * position.quantity);
       savePortfolio(portfolioValue);
       console.log(`  Portfolio updated: $${portfolioValue.toFixed(2)} (${pnlUSD >= 0 ? "+" : ""}$${pnlUSD.toFixed(2)})`);
 
@@ -919,13 +985,20 @@ async function run() {
     }
 
     savePosition({ side: positionSide, entryPrice: price, quantity, sizeUSD: tradeSize, stopLossPrice, openedAt: new Date().toISOString(), orderId: order.orderId, pyramided: 0 });
+    paperFee(tradeSize);
+    savePortfolio(portfolioValue);
     log.trades.push({ timestamp: new Date().toISOString(), type: "entry", symbol: CONFIG.symbol, side, quantity, price, sizeUSD: tradeSize, portfolioValue, nkb, orderPlaced: true, orderId: order.orderId, paperTrading: CONFIG.paperTrading });
     saveLog(log);
     writeCsvRow({ side: side.toUpperCase(), quantity, price, totalUSD: tradeSize, orderId: order.orderId, mode: CONFIG.paperTrading ? "PAPER" : "LIVE", notes: `NKB ${signalNote} | Portfolio: $${portfolioValue.toFixed(2)}` });
     console.log(`✅ ${positionSide} opened — exits on next NKB reversal signal only`);
   }
 
-  if (buySignal) {
+  if ((buySignal || sellSignal) && !regimeAllows) {
+    console.log(`🚦 REGIME GATE (${CONFIG.regimeGate}) — ${buySignal ? "BUY" : "SELL"} signal blocked (${regimeNote})`);
+    log.gateBlocks = log.gateBlocks || [];
+    log.gateBlocks.push({ timestamp: new Date().toISOString(), signal: buySignal ? "BUY" : "SELL", note: regimeNote });
+    saveLog(log);
+  } else if (buySignal) {
     await openPosition("buy", "long", "NKB Buy — bands flipped bullish");
   } else if (sellSignal && canShort) {
     await openPosition("sell", "short", "NKB Sell — bands flipped bearish");

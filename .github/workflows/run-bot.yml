@@ -43,6 +43,8 @@ jobs:
           NKB_ATR_STOP_MULT=1.0
           RISK_PCT=5
           PAPER_TRADING=true
+          PAPER_FEE_RATE=0.0008
+          REGIME_GATE=chop+markov
           EOF
 
       - name: Run bot
@@ -106,6 +108,8 @@ jobs:
           NKB_ATR_STOP_MULT=1.0
           RISK_PCT=5
           PAPER_TRADING=true
+          PAPER_FEE_RATE=0.0008
+          REGIME_GATE=off
           EOF
 
       - name: Run bot
