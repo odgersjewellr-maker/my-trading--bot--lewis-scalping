@@ -54,12 +54,15 @@ function computeStats(sym) {
   return { entryCount: entries.length, exitCount: allClosed.length, wins, winRate, totalPnlUSD, tradesPerDay };
 }
 
-function readRecentTrades(sym, limit = 8) {
-  const f = csvFile(sym);
+function readRecentTrades(sym, limit = 10) {
+  // Read from the JSON log (catches all trade types including stops and entries)
+  const f = logFile(sym);
   if (!existsSync(f)) return [];
-  const lines = readFileSync(f, "utf8").trim().split("\n");
-  const rows = lines.slice(1).map(l => l.split(",")).filter(r => r[0] !== "");
-  return rows.slice(-limit).reverse();
+  const log = JSON.parse(readFileSync(f, "utf8"));
+  return (log.trades || [])
+    .filter(t => ["entry","exit","stop","pyramid"].includes(t.type))
+    .slice(-limit)
+    .reverse();
 }
 
 // ── Shared helpers ─────────────────────────────────────────────────────────────
@@ -134,18 +137,18 @@ async function buildSymbolCard(sym) {
   const trades = readRecentTrades(sym);
   const tradesHtml = trades.length
     ? `<table>
-        <tr><th>Date</th><th>Time (ET)</th><th>Side</th><th>Qty</th><th>Price</th><th>Total</th><th>Mode</th><th>Notes</th></tr>
-        ${trades.map(r => {
-          const dt = toEastern(new Date(`${r[0]}T${r[1]}Z`));
+        <tr><th>Time (ET)</th><th>Type</th><th>Side</th><th>Price</th><th>Size USD</th><th>P&amp;L</th></tr>
+        ${trades.map(t => {
+          const { date, time } = toEastern(new Date(t.timestamp));
+          const typeColor = t.type === "stop" ? "neg" : t.type === "entry" ? "" : t.type === "pyramid" ? "pos" : "pos";
+          const pnl = t.pnlUSD != null ? `<span class="${t.pnlUSD >= 0 ? "pos" : "neg"}">${t.pnlUSD >= 0 ? "+" : ""}$${t.pnlUSD.toFixed(2)}</span>` : "—";
           return `<tr>
-            <td>${escapeHtml(dt.date)}</td>
-            <td>${escapeHtml(dt.time)}</td>
-            <td>${escapeHtml(r[4])}</td>
-            <td>${escapeHtml(r[5])}</td>
-            <td>${escapeHtml(r[6])}</td>
-            <td>${escapeHtml(r[7])}</td>
-            <td class="mode-${escapeHtml((r[11]||"").toLowerCase())}">${escapeHtml(r[11]||"")}</td>
-            <td>${escapeHtml(r[12]||"").replace(/^"|"$/g,"")}</td>
+            <td>${escapeHtml(date)} ${escapeHtml(time)}</td>
+            <td class="${typeColor}">${escapeHtml(t.type.toUpperCase())}</td>
+            <td>${escapeHtml((t.side || "").toUpperCase())}</td>
+            <td>${t.price != null ? "$" + escapeHtml(t.price.toFixed(2)) : "—"}</td>
+            <td>${t.sizeUSD != null ? "$" + escapeHtml(t.sizeUSD.toFixed(2)) : "—"}</td>
+            <td>${pnl}</td>
           </tr>`;
         }).join("")}
       </table>`
