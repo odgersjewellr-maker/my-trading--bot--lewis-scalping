@@ -614,8 +614,7 @@ export const CSV_FILE = `trades-${FILE_KEY}.csv`;
 // Always ensure trades.csv exists with headers — open it in Excel/Sheets any time
 function initCsv() {
   if (!existsSync(CSV_FILE)) {
-    const funnyNote = `,,,,,,,,,,,"NOTE","Hey, if you're at this stage of the video, you must be enjoying it... perhaps you could hit subscribe now? :)"`;
-    writeFileSync(CSV_FILE, CSV_HEADERS + "\n" + funnyNote + "\n");
+    writeFileSync(CSV_FILE, CSV_HEADERS + "\n");
     console.log(
       `📄 Created ${CSV_FILE} — open in Google Sheets or Excel to track trades.`,
     );
@@ -642,7 +641,7 @@ function writeCsvRow({ side = "", quantity = "", price, totalUSD = "", orderId =
   const date = now.toISOString().slice(0, 10);
   const time = now.toISOString().slice(11, 19);
 
-  const fee = totalUSD !== "" ? (parseFloat(totalUSD) * 0.001).toFixed(4) : "";
+  const fee = totalUSD !== "" ? (parseFloat(totalUSD) * CONFIG.paperFeeRate).toFixed(4) : "";
   const netAmount =
     totalUSD !== "" && fee !== "" ? (parseFloat(totalUSD) - parseFloat(fee)).toFixed(2) : "";
 

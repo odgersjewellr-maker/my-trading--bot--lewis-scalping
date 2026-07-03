@@ -668,3 +668,43 @@ server.listen(PORT, () => {
   console.log(`Mode: ${CONFIG.paperTrading ? "PAPER" : "LIVE"} | Symbol: ${CONFIG.symbol} | TF: ${CONFIG.timeframe}`);
   console.log(`GitHub repo: ${GITHUB_REPO || "⚠️  GITHUB_REPO not set"}\n`);
 });
+
+// ─── Bot cron dispatcher ──────────────────────────────────────────────────────
+// GitHub's `schedule:` cron is throttled (observed 1-4h gaps), which lags the
+// trailing stops the strategy depends on. This always-on server fires the
+// run-bot workflow via workflow_dispatch every 15 minutes instead — dispatch
+// events are not throttled. The workflow's own schedule stays as a fallback;
+// per-job concurrency groups make overlapping triggers harmless.
+const DISPATCH_WORKFLOW = process.env.DISPATCH_WORKFLOW || "run-bot.yml";
+const DISPATCH_INTERVAL_MIN = parseInt(process.env.DISPATCH_INTERVAL_MIN || "15", 10);
+
+async function dispatchBotWorkflow() {
+  if (!GITHUB_TOKEN || !GITHUB_REPO) return;
+  try {
+    const res = await fetch(`${GITHUB_API}/repos/${GITHUB_REPO}/actions/workflows/${DISPATCH_WORKFLOW}/dispatches`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${GITHUB_TOKEN}`, Accept: "application/vnd.github+json", "Content-Type": "application/json" },
+      body: JSON.stringify({ ref: GITHUB_BRANCH }),
+    });
+    if (res.status === 204) {
+      console.log(`[${new Date().toISOString()}] Dispatched ${DISPATCH_WORKFLOW}`);
+    } else {
+      // 403 here usually means the token lacks the Actions write permission
+      console.log(`[${new Date().toISOString()}] Workflow dispatch failed: ${res.status} ${await res.text()}`);
+    }
+  } catch (err) {
+    console.log(`[${new Date().toISOString()}] Workflow dispatch error: ${err.message}`);
+  }
+}
+
+if (DISPATCH_INTERVAL_MIN > 0) {
+  // Align to the next quarter-hour boundary (+20s so candle closes are final)
+  const now = Date.now();
+  const interval = DISPATCH_INTERVAL_MIN * 60 * 1000;
+  const next = Math.ceil(now / interval) * interval + 20000;
+  console.log(`Bot dispatcher: every ${DISPATCH_INTERVAL_MIN}m, first fire ${new Date(next).toISOString()}`);
+  setTimeout(() => {
+    dispatchBotWorkflow();
+    setInterval(dispatchBotWorkflow, interval);
+  }, next - now);
+}
