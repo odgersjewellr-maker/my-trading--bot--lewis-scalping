@@ -108,7 +108,7 @@ jobs:
           NKB_BANDWIDTH=6.0
           NKB_ATR_STOP_MULT=1.0
           PAPER_TRADING=true
-          PAPER_FEE_RATE=0.0008
+          PAPER_FEE_RATE=0.0003
           REGIME_GATE=markov
           PROP_MODE=true
           PROP_RISK_PCT=1.0
@@ -118,6 +118,8 @@ jobs:
           PROP_DAILY_LIMIT_PCT=4
           PROP_DAILY_GUARD=0.7
           PROP_LEV_CAP=2
+          PROP_SWAP_RATE=0.0005
+          PROP_DAY_RESET_MIN=30
           EOF
 
       - name: Run bot

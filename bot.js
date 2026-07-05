@@ -99,6 +99,8 @@ export const CONFIG = {
   propDailyLimitPct: parseFloat(process.env.PROP_DAILY_LIMIT_PCT || "0"), // 0 = firm has no daily loss rule
   propDailyGuard: parseFloat(process.env.PROP_DAILY_GUARD || "0.7"),      // flatten+halt day at this fraction of daily limit
   propLevCap: parseFloat(process.env.PROP_LEV_CAP || "2"),                // firm notional leverage cap
+  propSwapRate: parseFloat(process.env.PROP_SWAP_RATE || "0"),            // overnight swap: fraction of notional charged per night a position is held (paper only; live equity already reflects it)
+  propDayResetMin: parseInt(process.env.PROP_DAY_RESET_MIN || "0"),       // minutes past 00:00 UTC the firm's daily window resets (Velotrade = 30)
   // Execution venue for LIVE orders: "bitget" (default) or "velotrade" (prop account).
   // Paper mode ignores this entirely.
   broker: (process.env.BROKER || "bitget").toLowerCase(),
@@ -874,8 +876,22 @@ async function run() {
       : 0;
     // On a live Velotrade account, guard on the firm's own equity number
     let equity = vtLiveEquity ?? (portfolioValue + unreal);
-    const today = new Date().toISOString().slice(0, 10);
-    if (prop.dayDate !== today) { prop.dayDate = today; prop.dayStartEquity = equity; prop.dayHalted = false; }
+    // Daily window boundary — shift by the firm's reset offset (Velotrade resets 00:30 UTC)
+    const today = new Date(Date.now() - CONFIG.propDayResetMin * 60 * 1000).toISOString().slice(0, 10);
+    if (prop.dayDate !== today) {
+      // Overnight swap (paper only — a live account's equity already reflects the firm's charge):
+      // deduct propSwapRate of held notional once per night rolled over.
+      if (position && CONFIG.paperTrading && CONFIG.propSwapRate > 0) {
+        const swap = (position.quantity * price) * CONFIG.propSwapRate;
+        portfolioValue -= swap;
+        savePortfolio(portfolioValue);
+        equity = portfolioValue + unreal;
+        console.log(`  Overnight swap: -$${swap.toFixed(2)} (${(CONFIG.propSwapRate * 100).toFixed(3)}% of notional held overnight)`);
+        log.trades.push({ timestamp: new Date().toISOString(), type: "swap", symbol: CONFIG.symbol, costUSD: swap, paperTrading: true });
+        saveLog(log);
+      }
+      prop.dayDate = today; prop.dayStartEquity = equity; prop.dayHalted = false;
+    }
 
     const targetAbs = initial * (1 + CONFIG.propTargetPct / 100);
     const firmFloor = initial * (1 - CONFIG.propMaxDdPct / 100);
