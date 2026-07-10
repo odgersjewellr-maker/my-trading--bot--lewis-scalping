@@ -176,6 +176,16 @@
       "symbol": "SOLUSDT",
       "costUSD": 103.138661834175,
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-07-10T13:00:31.934Z",
+      "type": "stop",
+      "symbol": "SOLUSDT",
+      "side": "long",
+      "price": 78.98785714285715,
+      "pnlUSD": 3988.161763082156,
+      "reason": "trailing stop hit",
+      "paperTrading": true
     }
   ]
 }
