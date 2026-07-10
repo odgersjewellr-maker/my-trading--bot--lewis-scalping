@@ -169,6 +169,13 @@
       "orderPlaced": true,
       "orderId": "PAPER-1783597835136",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-07-10T00:30:29.678Z",
+      "type": "swap",
+      "symbol": "SOLUSDT",
+      "costUSD": 103.138661834175,
+      "paperTrading": true
     }
   ]
 }
