@@ -111,7 +111,7 @@ jobs:
           PAPER_FEE_RATE=0.0003
           REGIME_GATE=markov
           PROP_MODE=true
-          PROP_RISK_PCT=1.0
+          PROP_RISK_PCT=0.5
           PROP_TARGET_PCT=10
           PROP_MAX_DD_PCT=7
           PROP_DD_GUARD=0.9
