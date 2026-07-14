@@ -126,6 +126,83 @@ export function turtleSoupPlan(sig, entryPrice, params = {}) {
   };
 }
 
+/**
+ * Replay Turtle Soup over a candle series with the same stop → target →
+ * time-stop exit logic and fixed-% risk sizing the live bot uses. Pure and
+ * deterministic — shared by the backtest and the daily-review tool so their
+ * numbers never drift.
+ *
+ * @returns { trades[], equity, maxDD, stats } — each trade carries entryIdx,
+ *   exitIdx, side, entry, exit, stop, target, barsHeld, reason, pnl, equity.
+ */
+export function simulateTurtleSoup(candles, params = {}, opts = {}) {
+  const p = { ...TS_DEFAULTS, ...params };
+  const riskPct = opts.riskPct ?? 0.05;
+  const feeRate = opts.feeRate ?? 0.0008;
+  const startEquity = opts.startEquity ?? 1000;
+
+  let equity = startEquity;
+  let peak = equity, maxDD = 0;
+  let pos = null;
+  const trades = [];
+
+  const size = (entry, stop) => {
+    const d = Math.abs(entry - stop);
+    if (d <= 0) return 0;
+    return Math.min((equity * riskPct) / d, equity / entry); // risk-based, capped at 1× notional
+  };
+  const closePos = (exitPrice, reason, idx) => {
+    const gross = pos.side === "long"
+      ? (exitPrice - pos.entry) * pos.qty
+      : (pos.entry - exitPrice) * pos.qty;
+    const fees = (pos.entry * pos.qty + exitPrice * pos.qty) * feeRate;
+    const pnl = gross - fees;
+    equity += pnl;
+    peak = Math.max(peak, equity);
+    maxDD = Math.max(maxDD, peak - equity);
+    trades.push({ side: pos.side, entryIdx: pos.entryIdx, exitIdx: idx, entry: pos.entry, exit: exitPrice, stop: pos.stop, target: pos.target, barsHeld: pos.barsHeld, reason, pnl, equity });
+    pos = null;
+  };
+
+  for (let i = 0; i < candles.length; i++) {
+    const bar = candles[i];
+    if (pos) {
+      pos.barsHeld++;
+      if (pos.side === "long") {
+        if (bar.low <= pos.stop)        closePos(pos.stop,   "stop",   i);
+        else if (bar.high >= pos.target) closePos(pos.target, "target", i);
+      } else {
+        if (bar.high >= pos.stop)       closePos(pos.stop,   "stop",   i);
+        else if (bar.low <= pos.target)  closePos(pos.target, "target", i);
+      }
+      if (pos && pos.barsHeld >= pos.maxHoldBars) closePos(bar.close, "time", i);
+      if (pos) continue; // still holding — no new entry this bar
+    }
+    const sig = turtleSoupSignal(candles.slice(0, i + 1), p);
+    if (!sig.signal) continue;
+    const plan = turtleSoupPlan(sig, bar.close, p);
+    const qty = size(plan.entry, plan.stop);
+    if (qty <= 0) continue;
+    pos = { side: plan.side, entry: plan.entry, stop: plan.stop, target: plan.target, qty, maxHoldBars: plan.maxHoldBars, barsHeld: 0, entryIdx: i };
+  }
+
+  const wins = trades.filter((t) => t.pnl > 0);
+  const grossWin = wins.reduce((s, t) => s + t.pnl, 0);
+  const grossLoss = Math.abs(trades.filter((t) => t.pnl <= 0).reduce((s, t) => s + t.pnl, 0));
+  return {
+    trades, equity, maxDD,
+    stats: {
+      trades: trades.length,
+      wins: wins.length,
+      losses: trades.length - wins.length,
+      winRate: trades.length ? wins.length / trades.length : 0,
+      pnl: equity - startEquity,
+      profitFactor: grossLoss > 0 ? grossWin / grossLoss : (grossWin > 0 ? Infinity : 0),
+      maxDD, peak,
+    },
+  };
+}
+
 /** Build a params object from process.env (shared by bot.js and the backtest). */
 export function tsParamsFromEnv(env = process.env) {
   return {

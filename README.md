@@ -265,6 +265,33 @@ Paper-trade either way.
 > Running Turtle Soup with `PROP_MODE=true` refuses to trade rather than run a
 > challenge account without its guards.
 
+### Daily review — `review.js`
+
+Each morning, review how the strategy behaved and decide what (if anything) to
+change for the next session:
+
+```bash
+node review.js                       # live candles for SYMBOL/TIMEFRAME (CSV fallback)
+node review.js --day 2026-07-13      # review a specific day
+node review.js --fit-bars 960        # widen the window the fit is measured on
+```
+
+It does three things:
+
+1. **Review** — isolates the last completed UTC day and lists every setup that
+   fired, with its entry / stop / target and how it resolved (stop, target, or
+   time-stop).
+2. **Fit** — sweeps the parameter grid over a *trailing window* and reports the
+   configs that did best, plus a ready-to-paste recommendation. It only suggests
+   a change when one clearly beats your current params, ignores any config with
+   too few trades to trust (`--min-trades`, default 12), and tells you to change
+   **one knob at a time** — because fitting to a short window is how you overfit.
+3. **Chart** — writes `review-<INSTANCE_ID>.html`, a candlestick chart of the
+   recent window with BUY/SELL markers, for eyeballing.
+
+Reads the same `TS_*` / `RISK_PCT` env as the bot, so "current params" always
+means what the forward-test book is actually running.
+
 ---
 
 ## Build Your Own Strategy (Optional)
@@ -284,6 +311,7 @@ The example `rules.json` uses the van de Poppe + Tone Vays BTC strategy. To buil
 | `rules.json` | Your strategy — indicators, entry rules, risk rules |
 | `turtle-soup.js` | Turtle Soup strategy logic (pure — shared by the bot and the backtest) |
 | `backtest-turtle-soup.js` | Backtest the Turtle Soup strategy over any OHLC CSV |
+| `review.js` | Daily review — replays yesterday's setups, fits next-day params, draws a chart |
 | `.env` | Your BitGet credentials (gitignored — never commits) |
 | `prompts/01-extract-strategy.md` | Build rules.json from trader transcripts |
 | `prompts/02-one-shot-trade.md` | **The one-shot prompt — paste this to trade** |
