@@ -207,6 +207,66 @@ The bot runs one check and exits, so schedule it with the VPS's built-in cron. R
 
 ---
 
+## Turtle Soup Strategy (Optional)
+
+The bot ships with a second, selectable strategy: **Turtle Soup**, Linda Raschke &
+Larry Connors' classic *false-breakout reversal* (from *Street Smarts*).
+
+**The idea:** markets often poke *just* past a recent N-bar high or low to trip
+breakout traders' stops, then snap back. Turtle Soup fades that failed breakout.
+
+- **Long** — price undercuts the prior 20-bar **low** (a false breakdown) and then
+  *closes back above it*. Buy the reversal; stop under the breakout low.
+- **Short** — mirror image: price spikes above the prior 20-bar **high** and closes
+  back below it.
+
+A filter (Raschke's) keeps it honest: the prior high/low must be at least a few
+bars old, so you're fading a break of a real, established level. Each trade exits
+on one of three things — the protective **stop**, a **profit target** (a multiple
+of the stop distance), or a **time-stop** after N bars.
+
+### Turn it on
+
+Set these in `.env` — everything else (execution, paper mode, CSV logging, trade
+limits) works exactly as it does for the default strategy:
+
+```
+STRATEGY=turtle-soup
+SYMBOL=BTCUSDT
+TIMEFRAME=15m
+TRADE_MODE=futures   # required for short setups; spot takes longs only
+PAPER_TRADING=true   # always paper-trade a new strategy first
+```
+
+Tune it with the `TS_*` knobs in [`.env.example`](.env.example). Selecting
+`turtle-soup` is fully opt-in per book — any book left on the default `nkb` is
+untouched.
+
+### Backtest it first — and read the result honestly
+
+```bash
+node backtest-turtle-soup.js            # BTC daily (included), classic Turtle Soup home
+node backtest-turtle-soup.js my.csv     # your own OHLC (Date,Open,High,Low,Close,Volume)
+```
+
+The backtest runs the **exact** `turtle-soup.js` logic the live bot uses, prints
+every simulated trade, and reports win rate, profit factor, and max drawdown.
+
+**On the bundled BTC daily data, plain Turtle Soup loses money** (profit factor
+~0.5 across every parameter set). That's not a bug — it's the point of backtesting.
+Fading breakouts *in a strongly trending market* structurally bleeds; Turtle Soup
+is a **mean-reversion** setup and wants range-bound / choppy conditions. Before
+running it live you should either (a) confine it to a range-bound regime — the repo
+already has a `REGIME_GATE` for the NKB path you can adapt — or (b) validate it on
+your specific symbol/timeframe and only trade it where the backtest shows an edge.
+Paper-trade either way.
+
+> **Note:** prop-challenge mode (`PROP_MODE=true`) is wired for the NKB path only.
+> Running Turtle Soup with `PROP_MODE=true` refuses to trade rather than run a
+> challenge account without its guards.
+
+---
+
 ## Build Your Own Strategy (Optional)
 
 The example `rules.json` uses the van de Poppe + Tone Vays BTC strategy. To build one from any trader's public videos:
@@ -222,6 +282,8 @@ The example `rules.json` uses the van de Poppe + Tone Vays BTC strategy. To buil
 | File | What it does |
 |------|-------------|
 | `rules.json` | Your strategy — indicators, entry rules, risk rules |
+| `turtle-soup.js` | Turtle Soup strategy logic (pure — shared by the bot and the backtest) |
+| `backtest-turtle-soup.js` | Backtest the Turtle Soup strategy over any OHLC CSV |
 | `.env` | Your BitGet credentials (gitignored — never commits) |
 | `prompts/01-extract-strategy.md` | Build rules.json from trader transcripts |
 | `prompts/02-one-shot-trade.md` | **The one-shot prompt — paste this to trade** |

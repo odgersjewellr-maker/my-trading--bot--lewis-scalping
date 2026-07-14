@@ -15,6 +15,7 @@ import { vtPlaceMarketOrder, vtPlaceStopOrder, vtReplaceStopOrder, vtSafeCancelS
 import crypto from "crypto";
 import { execSync } from "child_process";
 import { pathToFileURL } from "url";
+import { turtleSoupSignal, turtleSoupPlan, tsParamsFromEnv } from "./turtle-soup.js";
 
 // ─── Onboarding ───────────────────────────────────────────────────────────────
 
@@ -76,6 +77,10 @@ function checkOnboarding() {
 export const CONFIG = {
   symbol: process.env.SYMBOL || "BTCUSDT",
   timeframe: process.env.TIMEFRAME || "4H",
+  // Strategy selector: "nkb" (default, Neural Kernel Bands) or "turtle-soup"
+  // (Raschke false-breakout reversal — see turtle-soup.js). Leaving this unset
+  // keeps every existing book on NKB, so switching is fully opt-in per book.
+  strategy: (process.env.STRATEGY || "nkb").toLowerCase(),
   portfolioValue: parseFloat(process.env.PORTFOLIO_VALUE_USD || "1000"),
   tradeSizePct: parseFloat(process.env.TRADE_SIZE_PCT || "80") / 100,
   riskPct: parseFloat(process.env.RISK_PCT || "5") / 100, // % of portfolio to risk per trade (stop-loss basis)
@@ -701,7 +706,7 @@ function generateTaxSummary() {
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
-async function run() {
+export async function run() {
   checkOnboarding();
   initCsv();
   console.log("═══════════════════════════════════════════════════════════");
@@ -711,6 +716,14 @@ async function run() {
     `  Mode: ${CONFIG.paperTrading ? "📋 PAPER TRADING" : "🔴 LIVE TRADING"}`,
   );
   console.log("═══════════════════════════════════════════════════════════");
+
+  // Turtle Soup runs its own self-contained flow (fetch → signal → manage →
+  // enter/exit → log), reusing the shared execution/CSV/position plumbing.
+  // The NKB path below is left completely untouched.
+  if (CONFIG.strategy === "turtle-soup") {
+    await runTurtleSoup();
+    return;
+  }
 
   console.log(`\nStrategy: Neural Kernel Bands (NKB)`);
   console.log(`Symbol: ${CONFIG.symbol} | Timeframe: ${CONFIG.timeframe}`);
@@ -1235,6 +1248,213 @@ async function run() {
   }
 
   console.log("═══════════════════════════════════════════════════════════\n");
+}
+
+// ─── Turtle Soup strategy runner ─────────────────────────────────────────────
+// Self-contained: fetches candles, evaluates the false-breakout reversal on the
+// just-closed bar, manages any open turtle-soup position (stop / target / time),
+// and opens new entries — all via the same executeOrder / CSV / position-state
+// helpers the NKB path uses. Selected with STRATEGY=turtle-soup.
+async function runTurtleSoup() {
+  const params = tsParamsFromEnv();
+  console.log(`\nStrategy: Turtle Soup (false-breakout reversal)`);
+  console.log(`Symbol: ${CONFIG.symbol} | Timeframe: ${CONFIG.timeframe}`);
+  console.log(`Params: lookback ${params.lookback} | min prior age ${params.minPriorAgeBars} bars | R:R ${params.rewardRisk} | max hold ${params.maxHoldBars} bars | ${params.allowLong ? "long " : ""}${params.allowShort ? "short" : ""}`);
+
+  const done = () => console.log("═══════════════════════════════════════════════════════════\n");
+
+  // Prop-challenge guards (daily/max-DD/target) are only wired into the NKB run()
+  // flow. Rather than trade a challenge account with no guards, refuse here.
+  if (CONFIG.propMode) {
+    console.log(`\n🚫 PROP_MODE is not supported for the turtle-soup strategy yet — the prop guards only wrap the NKB path. No trade placed.`);
+    console.log(`   Use STRATEGY=nkb for prop challenges, or run turtle-soup without PROP_MODE.`);
+    done();
+    return;
+  }
+
+  console.log("\n── Fetching market data from BitGet ─────────────────────\n");
+  const limit = Math.max(params.lookback + 5, 60);
+  const candles = await fetchCandles(CONFIG.symbol, CONFIG.timeframe, limit);
+  const price = candles[candles.length - 1].close;
+  const atr = calcATR(candles, CONFIG.atrPeriod);
+  console.log(`  Current price: $${price.toFixed(2)}`);
+  console.log(`  ATR(${CONFIG.atrPeriod}):      ${atr ? "$" + atr.toFixed(2) : "N/A"}`);
+
+  const log = loadLog();
+  let position = loadPosition();
+  let portfolioValue = loadPortfolio();
+
+  // Paper-mode fee: deduct estimated taker fee + slippage per side so paper P&L
+  // tracks live-money results (identical to the NKB path).
+  const paperFee = (notional) => {
+    if (!CONFIG.paperTrading || !notional || CONFIG.paperFeeRate <= 0) return;
+    const fee = notional * CONFIG.paperFeeRate;
+    portfolioValue -= fee;
+    console.log(`  Paper fee: -$${fee.toFixed(2)} (${(CONFIG.paperFeeRate * 100).toFixed(2)}% of $${notional.toFixed(2)})`);
+  };
+
+  const sig = turtleSoupSignal(candles, params);
+  if (sig.signal) {
+    console.log(`  Setup:        ${sig.signal} — ${sig.note}`);
+  } else {
+    const pl = sig.priorLow != null ? `$${sig.priorLow.toFixed(2)}` : "N/A";
+    const ph = sig.priorHigh != null ? `$${sig.priorHigh.toFixed(2)}` : "N/A";
+    console.log(`  Setup:        none — prior ${params.lookback}-bar low ${pl} / high ${ph}`);
+  }
+
+  console.log(`\n  Portfolio value: $${portfolioValue.toFixed(2)}`);
+
+  // ── Manage an existing turtle-soup position ────────────────────────────────
+  if (position) {
+    if (position.strategy !== "turtle-soup") {
+      console.log(`\n⚠️  Existing ${position.strategy || "NKB"} position on ${CONFIG.symbol} — turtle-soup won't manage another strategy's trade. Holding, no action.`);
+      done();
+      return;
+    }
+
+    position.barsHeld = (position.barsHeld ?? 0) + 1;
+    const pnlUSD = position.side === "long"
+      ? (price - position.entryPrice) * position.quantity
+      : (position.entryPrice - price) * position.quantity;
+    const pnlPct = position.sizeUSD ? (pnlUSD / position.sizeUSD) * 100 : 0;
+
+    console.log("\n── Position Management ──────────────────────────────────\n");
+    console.log(`  Side: ${position.side.toUpperCase()} | Entry: $${position.entryPrice.toFixed(2)} | Current: $${price.toFixed(2)}`);
+    console.log(`  Stop: $${position.stopLossPrice.toFixed(2)} | Target: $${position.takeProfitPrice.toFixed(2)} | Bars held: ${position.barsHeld}/${position.maxHoldBars}`);
+    console.log(`  Unrealized P&L: $${pnlUSD.toFixed(2)} (${pnlPct.toFixed(2)}%)`);
+
+    // Exit priority: protective stop → profit target → time-stop.
+    let exit = null; // { reason, level }
+    if (position.side === "long") {
+      if (price <= position.stopLossPrice)        exit = { reason: "stop",   level: position.stopLossPrice };
+      else if (price >= position.takeProfitPrice) exit = { reason: "target", level: position.takeProfitPrice };
+    } else {
+      if (price >= position.stopLossPrice)        exit = { reason: "stop",   level: position.stopLossPrice };
+      else if (price <= position.takeProfitPrice) exit = { reason: "target", level: position.takeProfitPrice };
+    }
+    if (!exit && position.barsHeld >= position.maxHoldBars) exit = { reason: "time", level: price };
+
+    if (!exit) {
+      savePosition(position);
+      console.log("  ✅ Holding — waiting for stop, target, or time-stop");
+      done();
+      return;
+    }
+
+    const closeSide = position.side === "long" ? "sell" : "buy";
+    // Paper fills at the modelled level; a live market close fills near current price.
+    const settlePrice = CONFIG.paperTrading ? exit.level : price;
+    console.log(`\n${CONFIG.paperTrading ? "📋 PAPER" : "🔴 LIVE"} CLOSE (${exit.reason}) — ${closeSide.toUpperCase()} ${position.quantity} ${CONFIG.symbol} at ~$${settlePrice.toFixed(2)}`);
+
+    let order;
+    try {
+      order = await executeOrder(closeSide, position.quantity);
+    } catch (err) {
+      console.log(`❌ CLOSE FAILED — ${err.message} (will retry next run)`);
+      log.trades.push({ timestamp: new Date().toISOString(), type: "exit", strategy: "turtle-soup", symbol: CONFIG.symbol, side: closeSide, orderPlaced: false, error: err.message, reason: `turtle-soup ${exit.reason}`, paperTrading: CONFIG.paperTrading });
+      saveLog(log);
+      done();
+      return;
+    }
+
+    const realizedPnl = position.side === "long"
+      ? (settlePrice - position.entryPrice) * position.quantity
+      : (position.entryPrice - settlePrice) * position.quantity;
+    portfolioValue += realizedPnl;
+    paperFee(settlePrice * position.quantity);
+    savePortfolio(portfolioValue);
+    console.log(`  ${exit.reason === "target" ? "🎯" : exit.reason === "stop" ? "⛔" : "⏲️"} ${exit.reason.toUpperCase()} — P&L $${realizedPnl.toFixed(2)} (${((realizedPnl / (position.sizeUSD || 1)) * 100).toFixed(2)}%) | Portfolio: $${portfolioValue.toFixed(2)}`);
+
+    log.trades.push({ timestamp: new Date().toISOString(), type: "exit", strategy: "turtle-soup", symbol: CONFIG.symbol, side: closeSide, quantity: position.quantity, price: settlePrice, sizeUSD: position.sizeUSD, pnlUSD: realizedPnl, reason: `turtle-soup ${exit.reason}`, orderPlaced: true, orderId: order.orderId, paperTrading: CONFIG.paperTrading });
+    saveLog(log);
+    writeCsvRow({ side: closeSide.toUpperCase(), quantity: position.quantity, price: settlePrice, totalUSD: position.sizeUSD, orderId: order.orderId, mode: CONFIG.paperTrading ? "PAPER" : "LIVE", notes: `Turtle Soup ${exit.reason} exit — P&L $${realizedPnl.toFixed(2)} (${((realizedPnl / (position.sizeUSD || 1)) * 100).toFixed(2)}%) | Portfolio: $${portfolioValue.toFixed(2)}` });
+    savePosition(null);
+    position = null;
+    // One action per run — a fresh entry waits for the next bar.
+    done();
+    return;
+  }
+
+  // ── Flat — look for a new entry ─────────────────────────────────────────────
+  if (!sig.signal) {
+    console.log("\n  No setup — waiting for a false-breakout reversal.");
+    done();
+    return;
+  }
+
+  if (!checkTradeLimits(log)) {
+    console.log("\nBot stopping — trade limits reached for today.");
+    done();
+    return;
+  }
+
+  const canShort = CONFIG.tradeMode === "futures";
+  if (sig.side === "short" && !canShort) {
+    console.log("\n🚫 SHORT setup — spot mode can't short. Set TRADE_MODE=futures in .env to enable.");
+    writeCsvRow({ price, orderId: "BLOCKED", mode: "BLOCKED", notes: "Turtle Soup short — shorting unavailable in spot mode" });
+    done();
+    return;
+  }
+
+  const plan = turtleSoupPlan(sig, price, params);
+  const stopDist = Math.abs(price - plan.stop);
+  if (!(stopDist > 0)) {
+    console.log("\n  Stop distance is zero — skipping entry.");
+    done();
+    return;
+  }
+
+  // Fixed-% risk sizing (matches the NKB path): size = risk$ / stopDist, capped
+  // at 1× portfolio notional and MAX_TRADE_SIZE_USD.
+  const riskAmount = portfolioValue * CONFIG.riskPct;
+  const riskBasedQty = riskAmount / stopDist;
+  const maxNotionalQty = portfolioValue / price;
+  let quantity = Math.min(riskBasedQty, maxNotionalQty);
+  if (CONFIG.maxTradeSizeUSD > 0 && quantity * price > CONFIG.maxTradeSizeUSD) {
+    quantity = CONFIG.maxTradeSizeUSD / price;
+  }
+  quantity = parseFloat(quantity.toFixed(6));
+  const tradeSize = quantity * price;
+  if (quantity <= 0) {
+    console.log("\n  Position size rounded to zero — skipping entry.");
+    done();
+    return;
+  }
+
+  const side = sig.side === "long" ? "buy" : "sell";
+  console.log("\n── Turtle Soup Entry ────────────────────────────────────\n");
+  console.log(`✅ ${side.toUpperCase()} SIGNAL — ${sig.note}`);
+  console.log(`   Entry: $${price.toFixed(2)} | Stop: $${plan.stop.toFixed(2)} | Target: $${plan.target.toFixed(2)} (${plan.rewardRisk}R)`);
+  console.log(`   Risk: $${riskAmount.toFixed(2)} (${(CONFIG.riskPct * 100).toFixed(0)}% of $${portfolioValue.toFixed(2)}) | Stop dist: $${stopDist.toFixed(2)} | Size: $${tradeSize.toFixed(2)}`);
+  console.log(`\n${CONFIG.paperTrading ? "📋 PAPER TRADE" : "🔴 PLACING LIVE ORDER"} — ${side.toUpperCase()} ~$${tradeSize.toFixed(2)} ${CONFIG.symbol}`);
+  if (CONFIG.paperTrading) console.log(`   (Set PAPER_TRADING=false in .env to place real orders)`);
+
+  let order;
+  try {
+    order = await executeOrder(side, quantity, plan.stop, sig.side);
+  } catch (err) {
+    console.log(`❌ ORDER FAILED — ${err.message}`);
+    log.trades.push({ timestamp: new Date().toISOString(), type: "entry", strategy: "turtle-soup", symbol: CONFIG.symbol, price, orderPlaced: false, error: err.message, paperTrading: CONFIG.paperTrading });
+    saveLog(log);
+    writeCsvRow({ price, orderId: "FAILED", mode: "BLOCKED", notes: `Order failed: ${err.message}` });
+    done();
+    return;
+  }
+
+  savePosition({
+    side: sig.side, entryPrice: price, quantity, sizeUSD: tradeSize,
+    stopLossPrice: plan.stop, takeProfitPrice: plan.target,
+    maxHoldBars: plan.maxHoldBars, barsHeld: 0,
+    strategy: "turtle-soup", openedAt: new Date().toISOString(),
+    orderId: order.orderId, stopOrderId: order.stopOrderId ?? null,
+  });
+  paperFee(tradeSize);
+  savePortfolio(portfolioValue);
+  log.trades.push({ timestamp: new Date().toISOString(), type: "entry", strategy: "turtle-soup", symbol: CONFIG.symbol, side, quantity, price, sizeUSD: tradeSize, portfolioValue, plan: { stop: plan.stop, target: plan.target, maxHoldBars: plan.maxHoldBars }, orderPlaced: true, orderId: order.orderId, paperTrading: CONFIG.paperTrading });
+  saveLog(log);
+  writeCsvRow({ side: side.toUpperCase(), quantity, price, totalUSD: tradeSize, orderId: order.orderId, mode: CONFIG.paperTrading ? "PAPER" : "LIVE", notes: `Turtle Soup ${sig.side} entry — stop $${plan.stop.toFixed(2)} target $${plan.target.toFixed(2)} | Portfolio: $${portfolioValue.toFixed(2)}` });
+  console.log(`✅ ${sig.side.toUpperCase()} opened — exits on stop, target, or ${plan.maxHoldBars}-bar time-stop`);
+  done();
 }
 
 const isMainModule =
