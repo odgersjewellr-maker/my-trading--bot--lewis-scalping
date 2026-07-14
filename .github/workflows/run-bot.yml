@@ -213,3 +213,75 @@ jobs:
           done
           echo "::error::git push failed after retries"
           exit 1
+
+  # ── Turtle Soup forward test (paper) ─────────────────────────────────────────
+  # Runs the false-breakout reversal strategy on BTC 15m in paper mode, isolated
+  # under INSTANCE_ID=BTCUSDT-TSOUP so it never touches the NKB books. Review the
+  # committed trades-BTCUSDT-TSOUP.csv / portfolio daily and tweak the TS_* knobs.
+  run-btc-tsoup:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: run-bot-BTCUSDT-TSOUP
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - run: npm install
+
+      - name: Write .env
+        run: |
+          cat <<EOF > .env
+          BITGET_API_KEY=${{ secrets.BITGET_API_KEY }}
+          BITGET_SECRET_KEY=${{ secrets.BITGET_SECRET_KEY }}
+          BITGET_PASSPHRASE=${{ secrets.BITGET_PASSPHRASE }}
+          BITGET_BASE_URL=https://api.bitget.com
+          STRATEGY=turtle-soup
+          TRADE_MODE=futures
+          LEVERAGE=1
+          PORTFOLIO_VALUE_USD=1000
+          MAX_TRADES_PER_DAY=0
+          SYMBOL=BTCUSDT
+          INSTANCE_ID=BTCUSDT-TSOUP
+          TIMEFRAME=15m
+          TS_LOOKBACK=20
+          TS_MIN_AGE_BARS=3
+          TS_STOP_BUFFER=0
+          TS_REWARD_RISK=2
+          TS_MAX_HOLD_BARS=4
+          TS_ALLOW_LONG=true
+          TS_ALLOW_SHORT=true
+          RISK_PCT=5
+          PAPER_TRADING=true
+          PAPER_FEE_RATE=0.0008
+          EOF
+
+      - name: Run bot
+        run: node bot.js
+
+      - name: Persist state back to repo
+        run: |
+          rm -f .env
+          git config user.name "trading-bot"
+          git config user.email "actions@users.noreply.github.com"
+          for f in position-BTCUSDT-TSOUP.json trades-BTCUSDT-TSOUP.csv safety-check-log-BTCUSDT-TSOUP.json portfolio-BTCUSDT-TSOUP.json; do
+            [ -f "$f" ] && git add "$f"
+          done
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "TSOUP run $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          for i in 1 2 3 4 5; do
+            if git push; then
+              exit 0
+            fi
+            echo "Push rejected (attempt $i) — rebasing onto latest main..."
+            git fetch origin main
+            git rebase origin/main
+            sleep $((i * 2))
+          done
+          echo "::error::git push failed after retries"
+          exit 1
