@@ -250,7 +250,7 @@ jobs:
           TS_LOOKBACK=20
           TS_MIN_AGE_BARS=3
           TS_STOP_BUFFER=0
-          TS_REWARD_RISK=2
+          TS_REWARD_RISK=3
           TS_MAX_HOLD_BARS=3
           TS_ALLOW_LONG=true
           TS_ALLOW_SHORT=true
