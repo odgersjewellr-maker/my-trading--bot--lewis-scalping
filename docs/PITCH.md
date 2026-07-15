@@ -42,19 +42,31 @@ Every claim above is reproducible from the repo: `node walkforward.js` and `node
 
 ## Live status — where the bot is right now
 
-- **Infrastructure:** runs 24/7 on GitHub Actions (15-minute cron), zero-maintenance; also deployable to any VPS/cron. Brokers: BitGet (spot + futures, 1x), with a prop-venue execution path (Velotrade) already in the codebase.
-- **Paper track record since 2 Jul 2026** (13 days, three concurrent books, fees simulated):
+- **Infrastructure:** runs 24/7 on GitHub Actions (scheduled cron), zero-maintenance; also deployable to any VPS/cron. Brokers: BitGet (spot + futures, 1x), with a prop-venue execution path (Velotrade) already in the codebase.
+- **Paper track record since 2 Jul 2026** (13 days, three concurrent books, fees simulated — earned on the earlier 15-minute configuration, see migration note below):
   - BTC book ($1k): **+1.3%**
   - SOL book ($1k): **+0.8%**
   - SOL prop-challenge sim ($100k, firm rules: +10% target / 6% max DD / 2x cap): **+3.6% ($103,556)** — no drawdown breach, no daily halt, guards live-tested
-- **Code:** `github.com/odgersjewellr-maker/my-trading--bot--lewis-scalping` — research and validation tooling on branch `claude/1k-to-100k-strategies-xad3zs`.
+- **Migration to the validated configuration — in flight.** [PR #1](https://github.com/odgersjewellr-maker/my-trading--bot--lewis-scalping/pull/1) moves all three books from 15-minute scalping to the walk-forward-validated daily setup: one run per day at 00:10 UTC (signals evaluated on **closed** daily bars only, exactly as validated), 2% risk per trade, ADX ≥ 25 entry gate. All three books are currently flat, so the switch is clean — no position opened under the old logic gets managed by the new one. From merge day, the paper track record accumulates on the validated configuration.
+- **Code:** `github.com/odgersjewellr-maker/my-trading--bot--lewis-scalping` — validation tooling, risk changes, and deployment switch in [PR #1](https://github.com/odgersjewellr-maker/my-trading--bot--lewis-scalping/pull/1).
 
 ## What we'll tell you unprompted (limitations)
 
 1. **Validation is single-asset (BTC daily) so far.** Multi-asset confirmation (ETH, SOL) is tooled and queued; if the edge doesn't generalise, we'll say so.
 2. **Small trade sample** — ~34 OOS trades over 5.9 years. The edge is real in the data we have, but confidence intervals are wide.
-3. **The live paper books currently run a faster timeframe (15m) than the validated configuration (daily).** The validated settings are wired in as defaults; migration of the deployed schedule to daily is the next operational step.
-4. All figures are paper/simulated. We want them stress-tested by your risk team, not taken on faith.
+3. **The paper record to date was earned on a faster, unvalidated timeframe (15m).** That configuration is being retired via PR #1; the validated daily record starts at merge. We treat the 13 days above as an infrastructure proof (uptime, guards, logging), not as strategy evidence.
+4. **The live bot carries features the validated model doesn't** — a 4-hour multi-timeframe filter, trailing stops, pyramiding, and stop re-entry. Live results will diverge from the backtest accordingly; reconciling or validating each extra is on the roadmap.
+5. All figures are paper/simulated. We want them stress-tested by your risk team, not taken on faith.
+
+## Roadmap to allocation-ready
+
+| Step | Status |
+|---|---|
+| Honest validation harness (walk-forward, fees, bar-level DD) | ✅ done |
+| Risk improvements validated & wired in (2% risk + ADX gate) | ✅ done |
+| Deployed configuration switched to the validated daily setup | 🔄 [PR #1](https://github.com/odgersjewellr-maker/my-trading--bot--lewis-scalping/pull/1) open |
+| Multi-asset confirmation (ETH, SOL) via `strategy-lab.js` | ⏳ queued |
+| 60–90 days of paper track record on the validated configuration | ⏳ starts at merge |
 
 ## The ask
 
