@@ -24,11 +24,21 @@
  *   - <=3% risk per trade — enforced upstream by the bot's sizing (0.5% deployed),
  *     not by this adapter; keep it that way.
  *
- * ⚠ DEMO-VERIFY (run hyrotrader-check.mjs on the FREE TRIAL before any real
- * challenge): base URL, ACCOUNT_TYPE, one-way vs hedge mode (positionIdx),
- * wallet-balance field names, qtyStep rounding, and the sell-stop/buy-stop
- * triggerDirection semantics. Bybit rejects wrong-precision qty and mis-signed
- * requests, so verify end-to-end on the demo first.
+ * SPEC-VERIFIED 2026-07-16 against Bybit's official AI skill
+ * (github.com/bybit-exchange/skills SKILL.md): HMAC signing construction
+ * (timestamp+apiKey+recvWindow+payload, hex), header set, positionIdx 0 =
+ * one-way, triggerDirection 1=rises/2=falls (sell-stop 2 / buy-stop 1 correct),
+ * wallet-balance endpoint + accountType=UNIFIED, base https://api.bybit.com
+ * (backup api.bytick.com), testnet https://api-testnet.bybit.com.
+ *
+ * ⚠ STILL DEMO-VERIFY on the actual trial (run hyrotrader-check.mjs): which
+ * base URL HyroTrader keys point at, ACCOUNT_TYPE on their accounts,
+ * wallet-balance FIELD NAMES in practice, qtyStep rounding end-to-end.
+ * Pre-verification option: a free Bybit TESTNET key against
+ * HYROTRADER_BASE_URL=https://api-testnet.bybit.com exercises the whole
+ * adapter before the trial exists.
+ * KEY HYGIENE (Bybit's own rule): NEVER enable Withdraw permission on any
+ * API key used by automation.
  */
 
 import { createHmac } from "crypto";
