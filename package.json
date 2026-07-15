@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node bot.js",
     "dev": "node bot.js",
-    "dashboard": "node dashboard.js"
+    "dashboard": "node dashboard.js",
+    "backtest": "node backtest.js",
+    "walkforward": "node walkforward.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
