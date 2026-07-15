@@ -1,3 +1,5 @@
 Date,Time (UTC),Exchange,Symbol,Side,Quantity,Price,Total USD,Fee (est.),Net Amount,Order ID,Mode,Notes
 2026-07-02,00:19:27,BitGet,BTCUSDT,SELL,,60238.59,,,,BACKFILL,PAPER,"Trailing stop hit — P&L $21.43 | Portfolio: $1021.43 | Backfilled from safety-check-log (CSV write was missing on stop path; quantity unrecorded)"
 2026-07-14,22:29:07,BitGet,BTCUSDT,BUY,0.015722,64967.41,1021.4176200200001,0.8171,1020.60,PAPER-1784068147159,PAPER,"NKB NKB Buy — bands flipped bullish | Portfolio: $1020.61"
+2026-07-15,00:45:29,BitGet,BTCUSDT,SELL,0.015722,64815.71,1021.4176200200001,0.8171,1020.60,PAPER-STOP,PAPER,"Trailing stop hit — P&L $-2.39 (-0.23%) | Portfolio: $1017.41"
+2026-07-15,00:45:29,BitGet,BTCUSDT,BUY,0.0157,64804.14,1017.424998,0.8139,1016.61,PAPER-1784076329599,PAPER,"NKB Re-entry after stop (ADX strong) | Portfolio: $1016.60"
