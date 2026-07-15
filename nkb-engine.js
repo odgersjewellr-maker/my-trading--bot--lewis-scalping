@@ -152,7 +152,7 @@ export function calcNKBSeries(candles, cfg) {
 // ─── Backtest engine (fees + entry filters + risk sizing) ────────────────────────
 
 export function runBacktest(candles, cfg) {
-  const { state, atrArr } = calcNKBSeries(candles, cfg);
+  const { state, atrArr, upper, lower } = calcNKBSeries(candles, cfg);
   const needAdx = cfg.useADXHold || cfg.adxEntryMin;
   const adx = needAdx ? calcADXSeries(candles, cfg.adxPeriod || 14).adx : null;
   const trendEMA = cfg.trendFilterEMA ? calcEMASeries(candles.map((c) => c.close), cfg.trendFilterEMA) : null;
@@ -216,6 +216,13 @@ export function runBacktest(candles, cfg) {
         if (side === "short" && price > trendEMA[i]) allowed = false;
       }
       if (cfg.adxEntryMin && (adx?.[i] ?? 0) < cfg.adxEntryMin) allowed = false;
+      // Turtle-soup-inspired false-breakout guard: don't chase a band cross that
+      // has already stretched far beyond the kernel's fair value — those snap back.
+      if (cfg.maxExtensionATR && atr && upper[i] != null) {
+        const mid = (upper[i] + lower[i]) / 2;
+        const ext = (side === "long" ? price - mid : mid - price) / atr;
+        if (ext > cfg.maxExtensionATR) allowed = false;
+      }
 
       if (allowed) {
         const stopDist = atr ? atr * cfg.atrStopMult : price * 0.02;
