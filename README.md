@@ -265,6 +265,36 @@ Paper-trade either way.
 > Running Turtle Soup with `PROP_MODE=true` refuses to trade rather than run a
 > challenge account without its guards.
 
+### Tune it to the market — regime adaptation
+
+Plain Turtle Soup fades every breakout in both directions, which is why it bleeds
+in a trend (see above). The fix is to **fade with the regime**: a long fade is
+"buy the dip" (smart in a bull), a short fade is "sell the rip" (smart in a bear),
+and a range is where fades pay fastest. Set `REGIME_ON=true` and the bot:
+
+- **Bull** (price above a rising trend SMA) → takes **longs only**.
+- **Bear** (price below a falling trend SMA) → takes **shorts only**.
+- **Flat** (near the SMA / no slope) → longs only, with a **shorter time in
+  market** (`REGIME_FLAT_HOLD_MULT`) — get in and out fast.
+
+All the thresholds and per-regime behaviour (which sides, size multiplier, hold
+multiplier) are `REGIME_*` env vars in [`.env.example`](.env.example).
+
+**What the data showed (BTC daily, three independent periods).** Regime adaptation
+was the difference between losing and profitable:
+
+| Config | 2018–2026 | 2024–2026 | 2022–2024 |
+|---|---|---|---|
+| No regime (fade everything) | −$562 · PF 0.52 | −$144 | −$80 |
+| Regime, flat long-only, short hold | **+$259 · PF 1.54** | **+$197 · PF 2.77** | **+$43 · PF 1.25** |
+
+Two honest caveats: (1) the edge is real but **modest** — profit factors ~1.2–1.5,
+not a money printer; and (2) these were tuned on **daily** bars, so the *trend
+lengths* need recalibrating for 15m intraday — which is exactly what the forward
+test + daily review are for. One counter-intuitive finding: sizing *up* the flat
+regime didn't help (flat is the weakest bucket), so the default keeps flat size
+neutral and instead just spends **less time in market** there.
+
 ### Daily review — `review.js`
 
 Each morning, review how the strategy behaved and decide what (if anything) to
@@ -310,6 +340,7 @@ The example `rules.json` uses the van de Poppe + Tone Vays BTC strategy. To buil
 |------|-------------|
 | `rules.json` | Your strategy — indicators, entry rules, risk rules |
 | `turtle-soup.js` | Turtle Soup strategy logic (pure — shared by the bot and the backtest) |
+| `regime.js` | Market-regime detection (bull/bear/flat) + Turtle Soup adaptation |
 | `backtest-turtle-soup.js` | Backtest the Turtle Soup strategy over any OHLC CSV |
 | `review.js` | Daily review — replays yesterday's setups, fits next-day params, draws a chart |
 | `.env` | Your BitGet credentials (gitignored — never commits) |

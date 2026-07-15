@@ -251,12 +251,28 @@ jobs:
           TS_MIN_AGE_BARS=3
           TS_STOP_BUFFER=0
           TS_REWARD_RISK=2
-          TS_MAX_HOLD_BARS=4
+          TS_MAX_HOLD_BARS=3
           TS_ALLOW_LONG=true
           TS_ALLOW_SHORT=true
           RISK_PCT=5
           PAPER_TRADING=true
           PAPER_FEE_RATE=0.0008
+          # ── Regime adaptation (tuned on BTC daily; recalibrate lengths on 15m) ──
+          # bull → longs only, bear → shorts only, flat → longs only with a
+          # shorter time in market. This is the only config that stayed
+          # profitable across three independent BTC-daily periods.
+          REGIME_ON=true
+          REGIME_TREND_LEN=50
+          REGIME_SLOPE_LEN=10
+          REGIME_BAND_PCT=0.5
+          REGIME_BULL_LONG=true
+          REGIME_BULL_SHORT=false
+          REGIME_BEAR_LONG=false
+          REGIME_BEAR_SHORT=true
+          REGIME_FLAT_LONG=true
+          REGIME_FLAT_SHORT=false
+          REGIME_FLAT_HOLD_MULT=0.5
+          REGIME_FLAT_SIZE_MULT=1.0
           EOF
 
       - name: Run bot

@@ -26,6 +26,7 @@
 import { readFileSync, writeFileSync } from "fs";
 import { resolve } from "path";
 import { turtleSoupSignal, turtleSoupPlan, simulateTurtleSoup, tsParamsFromEnv } from "./turtle-soup.js";
+import { regimeParamsFromEnv, detectRegimeSeries, adaptationFor } from "./regime.js";
 import { CONFIG, fetchCandles } from "./bot.js";
 
 // ─── args ────────────────────────────────────────────────────────────────────
@@ -47,6 +48,7 @@ const KEY = process.env.INSTANCE_ID || CONFIG.symbol;
 const riskPct = parseFloat(process.env.RISK_PCT || "5") / 100;
 const feeRate = parseFloat(process.env.PAPER_FEE_RATE || "0.0008");
 const current = tsParamsFromEnv();
+const regimeCfg = regimeParamsFromEnv();
 
 // ─── load candles (live fetch, CSV fallback) ─────────────────────────────────
 function fromCsv(path) {
@@ -91,6 +93,15 @@ console.log("══════════════════════�
 console.log(`  Turtle Soup — Daily Review   [${KEY}]`);
 console.log(`  Source: ${source}   (${candles.length} bars, ${candles[0].dayKey} → ${candles[candles.length - 1].dayKey})`);
 console.log(`  Current params: lookback ${current.lookback} | min age ${current.minPriorAgeBars} | R:R ${current.rewardRisk} | maxHold ${current.maxHoldBars} | ${current.allowLong ? "long " : ""}${current.allowShort ? "short" : ""}`);
+if (regimeCfg.on) {
+  const { regime, trendPct } = detectRegimeSeries(candles, regimeCfg);
+  const now = regime[regime.length - 1];
+  const a = adaptationFor(now, regimeCfg);
+  const icon = now === "bull" ? "🐂" : now === "bear" ? "🐻" : "➡️";
+  console.log(`  Regime: ON (SMA${regimeCfg.trendLen}) — now ${icon} ${now.toUpperCase()} (${trendPct[trendPct.length - 1] >= 0 ? "+" : ""}${trendPct[trendPct.length - 1].toFixed(2)}% vs SMA) → ${a.allowLong ? "long " : ""}${a.allowShort ? "short " : ""}| size ×${a.sizeMult} | hold ×${a.holdMult}`);
+} else {
+  console.log("  Regime: OFF (set REGIME_ON=true to adapt direction/size/hold to bull/bear/flat)");
+}
 console.log("═══════════════════════════════════════════════════════════");
 
 // ─── 1. Review the previous completed day ────────────────────────────────────
@@ -107,6 +118,9 @@ if (dayIdx.length === 0) {
   const dLow = Math.min(...dbars.map((c) => c.low));
   const chg = ((dbars[dbars.length - 1].close - dbars[0].open) / dbars[0].open) * 100;
   console.log(`  ${dbars.length} bars | range $${fmt(dLow)}–$${fmt(dHigh)} | day change ${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%`);
+
+  // Regime label per bar (for annotating whether a setup would be taken).
+  const regimeArr = regimeCfg.on ? detectRegimeSeries(candles, regimeCfg).regime : null;
 
   // Every setup that fired on the review day (taken or not), with what would follow.
   const setups = [];
@@ -133,14 +147,20 @@ if (dayIdx.length === 0) {
         }
         if (held + 1 >= plan.maxHoldBars) { outcome = `time-stop @ $${fmt(b.close)}`; }
       }
-      console.log(`   • ${candles[i].label}  ${sig.signal.padEnd(4)} entry $${fmt(candles[i].close)} stop $${fmt(plan.stop)} target $${fmt(plan.target)} → ${outcome}`);
+      let tag = "";
+      if (regimeArr) {
+        const a = adaptationFor(regimeArr[i], regimeCfg);
+        const taken = sig.side === "long" ? a.allowLong : a.allowShort;
+        tag = `  [${regimeArr[i]}${taken ? "" : " · SKIPPED by regime"}]`;
+      }
+      console.log(`   • ${candles[i].label}  ${sig.signal.padEnd(4)} entry $${fmt(candles[i].close)} stop $${fmt(plan.stop)} target $${fmt(plan.target)} → ${outcome}${tag}`);
     }
   }
 }
 
 // ─── 2. Fit over a trailing window ───────────────────────────────────────────
 function score(params, window) {
-  return simulateTurtleSoup(window, params, { riskPct, feeRate, startEquity: 1000 }).stats;
+  return simulateTurtleSoup(window, params, { riskPct, feeRate, startEquity: 1000, regime: regimeCfg }).stats;
 }
 if (doFit) {
   const window = candles.slice(-Math.min(fitBars, candles.length));

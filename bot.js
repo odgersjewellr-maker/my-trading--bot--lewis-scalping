@@ -16,6 +16,7 @@ import crypto from "crypto";
 import { execSync } from "child_process";
 import { pathToFileURL } from "url";
 import { turtleSoupSignal, turtleSoupPlan, tsParamsFromEnv } from "./turtle-soup.js";
+import { detectRegimeSeries, adaptationFor, regimeParamsFromEnv } from "./regime.js";
 
 // ─── Onboarding ───────────────────────────────────────────────────────────────
 
@@ -1302,6 +1303,18 @@ async function runTurtleSoup() {
     console.log(`  Setup:        none — prior ${params.lookback}-bar low ${pl} / high ${ph}`);
   }
 
+  // ── Regime adaptation — bull favours longs, bear favours shorts, flat trades
+  // both but with a shorter time in market. Off unless REGIME_ON=true.
+  const regimeCfg = regimeParamsFromEnv();
+  let regimeLabel = null, adapt = { allowLong: params.allowLong, allowShort: params.allowShort, sizeMult: 1, holdMult: 1 };
+  if (regimeCfg.on) {
+    const { regime, trendPct } = detectRegimeSeries(candles, regimeCfg);
+    regimeLabel = regime[regime.length - 1];
+    adapt = adaptationFor(regimeLabel, regimeCfg);
+    const icon = regimeLabel === "bull" ? "🐂" : regimeLabel === "bear" ? "🐻" : "➡️";
+    console.log(`  Regime:       ${icon} ${regimeLabel.toUpperCase()} (price ${trendPct[trendPct.length - 1] >= 0 ? "+" : ""}${trendPct[trendPct.length - 1].toFixed(2)}% vs SMA${regimeCfg.trendLen}) → ${adapt.allowLong ? "long " : ""}${adapt.allowShort ? "short " : ""}| size ×${adapt.sizeMult} | hold ×${adapt.holdMult}`);
+  }
+
   console.log(`\n  Portfolio value: $${portfolioValue.toFixed(2)}`);
 
   // ── Manage an existing turtle-soup position ────────────────────────────────
@@ -1396,6 +1409,16 @@ async function runTurtleSoup() {
     return;
   }
 
+  // Regime gate: drop counter-regime fades (e.g. a short in a bull).
+  if (regimeCfg.on && ((sig.side === "long" && !adapt.allowLong) || (sig.side === "short" && !adapt.allowShort))) {
+    console.log(`\n🚦 REGIME GATE — ${sig.side.toUpperCase()} setup blocked in ${regimeLabel.toUpperCase()} regime.`);
+    log.gateBlocks = log.gateBlocks || [];
+    log.gateBlocks.push({ timestamp: new Date().toISOString(), signal: sig.side, regime: regimeLabel });
+    saveLog(log);
+    done();
+    return;
+  }
+
   const plan = turtleSoupPlan(sig, price, params);
   const stopDist = Math.abs(price - plan.stop);
   if (!(stopDist > 0)) {
@@ -1404,9 +1427,12 @@ async function runTurtleSoup() {
     return;
   }
 
-  // Fixed-% risk sizing (matches the NKB path): size = risk$ / stopDist, capped
-  // at 1× portfolio notional and MAX_TRADE_SIZE_USD.
-  const riskAmount = portfolioValue * CONFIG.riskPct;
+  // Time-in-market for this trade — shortened by the regime hold multiplier.
+  const holdBars = regimeCfg.on ? Math.max(1, Math.round(plan.maxHoldBars * adapt.holdMult)) : plan.maxHoldBars;
+
+  // Fixed-% risk sizing (matches the NKB path): size = risk$ / stopDist, scaled
+  // by the regime size multiplier, capped at 1× portfolio notional and MAX_TRADE_SIZE_USD.
+  const riskAmount = portfolioValue * CONFIG.riskPct * adapt.sizeMult;
   const riskBasedQty = riskAmount / stopDist;
   const maxNotionalQty = portfolioValue / price;
   let quantity = Math.min(riskBasedQty, maxNotionalQty);
@@ -1444,16 +1470,16 @@ async function runTurtleSoup() {
   savePosition({
     side: sig.side, entryPrice: price, quantity, sizeUSD: tradeSize,
     stopLossPrice: plan.stop, takeProfitPrice: plan.target,
-    maxHoldBars: plan.maxHoldBars, barsHeld: 0,
+    maxHoldBars: holdBars, barsHeld: 0, regime: regimeLabel,
     strategy: "turtle-soup", openedAt: new Date().toISOString(),
     orderId: order.orderId, stopOrderId: order.stopOrderId ?? null,
   });
   paperFee(tradeSize);
   savePortfolio(portfolioValue);
-  log.trades.push({ timestamp: new Date().toISOString(), type: "entry", strategy: "turtle-soup", symbol: CONFIG.symbol, side, quantity, price, sizeUSD: tradeSize, portfolioValue, plan: { stop: plan.stop, target: plan.target, maxHoldBars: plan.maxHoldBars }, orderPlaced: true, orderId: order.orderId, paperTrading: CONFIG.paperTrading });
+  log.trades.push({ timestamp: new Date().toISOString(), type: "entry", strategy: "turtle-soup", symbol: CONFIG.symbol, side, quantity, price, sizeUSD: tradeSize, portfolioValue, regime: regimeLabel, plan: { stop: plan.stop, target: plan.target, maxHoldBars: holdBars }, orderPlaced: true, orderId: order.orderId, paperTrading: CONFIG.paperTrading });
   saveLog(log);
-  writeCsvRow({ side: side.toUpperCase(), quantity, price, totalUSD: tradeSize, orderId: order.orderId, mode: CONFIG.paperTrading ? "PAPER" : "LIVE", notes: `Turtle Soup ${sig.side} entry — stop $${plan.stop.toFixed(2)} target $${plan.target.toFixed(2)} | Portfolio: $${portfolioValue.toFixed(2)}` });
-  console.log(`✅ ${sig.side.toUpperCase()} opened — exits on stop, target, or ${plan.maxHoldBars}-bar time-stop`);
+  writeCsvRow({ side: side.toUpperCase(), quantity, price, totalUSD: tradeSize, orderId: order.orderId, mode: CONFIG.paperTrading ? "PAPER" : "LIVE", notes: `Turtle Soup ${sig.side} entry${regimeLabel ? " [" + regimeLabel + "]" : ""} — stop $${plan.stop.toFixed(2)} target $${plan.target.toFixed(2)} | Portfolio: $${portfolioValue.toFixed(2)}` });
+  console.log(`✅ ${sig.side.toUpperCase()} opened${regimeLabel ? " [" + regimeLabel + " regime]" : ""} — exits on stop, target, or ${holdBars}-bar time-stop`);
   done();
 }
 

@@ -25,6 +25,8 @@
  * code path.
  */
 
+import { detectRegimeSeries, adaptationFor } from "./regime.js";
+
 export const TS_DEFAULTS = {
   lookback:        20,   // N-bar high/low the breakout is measured against
   minPriorAgeBars: 3,    // prior extreme must be at least this many bars old
@@ -141,15 +143,24 @@ export function simulateTurtleSoup(candles, params = {}, opts = {}) {
   const feeRate = opts.feeRate ?? 0.0008;
   const startEquity = opts.startEquity ?? 1000;
 
+  // Optional regime adaptation (bull → longs, bear → shorts, flat → both,
+  // bigger & faster). Precomputed causally so it costs O(n), not per-config.
+  const regimeOn = opts.regime && opts.regime.on;
+  let regimeSeries = null, regimeAdapt = null;
+  if (regimeOn) {
+    regimeSeries = detectRegimeSeries(candles, opts.regime).regime;
+    regimeAdapt = (i) => adaptationFor(regimeSeries[i], opts.regime);
+  }
+
   let equity = startEquity;
   let peak = equity, maxDD = 0;
   let pos = null;
   const trades = [];
 
-  const size = (entry, stop) => {
+  const size = (entry, stop, mult = 1) => {
     const d = Math.abs(entry - stop);
     if (d <= 0) return 0;
-    return Math.min((equity * riskPct) / d, equity / entry); // risk-based, capped at 1× notional
+    return Math.min((equity * riskPct * mult) / d, equity / entry); // risk-based (× regime mult), capped at 1× notional
   };
   const closePos = (exitPrice, reason, idx) => {
     const gross = pos.side === "long"
@@ -160,7 +171,7 @@ export function simulateTurtleSoup(candles, params = {}, opts = {}) {
     equity += pnl;
     peak = Math.max(peak, equity);
     maxDD = Math.max(maxDD, peak - equity);
-    trades.push({ side: pos.side, entryIdx: pos.entryIdx, exitIdx: idx, entry: pos.entry, exit: exitPrice, stop: pos.stop, target: pos.target, barsHeld: pos.barsHeld, reason, pnl, equity });
+    trades.push({ side: pos.side, entryIdx: pos.entryIdx, exitIdx: idx, entry: pos.entry, exit: exitPrice, stop: pos.stop, target: pos.target, barsHeld: pos.barsHeld, reason, pnl, equity, regime: pos.regime });
     pos = null;
   };
 
@@ -180,10 +191,22 @@ export function simulateTurtleSoup(candles, params = {}, opts = {}) {
     }
     const sig = turtleSoupSignal(candles.slice(0, i + 1), p);
     if (!sig.signal) continue;
+
+    // Regime gate: drop counter-regime fades, scale size & hold.
+    let sizeMult = 1, maxHoldBars = p.maxHoldBars, regimeLabel = null;
+    if (regimeOn) {
+      const a = regimeAdapt(i);
+      regimeLabel = regimeSeries[i];
+      if (sig.side === "long" && !a.allowLong) continue;
+      if (sig.side === "short" && !a.allowShort) continue;
+      sizeMult = a.sizeMult;
+      maxHoldBars = Math.max(1, Math.round(p.maxHoldBars * a.holdMult));
+    }
+
     const plan = turtleSoupPlan(sig, bar.close, p);
-    const qty = size(plan.entry, plan.stop);
+    const qty = size(plan.entry, plan.stop, sizeMult);
     if (qty <= 0) continue;
-    pos = { side: plan.side, entry: plan.entry, stop: plan.stop, target: plan.target, qty, maxHoldBars: plan.maxHoldBars, barsHeld: 0, entryIdx: i };
+    pos = { side: plan.side, entry: plan.entry, stop: plan.stop, target: plan.target, qty, maxHoldBars, barsHeld: 0, entryIdx: i, regime: regimeLabel };
   }
 
   const wins = trades.filter((t) => t.pnl > 0);
