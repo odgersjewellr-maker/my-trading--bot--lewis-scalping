@@ -303,6 +303,8 @@ export function gridConfigs(overlay = {}) {
 export function walkForward(candles, { isDays = 730, oosDays = 180, overlay = {} } = {}) {
   const n = candles.length;
   const windows = [];
+  let running = 1000;          // compounded capital across stitched OOS segments
+  const barCurve = [1000];     // bar-by-bar OOS equity (mark-to-market) for a TRUE drawdown
   let isStart = 0;
   while (isStart + isDays + oosDays <= n) {
     const isSlice = candles.slice(isStart, isStart + isDays);
@@ -323,24 +325,29 @@ export function walkForward(candles, { isDays = 730, oosDays = 180, overlay = {}
     const r = runBacktest(combined, cfg);
     const oosTrades = r.trades.filter((t) => t.date >= oosStartDate && t.date <= oosEndDate);
 
+    // Stitch the OOS segment's bar-by-bar equity onto the running curve, scaled so
+    // each window compounds off the previous. The ratio to the segment's opening
+    // equity cancels the IS gains, and using mark-to-market equity (not just closed
+    // trades) captures intra-trade dips — a real drawdown, not a window-level one.
+    const oosEq = r.equity.filter((e) => e.date >= oosStartDate && e.date <= oosEndDate);
     let growth = 1;
-    if (oosTrades.length) {
-      const first = oosTrades[0], last = oosTrades[oosTrades.length - 1];
-      const before = first.portfolio - first.pnl;
-      growth = before > 0 ? last.portfolio / before : 1;
+    if (oosEq.length) {
+      const base = oosEq[0].value;
+      for (const e of oosEq) barCurve.push(running * (e.value / base));
+      const wEnd = running * (oosEq[oosEq.length - 1].value / base);
+      growth = running > 0 ? wEnd / running : 1;
+      running = wEnd;
     }
     windows.push({ oosRange: `${oosStartDate}→${oosEndDate}`, cfg, growth, oosTrades: oosTrades.length });
     isStart += oosDays;
   }
 
-  let stitched = 1000;
-  const curve = [1000];
-  for (const w of windows) { stitched *= w.growth; curve.push(stitched); }
-  let peak = curve[0], maxDD = 0;
-  for (const v of curve) { if (v > peak) peak = v; const dd = (peak - v) / peak; if (dd > maxDD) maxDD = dd; }
+  const stitched = running;
+  let peak = barCurve[0], maxDD = 0;
+  for (const v of barCurve) { if (v > peak) peak = v; const dd = (peak - v) / peak; if (dd > maxDD) maxDD = dd; }
   const years = (windows.length * oosDays) / 365;
   const cagr = years > 0 && stitched > 0 ? Math.pow(stitched / 1000, 1 / years) - 1 : -1;
   const totalTrades = windows.reduce((s, w) => s + w.oosTrades, 0);
 
-  return { windows, stitched, curve, maxDD, years, cagr, totalTrades };
+  return { windows, stitched, curve: barCurve, maxDD, years, cagr, totalTrades };
 }
