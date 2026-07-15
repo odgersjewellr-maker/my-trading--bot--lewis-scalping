@@ -2,7 +2,11 @@ name: Run trading bot
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    # Daily, shortly after the 00:00 UTC daily-candle close — matches the
+    # walk-forward-validated configuration (signals evaluated on closed daily
+    # bars only; running intra-candle would trade a strategy that was never
+    # validated). Stops on live orders are exchange-enforced, not cron-dependent.
+    - cron: "10 0 * * *"
   workflow_dispatch: {}
 
 permissions:
@@ -36,12 +40,13 @@ jobs:
           PORTFOLIO_VALUE_USD=1000
           MAX_TRADES_PER_DAY=0
           SYMBOL=BTCUSDT
-          TIMEFRAME=15m
+          TIMEFRAME=1D
           NKB_KERNEL=gaussian
           NKB_BAND_MULT=3.0
           NKB_BANDWIDTH=6.0
           NKB_ATR_STOP_MULT=1.0
-          RISK_PCT=5
+          RISK_PCT=2
+          ADX_ENTRY_MIN=25
           PAPER_TRADING=true
           PAPER_FEE_RATE=0.0008
           REGIME_GATE=chop+markov
@@ -102,7 +107,8 @@ jobs:
           MAX_TRADE_SIZE_USD=250000
           SYMBOL=SOLUSDT
           INSTANCE_ID=SOLUSDT-PROP
-          TIMEFRAME=15m
+          TIMEFRAME=1D
+          ADX_ENTRY_MIN=25
           NKB_KERNEL=gaussian
           NKB_BAND_MULT=3.0
           NKB_BANDWIDTH=6.0
@@ -176,12 +182,13 @@ jobs:
           PORTFOLIO_VALUE_USD=1000
           MAX_TRADES_PER_DAY=0
           SYMBOL=SOLUSDT
-          TIMEFRAME=15m
+          TIMEFRAME=1D
           NKB_KERNEL=gaussian
           NKB_BAND_MULT=3.0
           NKB_BANDWIDTH=6.0
           NKB_ATR_STOP_MULT=1.0
-          RISK_PCT=5
+          RISK_PCT=2
+          ADX_ENTRY_MIN=25
           PAPER_TRADING=true
           PAPER_FEE_RATE=0.0008
           REGIME_GATE=off
