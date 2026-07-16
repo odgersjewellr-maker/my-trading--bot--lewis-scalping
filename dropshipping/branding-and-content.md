@@ -42,6 +42,21 @@ A DNS lookup was run on every candidate: "resolves" = definitely taken;
 | **Zestyroo** | playful, energetic | Great TikTok energy, slightly novelty |
 | **Mookibox** | cute, quirky | Fun but says less about what the store is |
 
+**Round 2 — "ro"/"ash" themed (DNS-checked 16 July 2026), both domains likely free:**
+
+| Name | Vibe | Notes |
+|------|------|-------|
+| **Rove & Ash** (roveandash) | boutique, wanderer | "Rove" = discovery, "Ash" = warmth — reads like an established brand |
+| **Ashrove** | elegant one-word blend | Ash + rove/grove; premium feel |
+| **Ashfern** | botanical, calm | Skews home/wellness |
+| **Ashmill** | heritage, craft | Trustworthy, general-store friendly |
+| **Ashroe** | minimal, modern | Clean but says little |
+| **Rooash** | quirky | Both keywords, but awkward to pronounce |
+
+Also: **Kestro** (.com free, .com.au taken — check who holds the .com.au before
+using), and .com.au-only options: Asharoo, Ashbee, Ashkin, Ashwren, Ashloom,
+Ashvale, Wildash, Ash & Ember, Rovena, Villaro, Vantro, Sundro, Tarrow.
+
 **.com taken, .com.au likely free (fine for an AU-focused store):**
 Trovana, Peblo, Ovella, Southly, Kestly, Findery, Luvora, Brightbilly,
 Wattlebee, Billyfox, Bundleroo, Kovella.
