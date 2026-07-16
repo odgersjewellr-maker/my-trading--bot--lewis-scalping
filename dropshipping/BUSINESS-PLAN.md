@@ -113,26 +113,43 @@ which is why it's the right starting point.
 - Add proper policy pages to the store: Refunds, Shipping, Privacy, Terms.
   Shopify generates templates for all four.
 
-## 8. Roadmap
+## 8. Roadmap — spring launch (target: early September 2026)
 
-**Phase 1 — Research (this week, AU$0)**
-- [ ] Pick 5–10 candidate products using the Section 2 checklist
-      (sources: TikTok "amazonfinds"/"tiktokmademebuyit" tags, CJ trending list,
-      AliExpress Dropshipping Center, competitor Shopify stores)
-- [ ] Fill in `product-research.md` for each candidate
-- [ ] Shortlist top 3
+Why spring is the right window: launch lands at the start of the best retail
+run of the Australian year — spring warm-up → Black Friday (late Nov) →
+Christmas → summer holidays. Seasonal products (tote bags, beach/outdoor gear)
+come on-season exactly as the store hits its stride, and the northern-summer
+trends we're tracking now double as a preview of what will sell here.
 
-**Phase 2 — Build (week 2, ~AU$25)**
-- [ ] Pick store name + buy domain
-- [ ] Build Shopify store on free trial (one clean theme, 3 products, policy pages)
-- [ ] Connect CJ Dropshipping or DSers
+**Phase 1 — Research & groundwork (now → mid-August, AU$0)**
+- [x] Shortlist products *(done — see `product-research.md`: packing cubes,
+      fascia ring, pet brush; tote bag earmarked for Oct)*
+- [ ] Keep a watch on northern-summer winners — note anything blowing up on
+      TikTok in the US/UK; it's a candidate for the AU summer catalogue
+- [ ] Verify live supplier costs + AU warehouse availability on CJ/Dropshipzone
+- [ ] Apply for ABN (free, abr.gov.au — needed for Shopify Payments and .com.au)
+- [ ] Run the name checks (see `branding-and-content.md`) and pick the store name
 
-**Phase 3 — Validate (weeks 3–6, ~AU$120)**
-- [ ] Order samples of top products
-- [ ] Film demo content, post daily on TikTok
-- [ ] First sales target: 10 orders. Judge each product after ~2 weeks of content.
+**Phase 2 — Build (mid → late August, ~AU$70)**
+- [ ] Buy domain (~AU$25) + register ASIC business name if using one (~AU$45/yr)
+- [ ] Build Shopify store on free trial: one clean theme, 3 product pages,
+      policy pages
+- [ ] Connect CJ Dropshipping or DSers; place test order to yourself
+- [ ] Order samples of top 2 products (~AU$50) — doubles as content material
+- [ ] Set up TikTok + Instagram accounts, film a content backlog from samples
 
-**Phase 4 — Scale (only after Phase 3 works)**
-- [ ] Reinvest profit into small paid ad tests (AU$20–40/day)
-- [ ] Kill losing products fast, double down on the winner
-- [ ] Move winner to a faster supplier (CJ AU warehouse / Dropshipzone)
+**Phase 3 — Launch & validate (early September → mid-October, ~AU$50/mo)**
+- [ ] Go live at the start of September with the 3 evergreen products
+- [ ] Post 1–3 TikToks/day per product; judge each after ~2 weeks
+      (kill: nothing over 5k views; keep: 20k+ views or add-to-carts)
+- [ ] First sales target: 10 orders by mid-October
+- [ ] Mid-October: add insulated tote + any proven northern-summer product
+      to the catalogue ahead of AU summer
+
+**Phase 4 — Scale into the golden quarter (November → January)**
+- [ ] Reinvest profit into small paid ad tests (AU$20–40/day) on the winner
+- [ ] Black Friday / Cyber Monday (last week of Nov) — bundle offers ready
+- [ ] Christmas cutoff: publish a clear "order by" date based on real supplier
+      shipping times — missed Christmas deliveries are the #1 refund cause
+- [ ] Move the winner to a faster supplier (CJ AU warehouse / Dropshipzone)
+      before December volume
