@@ -142,7 +142,8 @@ trends we're tracking now double as a preview of what will sell here.
 - [ ] Build Shopify store on free trial: one clean theme, 3 product pages,
       policy pages
 - [ ] Connect CJ Dropshipping or DSers; place test order to yourself
-- [ ] Order samples of top 2 products (~AU$50) — doubles as content material
+- [ ] Order samples of top 2 products + 1 terry bucket hat (~AU$60) — doubles
+      as content material; the hat is the early fashion-line test
 - [ ] Set up TikTok + Instagram accounts, film a content backlog from samples
 
 **Phase 3 — Launch & validate (early September → mid-October, ~AU$50/mo)**

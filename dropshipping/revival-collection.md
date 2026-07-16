@@ -16,6 +16,28 @@ hero product, one message, until validated; (2) October = AU spring/summer
 warm-up, exactly when hats and sunnies come on-season. The roadmap's
 mid-October expansion slot is now the Revival Collection.
 
+## Margin reality: percentage vs dollars
+
+| | Recovery Ring | Reviver Kit | Terry bucket hat | POD cap |
+|---|---|---|---|---|
+| Cost | ~$26 | ~$35 | ~$7 | ~$20 |
+| Sells at | $79 | $106 | $32 | $45 |
+| Markup | 3x | 3x | 4.5x | 2.2x |
+| Gross margin % | 67% | 67% | **78%** | 55% |
+| Gross $ per order | **$53** | **$71** | $25 | $25 |
+
+Hats win on percentage; recovery wins on dollars per order — and since customer
+acquisition costs roughly the same either way, paid ads only pencil on the
+recovery side. **You spend dollars, not percentages.** Fashion's counterweights:
+organic traffic makes CAC ~$0 (hat content may be MORE viral than recovery
+content), and fashion buys repeat customers (colourways, drops) where recovery
+is one-and-done.
+
+**Early test (added to Phase 2):** include one terry bucket hat (~$8) in the
+September sample order and film it in week 2 alongside recovery content. Two
+weeks of view/click data decides which line gets the focus — the algorithm
+settles it, not opinions.
+
 ## The clothing reality check
 
 | Item type | Verdict | Why |
