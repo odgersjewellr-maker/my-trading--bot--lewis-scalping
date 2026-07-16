@@ -57,6 +57,22 @@ Also: **Kestro** (.com free, .com.au taken — check who holds the .com.au befor
 using), and .com.au-only options: Asharoo, Ashbee, Ashkin, Ashwren, Ashloom,
 Ashvale, Wildash, Ash & Ember, Rovena, Villaro, Vantro, Sundro, Tarrow.
 
+**Round 3 — palindrome theme (DNS-checked 16 July 2026):**
+
+| Name | Status | Notes |
+|------|--------|-------|
+| **Reviver Co** (reviverco) | ✅ both .com and .com.au likely free | Brand displays as "Reviver" — palindrome, means renewal, perfect fit for the recovery/wellness angle. Extra trademark care needed: "reviver" is a real word used on car-care products — search IP Australia thoroughly |
+| The Reviver | .com.au only | Backup path to the same brand |
+| **Aroora** | .com.au only | Palindrome containing "roo" — very Aussie, aurora vibes |
+| Avva | .com.au only | Clean palindrome, says little |
+| Reviver / Revivr / Ollo / Anona | ❌ fully taken | — |
+| Immi | ❌ avoid | immi.com.au is the Australian immigration department — wrong association entirely |
+
+Palindrome note: if the store leans into the recovery/wellness products
+(fascia ring, ice roller), "Reviver" doubles as brand *and* pitch — every
+product is something that revives you. That's a stronger story than a neutral
+general-store name.
+
 **.com taken, .com.au likely free (fine for an AU-focused store):**
 Trovana, Peblo, Ovella, Southly, Kestly, Findery, Luvora, Brightbilly,
 Wattlebee, Billyfox, Bundleroo, Kovella.
