@@ -12,6 +12,18 @@
 import "dotenv/config";
 import { readFileSync, writeFileSync, existsSync, appendFileSync } from "fs";
 import { vtPlaceMarketOrder, vtPlaceStopOrder, vtReplaceStopOrder, vtSafeCancelStop, vtAccountMetrics, vtHasOpenPosition } from "./velotrade.js";
+import { htPlaceMarketOrder, htPlaceStopOrder, htReplaceStopOrder, htSafeCancelStop, htAccountMetrics, htHasOpenPosition } from "./hyrotrader.js";
+
+// ── Prop-broker dispatch ─────────────────────────────────────────────────────
+// velotrade (DXtrade) and hyrotrader (Bybit v5) expose the same interface;
+// the bot's prop logic is broker-agnostic through this shim. hyrotrader path
+// live-verified on the $5k trial 2026-07-16 (hyrotrader-stoptest.mjs: entry →
+// stop → amend-in-place → cancel → close, all green).
+const _BROKER = (process.env.BROKER || "bitget").toLowerCase();
+const IS_PROP_BROKER = _BROKER === "velotrade" || _BROKER === "hyrotrader";
+const PROP_EXEC = _BROKER === "hyrotrader"
+  ? { placeMarket: htPlaceMarketOrder, placeStop: htPlaceStopOrder, replaceStop: htReplaceStopOrder, safeCancelStop: htSafeCancelStop, accountMetrics: htAccountMetrics, hasOpenPosition: htHasOpenPosition }
+  : { placeMarket: vtPlaceMarketOrder, placeStop: vtPlaceStopOrder, replaceStop: vtReplaceStopOrder, safeCancelStop: vtSafeCancelStop, accountMetrics: vtAccountMetrics, hasOpenPosition: vtHasOpenPosition };
 import crypto from "crypto";
 import { execSync } from "child_process";
 import { pathToFileURL } from "url";
@@ -101,7 +113,7 @@ export const CONFIG = {
   propLevCap: parseFloat(process.env.PROP_LEV_CAP || "2"),                // firm notional leverage cap
   propSwapRate: parseFloat(process.env.PROP_SWAP_RATE || "0"),            // overnight swap: fraction of notional charged per night a position is held (paper only; live equity already reflects it)
   propDayResetMin: parseInt(process.env.PROP_DAY_RESET_MIN || "0"),       // minutes past 00:00 UTC the firm's daily window resets (Velotrade = 30)
-  // Execution venue for LIVE orders: "bitget" (default) or "velotrade" (prop account).
+  // Execution venue for LIVE orders: "bitget" (default), "velotrade", or "hyrotrader" (prop accounts).
   // Paper mode ignores this entirely.
   broker: (process.env.BROKER || "bitget").toLowerCase(),
   tradeMode: process.env.TRADE_MODE || "spot",
@@ -590,17 +602,18 @@ async function executeOrder(side, quantity, stopLossPrice, positionSide) {
   if (CONFIG.paperTrading) {
     return { orderId: `PAPER-${Date.now()}`, paper: true };
   }
-  if (CONFIG.broker === "velotrade") {
+  if (IS_PROP_BROKER) {
     // Entry calls pass positionSide; close calls don't.
-    const order = await vtPlaceMarketOrder(side, quantity, positionSide ? "OPEN" : "CLOSE");
+    const order = await PROP_EXEC.placeMarket(side, quantity, positionSide ? "OPEN" : "CLOSE");
     let stopOrderId = null;
     if (stopLossPrice != null && positionSide) {
       // Protective stop rests on the firm's book — the bot only wakes every 15m,
       // and a gap between runs must not be able to breach the daily/max limits.
+      // (Also satisfies HyroTrader's stop-within-5-min-of-entry bot rule.)
       try {
-        stopOrderId = await vtPlaceStopOrder(positionSide === "long" ? "sell" : "buy", quantity, stopLossPrice);
+        stopOrderId = await PROP_EXEC.placeStop(positionSide === "long" ? "sell" : "buy", quantity, stopLossPrice);
       } catch (err) {
-        console.log(`  ⚠️ Velotrade protective stop failed (bot-side stop still active): ${err.message}`);
+        console.log(`  ⚠️ ${CONFIG.broker} protective stop failed (bot-side stop still active): ${err.message}`);
       }
     }
     return { orderId: order.orderId, stopOrderId, paper: false };
@@ -824,14 +837,14 @@ async function run() {
     console.log(`  Regime gate:  [${CONFIG.regimeGate}] ${regimeAllows ? "✅ entries allowed" : "🚦 entries blocked"} — ${regimeNote}`);
   }
 
-  // ── Velotrade live: reconcile with the firm's account before anything else ──
+  // ── Prop-broker live: reconcile with the firm's account before anything else ──
   let vtLiveEquity = null;
-  if (CONFIG.broker === "velotrade" && !CONFIG.paperTrading) {
+  if (IS_PROP_BROKER && !CONFIG.paperTrading) {
     // If our position file says open but the firm shows flat, the resting
     // protective stop filled between runs — book it as a stop exit.
     if (position) {
       try {
-        const stillOpen = await vtHasOpenPosition();
+        const stillOpen = await PROP_EXEC.hasOpenPosition();
         if (!stillOpen) {
           const exitPrice = position.stopLossPrice ?? price;
           const pnl = position.side === "long"
@@ -850,10 +863,10 @@ async function run() {
     }
     // The firm's balance/equity are authoritative for sizing and prop guards
     try {
-      const m = await vtAccountMetrics();
+      const m = await PROP_EXEC.accountMetrics();
       if (m.balance != null) { portfolioValue = m.balance; savePortfolio(portfolioValue); }
       if (m.equity != null) vtLiveEquity = m.equity;
-      console.log(`  Velotrade account: equity $${m.equity != null ? m.equity.toFixed(2) : "N/A"} | balance $${m.balance != null ? m.balance.toFixed(2) : "N/A"}`);
+      console.log(`  ${CONFIG.broker} account: equity $${m.equity != null ? m.equity.toFixed(2) : "N/A"} | balance $${m.balance != null ? m.balance.toFixed(2) : "N/A"}`);
     } catch (err) {
       console.log(`  ⚠️ Velotrade metrics fetch failed: ${err.message}`);
     }
@@ -919,7 +932,7 @@ async function run() {
       log.trades.push({ timestamp: new Date().toISOString(), type: "exit", symbol: CONFIG.symbol, side: closeSide, quantity: position.quantity, price, sizeUSD: position.sizeUSD, pnlUSD: pnl, reason: `prop: ${reason}`, orderPlaced: true, orderId: order.orderId, paperTrading: CONFIG.paperTrading });
       saveLog(log);
       writeCsvRow({ side: closeSide.toUpperCase(), quantity: position.quantity, price, totalUSD: position.sizeUSD, orderId: order.orderId, mode: CONFIG.paperTrading ? "PAPER" : "LIVE", notes: `PROP ${reason} — P&L $${pnl.toFixed(2)} | Portfolio: $${portfolioValue.toFixed(2)}` });
-      if (CONFIG.broker === "velotrade" && !CONFIG.paperTrading) await vtSafeCancelStop(position.stopOrderId);
+      if (IS_PROP_BROKER && !CONFIG.paperTrading) await PROP_EXEC.safeCancelStop(position.stopOrderId);
       savePosition(null);
       position = null;
       equity = portfolioValue;
@@ -1018,10 +1031,10 @@ async function run() {
         }
       }
     }
-    // Live Velotrade: keep the resting protective stop in sync with the ratchet
-    if (stopMoved && CONFIG.broker === "velotrade" && !CONFIG.paperTrading) {
+    // Live prop broker: keep the resting protective stop in sync with the ratchet
+    if (stopMoved && IS_PROP_BROKER && !CONFIG.paperTrading) {
       try {
-        position.stopOrderId = await vtReplaceStopOrder(
+        position.stopOrderId = await PROP_EXEC.replaceStop(
           position.stopOrderId,
           position.side === "long" ? "sell" : "buy",
           position.quantity,
@@ -1148,7 +1161,7 @@ async function run() {
       log.trades.push({ timestamp: new Date().toISOString(), type: "exit", symbol: CONFIG.symbol, side: closeSide, quantity: position.quantity, price, sizeUSD: position.sizeUSD, pnlUSD, pnlPct, reason: "NKB reversal", orderPlaced: true, orderId: order.orderId, paperTrading: CONFIG.paperTrading });
       saveLog(log);
       writeCsvRow({ side: closeSide.toUpperCase(), quantity: position.quantity, price, totalUSD: position.sizeUSD, orderId: order.orderId, mode: CONFIG.paperTrading ? "PAPER" : "LIVE", notes: `NKB reversal exit — P&L $${pnlUSD.toFixed(2)} (${pnlPct.toFixed(2)}%) | Portfolio: $${portfolioValue.toFixed(2)}` });
-      if (CONFIG.broker === "velotrade" && !CONFIG.paperTrading) await vtSafeCancelStop(position.stopOrderId);
+      if (IS_PROP_BROKER && !CONFIG.paperTrading) await PROP_EXEC.safeCancelStop(position.stopOrderId);
       savePosition(null);
       position = null;
       console.log(`\n✅ Position closed — now opening new position in opposite direction`);
