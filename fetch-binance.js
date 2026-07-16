@@ -1,10 +1,14 @@
 import { writeFileSync } from "fs";
 import https from "https";
 
-const SYMBOL   = "BTCUSDT";
-const INTERVAL = "1d";
+// Usage: node fetch-binance.js [SYMBOL] [INTERVAL] [OUT_FILE]
+//   node fetch-binance.js ETHUSDT 1d eth-daily-binance.csv
+//   node fetch-binance.js SOLUSDT 1d sol-daily-binance.csv
+// Defaults reproduce the original BTC daily pull.
+const SYMBOL   = process.argv[2] || "BTCUSDT";
+const INTERVAL = process.argv[3] || "1d";
 const LIMIT    = 1000; // max per request
-const OUT_FILE = "btc-daily-binance.csv";
+const OUT_FILE = process.argv[4] || `${SYMBOL.replace("USDT", "").toLowerCase()}-daily-binance.csv`;
 
 function get(url) {
   return new Promise((resolve, reject) => {
@@ -22,7 +26,7 @@ async function fetchAll() {
   let endTime = Date.now();
   const earliest = new Date("2019-01-01").getTime();
 
-  console.log("Fetching BTCUSDT daily candles from Binance...");
+  console.log(`Fetching ${SYMBOL} ${INTERVAL} candles from Binance...`);
 
   while (endTime > earliest) {
     const url = `https://api.binance.com/api/v3/klines?symbol=${SYMBOL}&interval=${INTERVAL}&limit=${LIMIT}&endTime=${endTime}`;
