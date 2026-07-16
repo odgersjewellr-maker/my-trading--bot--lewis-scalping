@@ -49,7 +49,12 @@ try {
     const tick = await htRaw("GET", "/v5/market/tickers", { category: "linear", symbol: SYMBOL });
     const last = parseFloat(tick?.list?.[0]?.lastPrice ?? "0");
     const price = (last * 0.5).toFixed(2);                 // 50% below market — will not fill
-    const qty = lot.minOrderQty ?? "0.1";
+    // Bybit enforces a 5 USDT minimum ORDER VALUE (retCode 110094), so size the
+    // probe above it: smallest step multiple with qty*price >= ~6 USDT.
+    const step = parseFloat(lot.qtyStep ?? "0.1");
+    const minQty = parseFloat(lot.minOrderQty ?? step);
+    const needed = Math.max(minQty, Math.ceil((6 / parseFloat(price)) / step) * step);
+    const qty = needed.toFixed((String(step).split(".")[1] || "").length);
     const created = await htRaw("POST", "/v5/order/create", {
       category: "linear", symbol: SYMBOL, side: "Buy", orderType: "Limit",
       qty: String(qty), price, timeInForce: "GTC", positionIdx: 0,
