@@ -99,6 +99,26 @@
       "pnlUSD": -3.65152349857142,
       "reason": "trailing stop hit",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-07-16T22:37:39.066Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "side": "buy",
+      "quantity": 0.015717,
+      "price": 64134.22,
+      "sizeUSD": 1007.9975357399999,
+      "portfolioValue": 1007.1637424442971,
+      "nkb": {
+        "kernelMA": 64184.94842060951,
+        "sigma": 111.93914572458267,
+        "upperBand": 64520.765857783255,
+        "lowerBand": 63849.13098343576,
+        "state": 1
+      },
+      "orderPlaced": true,
+      "orderId": "PAPER-1784241459066",
+      "paperTrading": true
     }
   ],
   "gateBlocks": [
