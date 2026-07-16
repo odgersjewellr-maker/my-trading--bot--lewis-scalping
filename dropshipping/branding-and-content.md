@@ -8,14 +8,14 @@ Requirements for a branded general store:
 - Broad enough to sell travel gear, fitness tools, and pet products under one roof
 - Short, easy to spell after hearing it once, no hyphens or numbers
 - Sounds like a brand, not a marketplace ("Shoply Deals Warehouse" = instant distrust)
-- `.com` or `.co.uk` available
+- `.com` or `.com.au` available (note: .com.au requires an ABN — get that first)
 
 ### Candidate names
 
 These are invented words/combinations — **before buying anything, check (a) domain
-availability on Namecheap, (b) UK trademark register at gov.uk/search-for-trademark,
-(c) Companies House name search, and (d) that no active shop already uses it on
-Instagram/TikTok.**
+availability on Namecheap/VentraIP, (b) the Australian trademark register at
+search.ipaustralia.gov.au, (c) the ASIC business name register, and (d) that no
+active shop already uses it on Instagram/TikTok.**
 
 | Name | Vibe | Notes |
 |------|------|-------|
@@ -26,7 +26,7 @@ Instagram/TikTok.**
 | **Snagly** | "snag a find" | Fun, impulse-buy energy |
 | **Ovella** | soft, premium-sounding | Skews home/wellness |
 
-Pick the one where the .com/.co.uk AND the matching TikTok + Instagram handles
+Pick the one where the .com/.com.au AND the matching TikTok + Instagram handles
 are all free. Consistency across handles matters more than the perfect name.
 
 ### Brand basics (keep it simple)
@@ -51,7 +51,7 @@ Rules that apply to all three products:
 |-------|------------------------------|
 | Before/after | "My entire week fits in a carry-on and here's proof" |
 | Challenge | "Packing 14 outfits into one cabin bag. Day 3 of trying" |
-| POV story | "POV: you refuse to pay Ryanair £60 for a checked bag" |
+| POV story | "POV: you refuse to pay Jetstar $65 for a checked bag" |
 | Satisfying | Slow zip compression shot, no talking, trending audio |
 
 ### Fascia recovery ring
