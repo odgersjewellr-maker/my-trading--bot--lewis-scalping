@@ -150,8 +150,9 @@ trends we're tracking now double as a preview of what will sell here.
 - [ ] Post 1–3 TikToks/day per product; judge each after ~2 weeks
       (kill: nothing over 5k views; keep: 20k+ views or add-to-carts)
 - [ ] First sales target: 10 orders by mid-October
-- [ ] Mid-October: add insulated tote + any proven northern-summer product
-      to the catalogue ahead of AU summer
+- [ ] Mid-October: launch **The Revival Collection** (see
+      `revival-collection.md`) — revived-fashion line (terry towelling bucket
+      hat, dad cap, retro socks, POD REVIVEЯ merch) timed for AU summer
 
 **Phase 4 — Scale into the golden quarter (November → January)**
 - [ ] Reinvest profit into small paid ad tests (AU$20–40/day) on the winner
