@@ -10,24 +10,46 @@ Requirements for a branded general store:
 - Sounds like a brand, not a marketplace ("Shoply Deals Warehouse" = instant distrust)
 - `.com` or `.com.au` available (note: .com.au requires an ABN — get that first)
 
-### Candidate names
+### How to check a name (do these in order, ~15 minutes, all free)
 
-These are invented words/combinations — **before buying anything, check (a) domain
-availability on Namecheap/VentraIP, (b) the Australian trademark register at
-search.ipaustralia.gov.au, (c) the ASIC business name register, and (d) that no
-active shop already uses it on Instagram/TikTok.**
+1. **Domain**: search the name on a registrar (Namecheap for .com, VentraIP for
+   .com.au). If the exact .com.au is free, that's the green light — .com.au
+   registration needs your ABN, which you already have.
+2. **Trademark**: search.ipaustralia.gov.au → search the name under classes 35
+   (retail) and your product classes. An identical/near-identical live mark in
+   those classes = pick another name.
+3. **ASIC business name**: connectonline.asic.gov.au → "Check name availability".
+   Registering costs ~AU$45/yr and is required if you trade under the name.
+4. **Social handles**: search the exact name on TikTok and Instagram. You want
+   the clean handle (@sunnyroo, not @sunnyroo_au_official).
+
+If all four are clear: buy the domain and register the handles the same day —
+names get taken, and the domain is the cheapest insurance (~AU$25).
+
+### Candidate names — DNS pre-checked 16 July 2026
+
+A DNS lookup was run on every candidate: "resolves" = definitely taken;
+"no DNS" = very likely available, but confirm on a registrar before assuming
+(a domain can be registered without a live site).
+
+**Both .com AND .com.au likely free (best options):**
 
 | Name | Vibe | Notes |
 |------|------|-------|
-| **Trovana** | discovery / treasure ("trove") | Fits the "products you didn't know you needed" pitch |
-| **Nestora** | home / comfort | Warm, works for home + pet |
-| **Peblo** | playful, short | Very brandable, easy logo |
-| **Kindra Goods** | friendly, trustworthy | "Goods" signals general store honestly |
-| **Snagly** | "snag a find" | Fun, impulse-buy energy |
-| **Ovella** | soft, premium-sounding | Skews home/wellness |
+| **Sunnyroo** | upbeat, unmistakably Aussie | Top pick — friendly, memorable, works for any product |
+| **Trovaroo** | "trove" + "roo" | Discovery-store pitch with Aussie flavour |
+| **Pipandfox** | boutique, warm | Skews home/pet — premium feel |
+| **Zestyroo** | playful, energetic | Great TikTok energy, slightly novelty |
+| **Mookibox** | cute, quirky | Fun but says less about what the store is |
 
-Pick the one where the .com/.com.au AND the matching TikTok + Instagram handles
-are all free. Consistency across handles matters more than the perfect name.
+**.com taken, .com.au likely free (fine for an AU-focused store):**
+Trovana, Peblo, Ovella, Southly, Kestly, Findery, Luvora, Brightbilly,
+Wattlebee, Billyfox, Bundleroo, Kovella.
+
+**Fully taken (dropped):** Nestora, Snagly, Findaroo, Tessora, Tuckabox.
+
+Pick the one where the domain AND the matching TikTok + Instagram handles are
+all free. Consistency across handles matters more than the perfect name.
 
 ### Brand basics (keep it simple)
 
