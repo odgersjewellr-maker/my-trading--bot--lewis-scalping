@@ -25,6 +25,13 @@ flexible name (so you're not locked to a niche), which tests a rotating set of
 the "all different popular products" spirit but sources them from where
 dropshippers actually win.
 
+> **DECIDED (16 July 2026): niche store instead.** Brand: **Reviver Co**
+> (reviverco.com / .com.au), a recovery & wellness store — "products that
+> revive you." Hero product: fascia recovery ring. A coherent niche converts
+> better than a general store, and the name does half the marketing. The
+> general-store candidates (packing cubes, pet brush) are parked, not dead —
+> they can become a second store later if Reviver works.
+
 ## 2. What makes a good product (the checklist)
 
 Score every candidate product against these. Aim for at least 5 of 7:

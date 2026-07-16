@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reviver Co — storefront mockup</title>
+<style>
+  :root{
+    --ink:#1c1c1a; --paper:#fafaf8; --card:#ffffff; --line:#e6e6e2;
+    --muted:#8a8a85; --accent:#0d9488; --accent-dark:#0b7c72;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;background:var(--paper);color:var(--ink);line-height:1.5}
+  .wrap{max-width:1040px;margin:0 auto;padding:0 24px}
+
+  .banner{background:var(--ink);color:#fff;text-align:center;font-size:13px;padding:8px;letter-spacing:.5px}
+  .banner b{color:#5eead4}
+
+  header{background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+  .nav{display:flex;align-items:center;justify-content:space-between;padding:18px 24px;max-width:1040px;margin:0 auto}
+  .logo{font-weight:700;font-size:24px;letter-spacing:3px;display:flex;align-items:baseline;gap:2px}
+  .logo .axis{display:inline-block;width:5px;height:26px;background:var(--accent);border-radius:3px;margin:0 3px;transform:translateY(3px)}
+  .logo .mirror{color:var(--muted)}
+  .navlinks{display:flex;gap:28px;font-size:14px;color:var(--muted)}
+  .navlinks span{cursor:default}
+
+  .hero{display:grid;grid-template-columns:1.1fr 1fr;gap:48px;align-items:center;padding:72px 0}
+  .hero h1{font-size:clamp(32px,5vw,52px);line-height:1.08;letter-spacing:-1px}
+  .hero h1 em{font-style:normal;color:var(--accent)}
+  .hero p{margin:20px 0 28px;color:var(--muted);font-size:18px;max-width:42ch}
+  .cta{display:inline-block;background:var(--accent);color:#fff;font-weight:600;padding:16px 34px;border-radius:999px;font-size:16px;letter-spacing:.3px}
+  .cta.small{padding:11px 22px;font-size:14px}
+  .sub{display:block;margin-top:14px;font-size:13px;color:var(--muted)}
+
+  .productcard{background:linear-gradient(160deg,#e7f5f3,#d3ecea);border-radius:24px;aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;position:relative}
+  .ring{width:58%;aspect-ratio:1;border-radius:50%;border:26px solid var(--accent);box-shadow:inset 0 8px 18px rgba(0,0,0,.18),0 18px 30px rgba(13,148,136,.25)}
+  .tag{position:absolute;top:18px;left:18px;background:var(--ink);color:#fff;font-size:12px;letter-spacing:1px;padding:6px 12px;border-radius:999px}
+
+  .strip{display:flex;justify-content:space-between;gap:16px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:18px 0;font-size:14px;color:var(--muted);flex-wrap:wrap}
+
+  section h2{font-size:26px;letter-spacing:-.5px;margin:64px 0 8px}
+  .lede{color:var(--muted);margin-bottom:28px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+  .thumb{aspect-ratio:4/3;background:linear-gradient(160deg,#eef2f1,#e0e8e6);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px;letter-spacing:1px}
+  .thumb.t2{background:linear-gradient(160deg,#e7f5f3,#d3ecea)}
+  .card .body{padding:16px}
+  .card h3{font-size:16px;margin-bottom:4px}
+  .price{font-weight:700}
+  .price s{color:var(--muted);font-weight:400;margin-left:8px;font-size:13px}
+  .pill{display:inline-block;background:#e7f5f3;color:var(--accent-dark);font-size:11px;letter-spacing:1px;font-weight:700;padding:4px 10px;border-radius:999px;margin-bottom:8px}
+
+  .bundle{margin-top:56px;background:var(--ink);color:#fff;border-radius:24px;padding:44px;display:grid;grid-template-columns:1.3fr 1fr;gap:32px;align-items:center}
+  .bundle h2{margin:0 0 10px;color:#fff}
+  .bundle p{color:#b9b9b4;max-width:46ch}
+  .bundle .price{font-size:34px;margin-top:18px;color:#5eead4}
+  .bundle .price s{color:#7c7c78}
+  .bundle ul{list-style:none;margin-top:16px;color:#d9d9d5;font-size:15px}
+  .bundle li{padding:6px 0;border-bottom:1px solid #33332f}
+
+  .reviews{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px;margin-bottom:64px}
+  .review{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px;font-size:15px}
+  .stars{color:#f59e0b;letter-spacing:2px;margin-bottom:8px}
+  .review .who{margin-top:12px;color:var(--muted);font-size:13px}
+
+  footer{border-top:1px solid var(--line);padding:36px 24px;color:var(--muted);font-size:13px;text-align:center}
+  .note{background:#fff8e6;border:1px solid #f0e0b0;color:#7a6420;border-radius:12px;padding:14px 18px;font-size:13px;margin:32px 0}
+
+  @media (max-width:760px){
+    .hero,.bundle{grid-template-columns:1fr}
+    .navlinks{display:none}
+  }
+</style>
+</head>
+<body>
+
+<div class="banner">FREE AU SHIPPING OVER $75 &nbsp;·&nbsp; <b>LAUNCH OFFER:</b> 20% OFF THE REVIVER KIT</div>
+
+<header>
+  <div class="nav">
+    <div class="logo">REV<span class="axis"></span><span class="mirror">VER</span><span style="font-size:12px;color:var(--muted);letter-spacing:1px;margin-left:8px">CO.</span></div>
+    <nav class="navlinks"><span>Shop</span><span>The Kit</span><span>Why Reviver</span><span>Support</span></nav>
+    <span class="cta small">Cart (0)</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section class="hero">
+    <div>
+      <h1>Tight muscles?<br>Meet your <em>reviver</em>.</h1>
+      <p>The deep-tissue recovery ring that gets into knots foam rollers can't reach. Designed for runners, lifters, and desk-sitters alike.</p>
+      <span class="cta">Shop the Recovery Ring — $79</span>
+      <span class="sub">★★★★★ rated · 30-day money-back guarantee · Ships from AU</span>
+    </div>
+    <div class="productcard">
+      <span class="tag">BESTSELLER</span>
+      <div class="ring"></div>
+    </div>
+  </section>
+
+  <div class="strip">
+    <span>✓ Free AU shipping over $75</span>
+    <span>✓ 30-day returns</span>
+    <span>✓ ABN-registered Aussie business</span>
+    <span>✓ Secure checkout</span>
+  </div>
+
+  <section>
+    <h2>Recovery, head to toe</h2>
+    <p class="lede">Small tools. Serious relief. Everything reads both ways — just like the name.</p>
+    <div class="grid">
+      <div class="card">
+        <div class="thumb t2">RECOVERY RING</div>
+        <div class="body"><span class="pill">HERO</span><h3>Fascia Recovery Ring</h3><p class="price">$79 <s>$99</s></p></div>
+      </div>
+      <div class="card">
+        <div class="thumb">BALL DUO</div>
+        <div class="body"><span class="pill">ADD-ON</span><h3>Massage Ball Duo</h3><p class="price">$29</p></div>
+      </div>
+      <div class="card">
+        <div class="thumb">STRETCH STRAP</div>
+        <div class="body"><span class="pill">ADD-ON</span><h3>Loop Stretch Strap</h3><p class="price">$25</p></div>
+      </div>
+      <div class="card">
+        <div class="thumb t2">ICE ROLLER</div>
+        <div class="body"><span class="pill">FACE</span><h3>Facial Ice Roller</h3><p class="price">$27</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="bundle">
+    <div>
+      <h2>The Reviver Kit</h2>
+      <p>Ring, ball duo, and stretch strap — the full-body recovery routine in one box. Save 20% and skip the shipping fee.</p>
+      <ul>
+        <li>Fascia Recovery Ring</li>
+        <li>Massage Ball Duo</li>
+        <li>Loop Stretch Strap</li>
+        <li>Recovery routine guide (digital)</li>
+      </ul>
+    </div>
+    <div>
+      <p class="price">$106 <s>$133</s></p>
+      <p style="margin-top:6px;color:#b9b9b4">One kit. Every knot.</p>
+      <p style="margin-top:22px"><span class="cta">Get the Kit</span></p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What early customers say</h2>
+    <p class="lede">Placeholder reviews — replace with real ones as they come in. Never fake these.</p>
+    <div class="reviews">
+      <div class="review"><div class="stars">★★★★★</div>"Placeholder — real review goes here after launch."<div class="who">— Customer, Melbourne</div></div>
+      <div class="review"><div class="stars">★★★★★</div>"Placeholder — real review goes here after launch."<div class="who">— Customer, Brisbane</div></div>
+      <div class="review"><div class="stars">★★★★★</div>"Placeholder — real review goes here after launch."<div class="who">— Customer, Perth</div></div>
+    </div>
+  </section>
+
+  <div class="note"><b>Mockup notes:</b> this is a design target for the Shopify build, not a working store. Prices match the plan (~3x supplier cost). The logo uses concept #2 (mirror-axis I). Product photos replace the placeholder tiles — use supplier photos only until samples arrive, then shoot your own. The reviews section stays empty at launch: fake reviews breach Australian Consumer Law.</div>
+
+</div>
+
+<footer>
+  REVIVER CO. · ABN-registered · Refunds · Shipping · Privacy · Terms<br>
+  Built as a planning mockup — Reviver Co is a brand-in-progress.
+</footer>
+
+</body>
+</html>

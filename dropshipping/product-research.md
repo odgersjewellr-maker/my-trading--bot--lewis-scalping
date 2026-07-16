@@ -141,13 +141,55 @@ Sources: [Sell The Trend winning products (July 2026)](https://www.sellthetrend.
 | 2 | Fascia recovery ring | 7/7 | Fitness, evergreen |
 | 3 | Pet grooming/bath brush | 7/7 | Pet, evergreen |
 
-All three top picks are season-proof, which matters double in Australia — no
-northern-summer product on this list is launchable domestically before
-October. Insulated tote bags (#4) are earmarked for an AU-summer launch then.
+**Superseded 16 July 2026** — the store is now **Reviver Co**, a recovery &
+wellness niche store. New catalogue below. Packing cubes and pet brush are
+parked (candidates for a second store later).
+
+---
+
+## Reviver Co launch catalogue
+
+The catalogue is built around one hero product plus average-order-value (AOV)
+boosters — cheap add-ons that make each order worth more, which is what makes
+ad spend survivable later.
+
+### Hero — Fascia recovery ring (7/7, already scored above)
+~AU$26 cost → AU$75–80. The ad product; every video points here.
+
+### AOV boosters (add-to-cart products)
+
+**Massage ball / peanut ball duo** — score 7/7
+- ~AU$5–9 cost → AU$25–30. Lacrosse-style ball + peanut roller set.
+- Light, indestructible, no sizing, evergreen, endless demo content.
+
+**Stretching strap with loops** — score 7/7
+- ~AU$4–7 cost → AU$22–26.
+- Flat-ships (cheap postage), zero return risk, pairs naturally with the ring
+  in a "full recovery kit" bundle.
+
+**Facial ice roller** (6/7, scored above) — reframed as the "recovery for your
+face" product. Saturation matters less inside a coherent niche store.
+
+### Premium second act (add after validation)
+
+**Acupressure mat + pillow set** — score 6/7
+- ~AU$14–20 cost → AU$50–60.
+- ⚠️ Bulkier shipping; strong TikTok reaction content ("lying on 8,000 spikes").
+
+### Deliberately skipped
+- **Massage gun** — battery + motor = defect returns, air-freight limits, and
+  branded players (Theragun et al) own the trust. Classic checklist fail.
+- **Posture corrector** — saturated to death, high refund rate, borderline
+  medical claims territory.
+
+### The bundle
+"**The Reviver Kit**" — ring + ball duo + strap, ~AU$35 cost → AU$99–110.
+Bundles raise AOV ~40% and are the difference between ads that lose money and
+ads that print. One bundle sale ≈ AU$60+ gross before ads.
 
 Next actions (Phase 1 → 2 of the business plan):
-1. Verify live supplier costs for the top 3 on CJ Dropshipping / AliExpress DS
-   Center — check "ships from AU warehouse" availability first.
-2. Check current TikTok content volume for each (search the product, sort by
-   recent, note view counts).
-3. Order samples of the top 2 (~AU$50 total) when budget opens up.
+1. Verify live supplier costs for ring, ball duo, and strap on CJ Dropshipping /
+   AliExpress DS Center — check "ships from AU warehouse" first.
+2. Check TikTok content volume for each (search, sort by recent, note views).
+3. Order samples of ring + ball duo + strap (~AU$50 total) — needed for
+   content filming anyway.
