@@ -91,6 +91,11 @@ export const CONFIG = {
   portfolioValue: parseFloat(process.env.PORTFOLIO_VALUE_USD || "1000"),
   tradeSizePct: parseFloat(process.env.TRADE_SIZE_PCT || "80") / 100,
   riskPct: parseFloat(process.env.RISK_PCT || "5") / 100, // % of portfolio to risk per trade (stop-loss basis)
+  // ADX entry gate — block NEW entries when ADX(14) is below this (weak/no trend).
+  // Never blocks exits, stops, or ADX-hold logic. 0 = off (default, so existing
+  // books are unaffected). Harvested from PR #1; validated with 2% risk in
+  // strategy-lab walk-forward: MAR 1.83 vs 1.43 risk-only (BTC daily OOS).
+  adxEntryMin: parseFloat(process.env.ADX_ENTRY_MIN || "0"),
   maxTradeSizeUSD: parseFloat(process.env.MAX_TRADE_SIZE_USD || "5000"),
   maxTradesPerDay: parseInt(process.env.MAX_TRADES_PER_DAY || "3"),
   paperTrading: process.env.PAPER_TRADING !== "false",
@@ -1234,6 +1239,13 @@ async function run() {
     console.log(`🚦 REGIME GATE (${CONFIG.regimeGate}) — ${buySignal ? "BUY" : "SELL"} signal blocked (${regimeNote})`);
     log.gateBlocks = log.gateBlocks || [];
     log.gateBlocks.push({ timestamp: new Date().toISOString(), signal: buySignal ? "BUY" : "SELL", note: regimeNote });
+    saveLog(log);
+  } else if ((buySignal || (sellSignal && canShort)) && !(CONFIG.adxEntryMin <= 0 || (adxValue != null && adxValue >= CONFIG.adxEntryMin))) {
+    // ADX entry gate — only take a fresh breakout when a real trend exists (PR #1).
+    const note = `ADX ${adxValue != null ? adxValue.toFixed(1) : "N/A"} < ${CONFIG.adxEntryMin} — trend too weak for a fresh entry`;
+    console.log(`🚦 ADX ENTRY GATE — ${buySignal ? "BUY" : "SELL"} signal blocked (${note})`);
+    log.gateBlocks = log.gateBlocks || [];
+    log.gateBlocks.push({ timestamp: new Date().toISOString(), signal: buySignal ? "BUY" : "SELL", note });
     saveLog(log);
   } else if (buySignal) {
     await openPosition("buy", "long", "NKB Buy — bands flipped bullish");
