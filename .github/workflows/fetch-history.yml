@@ -1,0 +1,34 @@
+name: Fetch candle history
+
+# Manual utility: pulls daily OHLCV history for SOL and ETH from BitGet's
+# public API (works from CI runners) and commits the CSVs to the branch it
+# was dispatched on. Used for cross-symbol validation of the pattern rules.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Fetch SOL and ETH daily history
+        run: |
+          node fetch-history.js SOLUSDT sol-daily-bitget.csv
+          node fetch-history.js ETHUSDT eth-daily-bitget.csv
+
+      - name: Commit CSVs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add sol-daily-bitget.csv eth-daily-bitget.csv
+          git diff --cached --quiet || git commit -m "Add SOL + ETH daily history from BitGet (fetch-history workflow)"
+          git push
