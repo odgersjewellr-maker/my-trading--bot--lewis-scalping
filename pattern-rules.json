@@ -12,7 +12,9 @@
         "all": [
           "three_white_soldiers"
         ],
-        "none": []
+        "none": [
+          "high_volatility"
+        ]
       },
       "then": {
         "action": "long",
@@ -58,7 +60,8 @@
           "bearish_engulfing",
           "evening_star",
           "shooting_star",
-          "dark_cloud_cover"
+          "dark_cloud_cover",
+          "high_volatility"
         ],
         "none_recent": {
           "patterns": [
@@ -70,7 +73,7 @@
       },
       "then": {
         "action": "long",
-        "stop_pct": 4,
+        "stop_pct": 5,
         "exit": {
           "on_patterns": [
             "close_below_prev_low"
@@ -88,7 +91,8 @@
           "inside_bar"
         ],
         "none": [
-          "three_black_crows"
+          "three_black_crows",
+          "high_volatility"
         ],
         "none_recent": {
           "patterns": [
@@ -110,8 +114,8 @@
       }
     },
     {
-      "name": "Morning star in uptrend",
-      "enabled": true,
+      "name": "Morning star in uptrend (OFF: 0 wins in 5 trades with pattern exits; too rare to trust)",
+      "enabled": false,
       "if": {
         "all": [
           "above_sma50",

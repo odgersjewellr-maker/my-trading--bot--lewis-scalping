@@ -30,24 +30,14 @@ const candles = readFileSync(file, "utf8").trim().split("\n").slice(1).map((l) =
 const ctx = buildContext(candles);
 
 // ── features ─────────────────────────────────────────────────────────────────
-const featIds = [...Object.keys(PATTERNS), "high_volatility"];
-
-// 20-candle realized range percentile as a regime flag
-const rangePct = candles.map((c) => (c.high - c.low) / c.close);
-const vol20 = candles.map((_, i) => {
-  if (i < 20) return null;
-  let s = 0;
-  for (let j = i - 19; j <= i; j++) s += rangePct[j];
-  return s / 20;
-});
-const volSorted = vol20.filter((v) => v !== null).sort((a, b) => a - b);
-const volHi = volSorted[Math.floor(volSorted.length * 0.7)];
+// every library pattern is a boolean feature (includes the volatility-regime
+// context patterns, which are causal rolling percentiles — no lookahead)
+const featIds = Object.keys(PATTERNS);
 
 // rows: [features(bool[]), forward return]
 const rows = [];
 for (let i = MIN_HISTORY; i < candles.length - HOLD - 1; i++) {
-  const f = Object.keys(PATTERNS).map((id) => PATTERNS[id].detect(ctx, i));
-  f.push(vol20[i] !== null && vol20[i] >= volHi);
+  const f = featIds.map((id) => PATTERNS[id].detect(ctx, i));
   const ret = (candles[i + HOLD].close - candles[i + 1].open) / candles[i + 1].open;
   rows.push({ f, ret, date: candles[i].date });
 }

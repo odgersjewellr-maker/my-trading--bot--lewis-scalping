@@ -63,6 +63,29 @@ export function rsi(candles, n) {
   return out;
 }
 
+/**
+ * Rolling volatility percentile: today's 20-candle average range, ranked
+ * against the trailing 250 candles. Causal (only looks back) — live-safe.
+ */
+export function volRank(candles, span = 20, lookback = 250) {
+  const v = candles.map((c, i) => {
+    if (i < span) return null;
+    let s = 0;
+    for (let j = i - span + 1; j <= i; j++) s += (candles[j].high - candles[j].low) / candles[j].close;
+    return s / span;
+  });
+  return v.map((cur, i) => {
+    if (cur === null || i < span + 30) return null;
+    let below = 0, n = 0;
+    for (let j = Math.max(span, i - lookback); j <= i; j++) {
+      if (v[j] === null) continue;
+      n++;
+      if (v[j] < cur) below++;
+    }
+    return below / n;
+  });
+}
+
 /** Precompute indicators once so detectors stay cheap. */
 export function buildContext(candles) {
   return {
@@ -71,6 +94,7 @@ export function buildContext(candles) {
     sma50: sma(candles, 50),
     ema8: ema(candles, 8),
     rsi14: rsi(candles, 14),
+    volRank: volRank(candles),
   };
 }
 
@@ -212,6 +236,14 @@ export const PATTERNS = {
   rsi_overbought_fade: {
     name: "RSI(14) was > 70, candle closes down", dir: "bear",
     detect: (ctx, i) => ctx.rsi14[i - 1] !== null && ctx.rsi14[i - 1] > 70 && red(ctx.candles[i]),
+  },
+  high_volatility: {
+    name: "High volatility regime (top 30% of trailing year)", dir: "context",
+    detect: (ctx, i) => ctx.volRank[i] !== null && ctx.volRank[i] >= 0.7,
+  },
+  low_volatility: {
+    name: "Low volatility regime (bottom 30% of trailing year)", dir: "context",
+    detect: (ctx, i) => ctx.volRank[i] !== null && ctx.volRank[i] <= 0.3,
   },
 };
 

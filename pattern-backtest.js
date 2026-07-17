@@ -89,17 +89,27 @@ export function backtest(candles, config) {
     const exitSpec = decision.exit ?? null;
     const maxHold = exitSpec ? (exitSpec.max_hold ?? 15) : decision.hold_candles;
     const lastIdx = Math.min(entryIdx + maxHold - 1, candles.length - 1);
+    // scale_out f: book fraction f at the first exit-pattern hit, let the
+    // rest run until the next hit, the stop, or max_hold
+    const scaleOut = exitSpec?.scale_out ?? 0;
 
-    let exit = null, exitIdx = lastIdx, reason = exitSpec ? "max-hold" : "hold-expiry";
-    for (let j = entryIdx; j <= lastIdx && exit === null; j++) {
+    let remaining = 1, booked = 0, scaled = false;
+    let exitIdx = lastIdx, reason = exitSpec ? "max-hold" : "hold-expiry";
+    for (let j = entryIdx; j <= lastIdx && remaining > 0; j++) {
       const c = candles[j];
-      if (c.open <= stopPrice) { exit = c.open; exitIdx = j; reason = "stop (gap)"; break; }
-      if (c.low <= stopPrice) { exit = stopPrice; exitIdx = j; reason = "stop"; break; }
+      if (c.open <= stopPrice) { booked += remaining * c.open; remaining = 0; exitIdx = j; reason = scaled ? "scaled+stop" : "stop (gap)"; break; }
+      if (c.low <= stopPrice) { booked += remaining * stopPrice; remaining = 0; exitIdx = j; reason = scaled ? "scaled+stop" : "stop"; break; }
       if (exitSpec && j < candles.length - 1 && exitSpec.on_patterns.some((id) => PATTERNS[id].detect(ctx, j))) {
-        exit = candles[j + 1].open; exitIdx = j + 1; reason = "exit-pattern";
+        if (scaleOut > 0 && !scaled) {
+          booked += scaleOut * candles[j + 1].open; remaining -= scaleOut; scaled = true;
+        } else {
+          booked += remaining * candles[j + 1].open; remaining = 0; exitIdx = j + 1;
+          reason = scaled ? "scaled+exit-pattern" : "exit-pattern"; break;
+        }
       }
     }
-    if (exit === null) exit = candles[lastIdx].close;
+    if (remaining > 0) { booked += remaining * candles[lastIdx].close; exitIdx = lastIdx; if (scaled) reason = "scaled+max-hold"; }
+    const exit = booked; // volume-weighted exit price across parcels
 
     const gross = (exit - entry) / entry;
     const net = (1 + gross) * (1 - feePct) / (1 + feePct) - 1; // fee on entry and exit
