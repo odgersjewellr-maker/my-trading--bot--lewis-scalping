@@ -14,11 +14,22 @@
       "then": { "action": "long", "hold_candles": 3, "stop_pct": 4 }
     },
     {
+      "name": "Soldiers-primed breakout (OFF: the soldiers rule already captures this edge; with one-position-at-a-time trading this only catches late, exhausted breakouts — 10 trades, 30% win, -1.49% avg in backtest)",
+      "enabled": false,
+      "if": {
+        "all": ["close_above_prev_high"],
+        "none": [],
+        "all_recent": { "patterns": ["three_white_soldiers"], "window": 3 }
+      },
+      "then": { "action": "long", "hold_candles": 3, "stop_pct": 4 }
+    },
+    {
       "name": "Trend breakout",
       "enabled": true,
       "if": {
         "all": ["above_sma50", "close_above_prev_high"],
-        "none": ["bearish_engulfing", "evening_star", "shooting_star", "dark_cloud_cover"]
+        "none": ["bearish_engulfing", "evening_star", "shooting_star", "dark_cloud_cover"],
+        "none_recent": { "patterns": ["outside_bar_green", "outside_bar_red"], "window": 3 }
       },
       "then": { "action": "long", "hold_candles": 3, "stop_pct": 4 }
     },

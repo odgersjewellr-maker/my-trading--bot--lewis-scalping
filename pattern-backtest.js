@@ -31,8 +31,9 @@ export function evaluateRules(ctx, i, config) {
 
   for (const rule of config.rules) {
     if (!rule.enabled) continue;
-    const { all = [], none = [], none_recent = null } = rule.if;
-    const unknown = [...all, ...none, ...(none_recent?.patterns ?? [])].filter((id) => !PATTERNS[id]);
+    const { all = [], none = [], none_recent = null, all_recent = null } = rule.if;
+    const unknown = [...all, ...none, ...(none_recent?.patterns ?? []), ...(all_recent?.patterns ?? [])]
+      .filter((id) => !PATTERNS[id]);
     if (unknown.length) throw new Error(`Rule "${rule.name}" uses unknown pattern id(s): ${unknown.join(", ")}`);
     if (!all.every((id) => fired.has(id)) || !none.every((id) => !fired.has(id))) continue;
     // none_recent: veto if any listed pattern fired in the `window` candles BEFORE the signal
@@ -44,6 +45,17 @@ export function evaluateRules(ctx, i, config) {
         }
       }
       if (vetoed) continue;
+    }
+    // all_recent: require every listed pattern to have fired within the `window`
+    // candles before the signal, or on the signal candle itself
+    if (all_recent) {
+      const ok = all_recent.patterns.every((id) => {
+        for (let j = Math.max(0, i - all_recent.window); j <= i; j++) {
+          if (j === i ? fired.has(id) : PATTERNS[id].detect(ctx, j)) return true;
+        }
+        return false;
+      });
+      if (!ok) continue;
     }
     return { rule: rule.name, ...rule.then, matched: all, vetoedBy: [] };
   }
