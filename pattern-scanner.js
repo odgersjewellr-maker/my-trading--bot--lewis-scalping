@@ -10,7 +10,7 @@
 // Bull patterns are scored long (buy next open); bear patterns are scored
 // short (sell next open). All returns are next-open -> exit-close, no fees.
 
-const fs = require('fs');
+import fs from 'fs';
 
 const args = process.argv.slice(2);
 const holdIdx = args.indexOf('--hold');

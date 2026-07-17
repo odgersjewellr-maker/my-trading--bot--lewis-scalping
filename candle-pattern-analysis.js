@@ -7,7 +7,7 @@
 // Usage: node candle-pattern-analysis.js [csv-file]
 // CSV format: Date,Open,High,Low,Close,Volume (same as btc-daily-binance.csv)
 
-const fs = require('fs');
+import fs from 'fs';
 
 const file = process.argv[2] || 'btc-daily-binance.csv';
 const rows = fs.readFileSync(file, 'utf8').trim().split('\n').slice(1).map(l => {
