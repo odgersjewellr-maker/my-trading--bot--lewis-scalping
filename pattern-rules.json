@@ -135,6 +135,33 @@
       }
     },
     {
+      "name": "Overbought flush dip-buy (OFF: sequence-mined, held OOS in isolation but weak as a trade — +0.67%/trade, 33% win — and displaces better signals: test-window PF 3.10 -> 2.68 with it on)",
+      "enabled": false,
+      "if": {
+        "all": [
+          "above_sma50",
+          "close_below_prev_low"
+        ],
+        "none": [],
+        "all_recent": {
+          "patterns": [
+            "rsi_overbought_fade"
+          ],
+          "window": 3
+        }
+      },
+      "then": {
+        "action": "long",
+        "stop_pct": 4,
+        "exit": {
+          "on_patterns": [
+            "close_below_prev_low"
+          ],
+          "max_hold": 15
+        }
+      }
+    },
+    {
       "name": "Breakdown short (example — OFF: shorting bear patterns lost money on BTC daily 2018-2026)",
       "enabled": false,
       "if": {
