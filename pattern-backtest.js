@@ -31,12 +31,21 @@ export function evaluateRules(ctx, i, config) {
 
   for (const rule of config.rules) {
     if (!rule.enabled) continue;
-    const { all = [], none = [] } = rule.if;
-    const unknown = [...all, ...none].filter((id) => !PATTERNS[id]);
+    const { all = [], none = [], none_recent = null } = rule.if;
+    const unknown = [...all, ...none, ...(none_recent?.patterns ?? [])].filter((id) => !PATTERNS[id]);
     if (unknown.length) throw new Error(`Rule "${rule.name}" uses unknown pattern id(s): ${unknown.join(", ")}`);
-    if (all.every((id) => fired.has(id)) && none.every((id) => !fired.has(id))) {
-      return { rule: rule.name, ...rule.then, matched: all, vetoedBy: [] };
+    if (!all.every((id) => fired.has(id)) || !none.every((id) => !fired.has(id))) continue;
+    // none_recent: veto if any listed pattern fired in the `window` candles BEFORE the signal
+    if (none_recent) {
+      let vetoed = false;
+      for (let j = Math.max(0, i - none_recent.window); j < i && !vetoed; j++) {
+        for (const id of none_recent.patterns) {
+          if (PATTERNS[id].detect(ctx, j)) { vetoed = true; break; }
+        }
+      }
+      if (vetoed) continue;
     }
+    return { rule: rule.name, ...rule.then, matched: all, vetoedBy: [] };
   }
   return null;
 }
@@ -75,7 +84,7 @@ export function backtest(candles, config) {
     const gross = (exit - entry) / entry;
     const net = (1 + gross) * (1 - feePct) / (1 + feePct) - 1; // fee on entry and exit
     trades.push({
-      rule: decision.rule, signalDate: candles[i].date, entryDate: candles[entryIdx].date,
+      rule: decision.rule, signalIdx: i, signalDate: candles[i].date, entryDate: candles[entryIdx].date,
       exitDate: candles[exitIdx].date, entry, exit, netPct: net * 100, reason,
     });
     i = exitIdx + 1; // one position at a time

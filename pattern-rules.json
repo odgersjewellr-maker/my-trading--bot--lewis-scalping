@@ -25,7 +25,11 @@
     {
       "name": "Inside bar in uptrend",
       "enabled": true,
-      "if": { "all": ["above_sma50", "inside_bar"], "none": ["three_black_crows"] },
+      "if": {
+        "all": ["above_sma50", "inside_bar"],
+        "none": ["three_black_crows"],
+        "none_recent": { "patterns": ["outside_bar_red", "bearish_engulfing"], "window": 3 }
+      },
       "then": { "action": "long", "hold_candles": 3, "stop_pct": 4 }
     },
     {
