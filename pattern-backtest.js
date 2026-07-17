@@ -83,13 +83,21 @@ export function backtest(candles, config) {
     const entryIdx = i + 1;
     const entry = candles[entryIdx].open;
     const stopPrice = entry * (1 - (decision.stop_pct ?? 100) / 100);
-    const lastIdx = Math.min(entryIdx + decision.hold_candles - 1, candles.length - 1);
+    // Exit spec: either the legacy timer (hold_candles) or pattern-based
+    // exit {on_patterns: [...], max_hold: N} — exit at the open AFTER an
+    // exit pattern completes on a closed candle, with max_hold as a cap.
+    const exitSpec = decision.exit ?? null;
+    const maxHold = exitSpec ? (exitSpec.max_hold ?? 15) : decision.hold_candles;
+    const lastIdx = Math.min(entryIdx + maxHold - 1, candles.length - 1);
 
-    let exit = null, exitIdx = lastIdx, reason = "hold-expiry";
-    for (let j = entryIdx; j <= lastIdx; j++) {
+    let exit = null, exitIdx = lastIdx, reason = exitSpec ? "max-hold" : "hold-expiry";
+    for (let j = entryIdx; j <= lastIdx && exit === null; j++) {
       const c = candles[j];
       if (c.open <= stopPrice) { exit = c.open; exitIdx = j; reason = "stop (gap)"; break; }
       if (c.low <= stopPrice) { exit = stopPrice; exitIdx = j; reason = "stop"; break; }
+      if (exitSpec && j < candles.length - 1 && exitSpec.on_patterns.some((id) => PATTERNS[id].detect(ctx, j))) {
+        exit = candles[j + 1].open; exitIdx = j + 1; reason = "exit-pattern";
+      }
     }
     if (exit === null) exit = candles[lastIdx].close;
 

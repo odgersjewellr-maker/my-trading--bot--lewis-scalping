@@ -1,59 +1,150 @@
 {
-  "description": "If-this-then-that pattern trading rules. Each rule: IF all listed conditions fire (and none of the veto conditions do) on a closed candle, THEN take the action. Rules are checked top to bottom; the first match wins. Condition ids come from patterns.js.",
-
+  "description": "If-this-then-that pattern trading rules. Each rule: IF all listed conditions fire (and none of the veto conditions do) on a closed candle, THEN take the action; exits fire when an exit pattern completes on a closed candle (max_hold as cap), or on the hard stop. Rules are checked top to bottom; the first match wins. Condition ids come from patterns.js.",
   "settings": {
     "fee_pct_per_side": 0.1,
     "one_position_at_a_time": true
   },
-
   "rules": [
     {
       "name": "Three white soldiers",
       "enabled": true,
-      "if": { "all": ["three_white_soldiers"], "none": [] },
-      "then": { "action": "long", "hold_candles": 3, "stop_pct": 4 }
+      "if": {
+        "all": [
+          "three_white_soldiers"
+        ],
+        "none": []
+      },
+      "then": {
+        "action": "long",
+        "stop_pct": 4,
+        "exit": {
+          "on_patterns": [
+            "close_below_prev_low"
+          ],
+          "max_hold": 15
+        }
+      }
     },
     {
       "name": "Soldiers-primed breakout (OFF: the soldiers rule already captures this edge; with one-position-at-a-time trading this only catches late, exhausted breakouts — 10 trades, 30% win, -1.49% avg in backtest)",
       "enabled": false,
       "if": {
-        "all": ["close_above_prev_high"],
+        "all": [
+          "close_above_prev_high"
+        ],
         "none": [],
-        "all_recent": { "patterns": ["three_white_soldiers"], "window": 3 }
+        "all_recent": {
+          "patterns": [
+            "three_white_soldiers"
+          ],
+          "window": 3
+        }
       },
-      "then": { "action": "long", "hold_candles": 3, "stop_pct": 4 }
+      "then": {
+        "action": "long",
+        "hold_candles": 3,
+        "stop_pct": 4
+      }
     },
     {
       "name": "Trend breakout",
       "enabled": true,
       "if": {
-        "all": ["above_sma50", "close_above_prev_high"],
-        "none": ["bearish_engulfing", "evening_star", "shooting_star", "dark_cloud_cover"],
-        "none_recent": { "patterns": ["outside_bar_green", "outside_bar_red"], "window": 3 }
+        "all": [
+          "above_sma50",
+          "close_above_prev_high"
+        ],
+        "none": [
+          "bearish_engulfing",
+          "evening_star",
+          "shooting_star",
+          "dark_cloud_cover"
+        ],
+        "none_recent": {
+          "patterns": [
+            "outside_bar_green",
+            "outside_bar_red"
+          ],
+          "window": 3
+        }
       },
-      "then": { "action": "long", "hold_candles": 3, "stop_pct": 4 }
+      "then": {
+        "action": "long",
+        "stop_pct": 4,
+        "exit": {
+          "on_patterns": [
+            "close_below_prev_low"
+          ],
+          "max_hold": 15
+        }
+      }
     },
     {
       "name": "Inside bar in uptrend",
       "enabled": true,
       "if": {
-        "all": ["above_sma50", "inside_bar"],
-        "none": ["three_black_crows"],
-        "none_recent": { "patterns": ["outside_bar_red", "bearish_engulfing"], "window": 3 }
+        "all": [
+          "above_sma50",
+          "inside_bar"
+        ],
+        "none": [
+          "three_black_crows"
+        ],
+        "none_recent": {
+          "patterns": [
+            "outside_bar_red",
+            "bearish_engulfing"
+          ],
+          "window": 3
+        }
       },
-      "then": { "action": "long", "hold_candles": 3, "stop_pct": 4 }
+      "then": {
+        "action": "long",
+        "stop_pct": 4,
+        "exit": {
+          "on_patterns": [
+            "close_below_prev_low"
+          ],
+          "max_hold": 15
+        }
+      }
     },
     {
       "name": "Morning star in uptrend",
       "enabled": true,
-      "if": { "all": ["above_sma50", "morning_star"], "none": [] },
-      "then": { "action": "long", "hold_candles": 3, "stop_pct": 4 }
+      "if": {
+        "all": [
+          "above_sma50",
+          "morning_star"
+        ],
+        "none": []
+      },
+      "then": {
+        "action": "long",
+        "stop_pct": 4,
+        "exit": {
+          "on_patterns": [
+            "close_below_prev_low"
+          ],
+          "max_hold": 15
+        }
+      }
     },
     {
       "name": "Breakdown short (example — OFF: shorting bear patterns lost money on BTC daily 2018-2026)",
       "enabled": false,
-      "if": { "all": ["below_sma50", "close_below_prev_low"], "none": [] },
-      "then": { "action": "short", "hold_candles": 3, "stop_pct": 4 }
+      "if": {
+        "all": [
+          "below_sma50",
+          "close_below_prev_low"
+        ],
+        "none": []
+      },
+      "then": {
+        "action": "short",
+        "hold_candles": 3,
+        "stop_pct": 4
+      }
     }
   ]
 }
