@@ -1,26 +1,20 @@
 name: BTC daily book
 
-# BTC-DAILY — the walk-forward-validated daily configuration (PR #1 harvest),
-# run as a FOURTH paper book alongside the 15m books, not replacing them.
-# One run per day at 00:10 UTC, just after the daily candle close (the
-# validated cadence: signals act on the freshly-closed daily bar). Starts the
-# 60-90 day forward-evidence clock the pitch's roadmap requires.
-# GitHub cron can throttle; a late daily run is acceptable for a daily system.
+# TEMPORARILY REPURPOSED ON THIS BRANCH ONLY (claude/patent-trading-candles):
+# dispatched here to fetch SOL + ETH history, because workflow_dispatch only
+# registers workflows from the default branch. main's scheduled runs use
+# main's copy of this file and are unaffected. Restored right after the
+# data lands — see fetch-history.yml for the permanent workflow.
 
 on:
-  schedule:
-    - cron: "10 0 * * *"
   workflow_dispatch: {}
 
 permissions:
   contents: write
 
 jobs:
-  run-btc-daily:
+  fetch:
     runs-on: ubuntu-latest
-    concurrency:
-      group: run-bot-BTCUSDT-DAILY
-      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
@@ -28,57 +22,15 @@ jobs:
         with:
           node-version: "24"
 
-      - run: npm install
-
-      - name: Write .env
+      - name: Fetch SOL and ETH daily history
         run: |
-          cat <<EOF > .env
-          BITGET_API_KEY=${{ secrets.BITGET_API_KEY }}
-          BITGET_SECRET_KEY=${{ secrets.BITGET_SECRET_KEY }}
-          BITGET_PASSPHRASE=${{ secrets.BITGET_PASSPHRASE }}
-          BITGET_BASE_URL=https://api.bitget.com
-          TRADE_MODE=futures
-          LEVERAGE=1
-          TRADE_SIZE_PCT=80
-          PORTFOLIO_VALUE_USD=1000
-          MAX_TRADES_PER_DAY=0
-          SYMBOL=BTCUSDT
-          INSTANCE_ID=BTCUSDT-DAILY
-          TIMEFRAME=1D
-          NKB_KERNEL=gaussian
-          NKB_BAND_MULT=3.0
-          NKB_BANDWIDTH=6.0
-          NKB_ATR_STOP_MULT=1.0
-          RISK_PCT=2
-          ADX_ENTRY_MIN=25
-          PAPER_TRADING=true
-          PAPER_FEE_RATE=0.0008
-          REGIME_GATE=chop+markov
-          EOF
+          node fetch-history.js SOLUSDT sol-daily-bitget.csv
+          node fetch-history.js ETHUSDT eth-daily-bitget.csv
 
-      - name: Run bot
-        run: node bot.js
-
-      - name: Persist state back to repo
+      - name: Commit CSVs
         run: |
-          rm -f .env
-          git config user.name "trading-bot"
-          git config user.email "actions@users.noreply.github.com"
-          for f in position-BTCUSDT-DAILY.json trades-BTCUSDT-DAILY.csv safety-check-log-BTCUSDT-DAILY.json nkb-state-BTCUSDT-DAILY.json portfolio-BTCUSDT-DAILY.json; do
-            [ -f "$f" ] && git add "$f"
-          done
-          if git diff --cached --quiet; then
-            exit 0
-          fi
-          git commit -m "BTC-DAILY run $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          for i in 1 2 3 4 5; do
-            if git push; then
-              exit 0
-            fi
-            echo "Push rejected (attempt $i) — rebasing onto latest main..."
-            git fetch origin main
-            git rebase origin/main
-            sleep $((i * 2))
-          done
-          echo "::error::git push failed after retries"
-          exit 1
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add sol-daily-bitget.csv eth-daily-bitget.csv
+          git diff --cached --quiet || git commit -m "Add SOL + ETH daily history from BitGet (fetch-history workflow)"
+          git push
