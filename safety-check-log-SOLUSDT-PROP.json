@@ -367,5 +367,12 @@
       "reason": "trailing stop hit",
       "paperTrading": true
     }
+  ],
+  "gateBlocks": [
+    {
+      "timestamp": "2026-07-17T16:07:11.661Z",
+      "signal": "SELL",
+      "note": "20d ret 2.6% (sideways)"
+    }
   ]
 }
