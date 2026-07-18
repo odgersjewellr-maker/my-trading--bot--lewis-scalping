@@ -183,7 +183,7 @@ function sessionProfiles(candles, bins = 50) {
 
 function run(candles, opts) {
   const closes = candles.map(c => c.close);
-  const ema8 = emaSeries(closes, 8);
+  const ema8 = emaSeries(closes, opts.trendEma ?? 8);
   const rsi3 = rsiSeries(closes, 3);
   const atr14 = atrSeries(candles, 14);
   const vwap = vwapSeries(candles);
@@ -243,7 +243,7 @@ function run(candles, opts) {
         fees += fee;
         cash += pnl;
         trades.push({ ...pos, exit, reason, pnl, ts: c.ts });
-        if (pnl < 0) lossesToday++;
+        if (pnl < 0) { lossesToday++; if (lossesToday === 3) breakerTrips++; }
         pos = null;
         peak = Math.max(peak, cash);
         maxDD = Math.max(maxDD, (peak - cash) / peak);
@@ -263,7 +263,7 @@ function run(candles, opts) {
     // shared guardrail: 1.5% VWAP overextension
     if (Math.abs(c.close - vwap[i]) / vwap[i] > 0.015) { rejected.overextended++; continue; }
 
-    if (opts.breaker && lossesToday >= 3) { rejected.breaker++; if (lossesToday === 3) breakerTrips++; continue; }
+    if (opts.breaker && lossesToday >= 3) { rejected.breaker++; continue; }
 
     if (opts.activity && hourlyVol.length >= 8) {
       const sorted = [...hourlyVol].sort((a, b) => a - b);
@@ -343,10 +343,14 @@ console.log(`  Data: ${label}`);
 console.log(`  ${candles.length} candles | ${intervalMin}m interval | ${days} days | fee ${FEE_PCT * 100}%/side\n`);
 
 const variants = [
-  ["Baseline (v1 rules)", { riskPct: 1.0 }],
-  ["+ Aggression only", { riskPct: 0.5, aggression: true }],
-  ["+ Location only", { riskPct: 0.5, location: true }],
-  ["Enhanced (all layers)", { riskPct: 0.5, location: true, aggression: true, absorption: true, breaker: true, activity: true }],
+  // v1 as written: RSI(3)<30 while price above EMA(8) is near-impossible —
+  // a pullback deep enough for the RSI drags price under the fast EMA. Kept
+  // to document that the original ruleset generates no trades on real data.
+  ["Baseline (v1 rules, EMA8 gate)", { riskPct: 1.0 }],
+  ["Fixed base (EMA50 trend gate)", { riskPct: 1.0, trendEma: 50 }],
+  ["Fixed + Aggression only", { riskPct: 0.5, trendEma: 50, aggression: true }],
+  ["Fixed + Location only", { riskPct: 0.5, trendEma: 50, location: true }],
+  ["Fixed + all Valentini layers", { riskPct: 0.5, trendEma: 50, location: true, aggression: true, absorption: true, breaker: true, activity: true }],
 ];
 
 const rows = [];

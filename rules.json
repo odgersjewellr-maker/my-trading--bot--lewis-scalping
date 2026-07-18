@@ -1,51 +1,56 @@
 {
-  "watchlist": ["BTCUSDT"],
+  "watchlist": [
+    "BTCUSDT"
+  ],
   "default_timeframe": "1m",
-
   "strategy": {
-    "name": "VWAP + RSI(3) + EMA(8) Scalping Strategy — Valentini Enhanced",
-    "sources": ["Lewis Jackson", "Fabio Valentini (Chart Fanatics)"],
-    "description": "Base strategy: EMA(8) for trend direction, VWAP for session bias, RSI(3) for entry timing. Enhanced with Fabio Valentini's auction-market layers: Location (trade only at volume-profile levels), Aggression (volume/delta must confirm the entry), absorption detection, and a consecutive-loss circuit breaker."
+    "name": "VWAP + RSI(3) + EMA(50) Scalping Strategy — Valentini Enhanced",
+    "sources": [
+      "Lewis Jackson",
+      "Fabio Valentini (Chart Fanatics)"
+    ],
+    "description": "Base strategy: EMA(50) for trend direction (EMA(8) retired after validation), VWAP for session bias, RSI(3) for entry timing. Enhanced with Fabio Valentini's auction-market layers: Location (trade only at volume-profile levels), Aggression (volume/delta must confirm the entry), absorption detection, and a consecutive-loss circuit breaker."
   },
-
   "indicators": {
-    "ema_8": "Trend direction. Price above EMA(8) = bullish momentum. Below = bearish.",
+    "ema_50": "Trend direction. Price above EMA(50) = bullish momentum. Below = bearish. (Replaced EMA(8): 30 days of 1m data showed RSI(3)<30 while price holds above EMA(8) occurs zero times — the v1 gate made the strategy untradeable.)",
     "vwap": "Session bias. Price above VWAP = buyers in control. Below = sellers. Resets at midnight UTC.",
     "rsi_3": "Entry timing. RSI on 3 candles only — extremely sensitive. Below 30 in an uptrend = snap-back setup. Above 70 in a downtrend = reversal likely.",
     "volume_profile": "Location filter. Previous session's price-volume histogram → POC (highest-volume price), VAH/VAL (edges of the 70% value area). Entries are only valid near these levels; POC is the profit target.",
     "delta_approx": "Aggression proxy from OHLCV: volume weighted by where the close sits in the candle range. Positive = buyers aggressive, negative = sellers aggressive.",
     "absorption": "Volume > 2.0x its 20-bar average while candle range < 0.3x ATR(14). Big volume that can't move price = passive institutional absorption — likely turn."
   },
-
   "bias_criteria": {
-    "bullish": ["Price is above VWAP", "Price is above EMA(8)"],
-    "bearish": ["Price is below VWAP", "Price is below EMA(8)"]
+    "bullish": [
+      "Price is above VWAP",
+      "Price is above EMA(50)"
+    ],
+    "bearish": [
+      "Price is below VWAP",
+      "Price is below EMA(50)"
+    ]
   },
-
   "entry_rules": {
     "long": [
       "Price is above VWAP — buyers in control for the session",
-      "Price is above EMA(8) — uptrend confirmed",
+      "Price is above EMA(50) — uptrend confirmed",
       "RSI(3) has dropped below 30 — short-term pullback in an uptrend, snap-back likely",
       "LOCATION: price is within 0.25% of a volume-profile level (POC, VAH, or VAL from the previous session) — no level, no trade",
       "AGGRESSION: trigger candle's approximated delta is positive AND its volume is above the 20-bar average — buyers actually stepping in"
     ],
     "short": [
       "Price is below VWAP — sellers in control",
-      "Price is below EMA(8) — downtrend confirmed",
+      "Price is below EMA(50) — downtrend confirmed",
       "RSI(3) has spiked above 70 — overbought in a downtrend, reversal likely",
       "LOCATION: price is within 0.25% of a volume-profile level (POC, VAH, or VAL from the previous session) — no level, no trade",
       "AGGRESSION: trigger candle's approximated delta is negative AND its volume is above the 20-bar average — sellers actually stepping in"
     ]
   },
-
   "exit_rules": [
     "Primary target: previous session's POC, or 2x the stop distance (whichever is nearer) — minimum 2:1 reward-to-risk",
     "Hard stop: 0.3% below entry for longs, 0.3% above entry for shorts",
     "Early exit: absorption candle printing against the position (high volume, no price progress) — institutions are on the other side",
     "Fallback: exit when RSI(3) crosses back above 50 (for longs) or below 50 (for shorts) with the position in profit"
   ],
-
   "risk_rules": [
     "Risk maximum 0.5% of portfolio per trade (Valentini risks 0.25% — use that once live)",
     "CIRCUIT BREAKER: stop trading for the day after 3 losing trades — no exceptions",
@@ -55,6 +60,5 @@
     "Only trade when the rolling 1-hour volume is above the 24-hour median — dead sessions produce fake signals",
     "Paper trade first — validate this strategy on your specific asset before going live"
   ],
-
-  "notes": "Scalping strategy — designed for 1m to 5m timeframes. RSI(3) is intentionally fast and sensitive. Do not apply to higher timeframes. The Location and Aggression layers come from Fabio Valentini's auction-market framework (Chart Fanatics episode, Sep 2025): direction first, then location, then aggression — skip any trade that is missing one of the three. Backtest with backtest-scalp.js on 1m data (fetch with fetch-binance-intraday.js) before trusting changes."
+  "notes": "Scalping strategy — designed for 1m to 5m timeframes. RSI(3) is intentionally fast and sensitive. Do not apply to higher timeframes. The Location and Aggression layers come from Fabio Valentini's auction-market framework (Chart Fanatics episode, Sep 2025): direction first, then location, then aggression — skip any trade missing one of the three. VALIDATION (18 Jul 2026, 30 days BTCUSDT 1m + 5m, 0.05%/side fees): the original EMA(8) gate produced ZERO trades (mathematically near-impossible combo). With the EMA(50) gate the base strategy trades but has NEGATIVE edge (-76.7% on 1m, -25.4% on 5m — fee attrition dominates). The Valentini layers cut the bleed to -1.5%/-1.0% but cannot make a negative edge positive. DO NOT TRADE THIS LIVE. Paper-only R&D until a variant shows positive expectancy over 90+ days. Backtest: node backtest-scalp.js <csv>."
 }
