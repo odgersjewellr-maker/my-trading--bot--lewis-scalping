@@ -1,5 +1,12 @@
 # Railway 24/7 host for the HyroTrader trial bot
 
+> **STATUS 2026-07-17: DEFERRED — Board decision.** Free-plan resources are
+> fully used by the dispatcher; trial stays on the PC scheduled task
+> (`NKB-HyroTrader-Trial`, running clean). Upgrade Railway + deploy this
+> service **when the paid challenge starts** (project `hyro-trial` already
+> exists; deploy = `railway up --detach --ci --new --name hyro-bot` from this
+> directory, then follow the steps below).
+
 Always-on EU-region worker that runs the trial bot every 15 minutes (at :30s
 past the quarter-hour) and commits state back to this repo. Replaces the PC
 scheduled task `NKB-HyroTrader-Trial` — **never run both at once.**
