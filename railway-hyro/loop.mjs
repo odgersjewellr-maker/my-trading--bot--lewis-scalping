@@ -40,8 +40,10 @@ const sh = (cmd, cwd = WORK, quiet = false) => {
 };
 
 function cloneUrl() {
-  if (!TOKEN) throw new Error("GH_TOKEN not set — cannot clone/push state");
-  return `https://x-access-token:${TOKEN}@github.com/${REPO}.git`;
+  // Repo is public: clone works tokenless (DRY/heartbeat mode needs no secrets
+  // at all). GH_TOKEN is only required to PUSH state once trading is enabled.
+  return TOKEN ? `https://x-access-token:${TOKEN}@github.com/${REPO}.git`
+               : `https://github.com/${REPO}.git`;
 }
 
 function boot() {
@@ -55,12 +57,24 @@ function boot() {
   }
 }
 
+async function regionProbe() {
+  // Public endpoint — needs no credentials. Bybit geo-blocks return 403/451
+  // even on public routes, so this answers the region question by itself.
+  const base = process.env.HYROTRADER_BASE_URL || "https://api-demo.bybit.com";
+  try {
+    const r = await fetch(`${base}/v5/market/time`);
+    log(`region probe (${base}): HTTP ${r.status} ${r.ok ? "— region OK, not geo-blocked" : "— GEO-BLOCKED or unreachable"}`);
+    return r.ok;
+  } catch (e) { log(`region probe failed: ${e.message}`); return false; }
+}
+
 function reachability() {
+  if (!process.env.HYROTRADER_API_KEY) { log("no API creds set yet — skipping authed check (region probe governs)"); return true; }
   const r = spawnSync("node", ["--env-file=hyro-trial.env", "hyrotrader-check.mjs"],
     { cwd: WORK, encoding: "utf8", timeout: 120000 });
   const out = (r.stdout || "") + (r.stderr || "");
   const ok = r.status === 0 && /Reachable and authenticated/.test(out);
-  log(`reachability check: ${ok ? "OK" : "FAILED"}`);
+  log(`authed reachability check: ${ok ? "OK" : "FAILED"}`);
   if (!ok) console.log(out.slice(-600));
   return ok;
 }
@@ -74,6 +88,7 @@ function cycle() {
     reachability();
     return;
   }
+  if (!TOKEN) { log("TRADING_ENABLED but GH_TOKEN missing — refusing to trade without a state audit trail."); return; }
 
   log("running bot cycle ...");
   const r = spawnSync("node", ["--env-file=hyro-trial.env", "bot.js"],
@@ -105,9 +120,10 @@ function msToNextQuarter() {
 // ── main ─────────────────────────────────────────────────────────────────────
 boot();
 log(`mode: ${TRADING ? "TRADING ENABLED" : "DRY (heartbeat only)"} | repo: ${REPO}`);
-if (!reachability()) {
-  log("Bybit demo NOT reachable from this region — check Railway region (needs EU/Singapore).");
-  log("Staying alive in heartbeat mode; will keep re-checking each cycle. NOT trading.");
+const regionOk = await regionProbe();
+if (!regionOk) log("Set the service region to EU (Amsterdam) or Singapore in Railway settings, then redeploy.");
+if (regionOk && !reachability()) {
+  log("Region OK but authed check failed — verify HYROTRADER_API_KEY/SECRET variables.");
 }
 for (;;) {
   const ms = msToNextQuarter();
