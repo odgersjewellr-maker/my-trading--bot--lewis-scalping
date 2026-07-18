@@ -378,6 +378,11 @@
       "timestamp": "2026-07-18T17:11:43.048Z",
       "signal": "SELL",
       "note": "20d ret 4.0% (sideways)"
+    },
+    {
+      "timestamp": "2026-07-18T18:06:06.552Z",
+      "signal": "SELL",
+      "note": "20d ret 4.0% (sideways)"
     }
   ]
 }
