@@ -23,16 +23,30 @@ if (!MS_PER[INTERVAL]) {
   process.exit(1);
 }
 
-function get(url) {
+// api.binance.com geo-blocks some regions (e.g. US cloud IPs);
+// data-api.binance.vision is Binance's public market-data mirror without the block.
+const HOSTS = ["api.binance.com", "data-api.binance.vision"];
+let hostIdx = 0;
+
+function get(path) {
   return new Promise((resolve, reject) => {
+    const url = `https://${HOSTS[hostIdx]}${path}`;
     https.get(url, res => {
       let data = "";
       res.on("data", d => (data += d));
       res.on("end", () => {
-        try { resolve(JSON.parse(data)); } catch (e) { reject(new Error(`Bad response: ${data.slice(0, 200)}`)); }
+        if (res.statusCode !== 200 && hostIdx < HOSTS.length - 1) {
+          hostIdx++;
+          console.log(`\n  ${HOSTS[hostIdx - 1]} returned ${res.statusCode} — switching to ${HOSTS[hostIdx]}`);
+          return get(path).then(resolve, reject);
+        }
+        try { resolve(JSON.parse(data)); } catch (e) { reject(new Error(`Bad response (${res.statusCode}): ${data.slice(0, 200)}`)); }
       });
       res.on("error", reject);
-    }).on("error", reject);
+    }).on("error", err => {
+      if (hostIdx < HOSTS.length - 1) { hostIdx++; get(path).then(resolve, reject); }
+      else reject(err);
+    });
   });
 }
 
@@ -44,8 +58,7 @@ async function fetchAll() {
   console.log(`Fetching ${SYMBOL} ${INTERVAL} candles for the last ${DAYS} days...`);
 
   while (endTime > earliest) {
-    const url = `https://api.binance.com/api/v3/klines?symbol=${SYMBOL}&interval=${INTERVAL}&limit=${LIMIT}&endTime=${endTime}`;
-    const batch = await get(url);
+    const batch = await get(`/api/v3/klines?symbol=${SYMBOL}&interval=${INTERVAL}&limit=${LIMIT}&endTime=${endTime}`);
     if (!Array.isArray(batch) || !batch.length) break;
 
     for (const k of batch) {
