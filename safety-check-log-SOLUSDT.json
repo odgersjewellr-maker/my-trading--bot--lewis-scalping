@@ -649,6 +649,16 @@
       "orderPlaced": true,
       "orderId": "PAPER-1784504245131",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-07-20T00:15:33.102Z",
+      "type": "stop",
+      "symbol": "SOLUSDT",
+      "side": "short",
+      "price": 76.55857142857143,
+      "pnlUSD": -2.980357028571418,
+      "reason": "trailing stop hit",
+      "paperTrading": true
     }
   ]
 }
