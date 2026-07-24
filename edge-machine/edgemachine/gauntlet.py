@@ -82,6 +82,7 @@ def run_gauntlet(
     param_grid: dict,
     cost_model: CostModel | None = None,
     *,
+    asset_return: pd.Series | None = None,
     periods_per_year: int = 365,
     holdout_frac: float = 0.2,
     n_splits: int = 5,
@@ -101,11 +102,17 @@ def run_gauntlet(
     price = price.dropna().astype(float)
     n = len(price)
 
+    if asset_return is not None:
+        asset_return = asset_return.reindex(price.index).fillna(0.0).astype(float)
+
     # Locked holdout — the winner touches this exactly once, at the very end.
     cut = int(n * (1 - holdout_frac))
     research = price.iloc[:cut]
     holdout_idx = price.index[cut:]
-    research_ret = research.pct_change(fill_method=None).fillna(0.0)
+    research_asset_ret = None if asset_return is None else asset_return.loc[research.index]
+    # Return stream the shuffle-null permutes against (funding for carry, else price).
+    shuffle_ret = research_asset_ret if research_asset_ret is not None \
+        else research.pct_change(fill_method=None).fillna(0.0)
     cost_rate = cost_model.rate_per_turnover()
 
     # --- grid search on RESEARCH data only ---------------------------------
@@ -114,7 +121,8 @@ def run_gauntlet(
     ret_cols, trial_sharpes = [], []
     for params in combos:
         pos = strategy_fn(research, **params).reindex(research.index).fillna(0.0)
-        net = vectorized_backtest(research, pos, cost_model, periods_per_year).returns_net
+        net = vectorized_backtest(research, pos, cost_model, periods_per_year,
+                                  asset_return=research_asset_ret).returns_net
         ret_cols.append(net.to_numpy())
         trial_sharpes.append(val.per_bar_sharpe(net.to_numpy()))
     R = np.column_stack(ret_cols)                       # (T, N)
@@ -143,19 +151,19 @@ def run_gauntlet(
 
     stressed = vectorized_backtest(
         research, strategy_fn(research, **best_params).reindex(research.index).fillna(0.0),
-        cost_model.stressed(2.0), periods_per_year,
+        cost_model.stressed(2.0), periods_per_year, asset_return=research_asset_ret,
     ).stats["sharpe"]
 
     best_pos = strategy_fn(research, **best_params).reindex(research.index).fillna(0.0)
     _, shuffle_p, _ = val.shuffle_test(
-        best_pos, research_ret, cost_rate, periods_per_year, shuffle_iter)
+        best_pos, shuffle_ret, cost_rate, periods_per_year, shuffle_iter)
 
     regimes = val.regime_breakdown(best_net, research, periods_per_year)
 
     # --- holdout: compute on FULL series (causal history), read holdout slice
     full_net = vectorized_backtest(
         price, strategy_fn(price, **best_params).reindex(price.index).fillna(0.0),
-        cost_model, periods_per_year,
+        cost_model, periods_per_year, asset_return=asset_return,
     ).returns_net
     holdout_sharpe = metrics.sharpe(full_net.loc[holdout_idx], periods_per_year)
 
@@ -179,7 +187,8 @@ def run_gauntlet(
     )
 
     if journal is not None:
-        stats = vectorized_backtest(research, best_pos, cost_model, periods_per_year).stats
+        stats = vectorized_backtest(research, best_pos, cost_model, periods_per_year,
+                                    asset_return=research_asset_ret).stats
         journal.log(
             name=name, market=market, hypothesis=hypothesis, mechanism=mechanism,
             params=best_params, n_trials=len(combos),

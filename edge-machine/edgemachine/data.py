@@ -102,6 +102,60 @@ class DataStore:
         df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True)
         return df.set_index("ts")[_OHLCV_COLS].astype(float)
 
+    # -------------------------------------------------------------- funding
+    def fetch_funding_binance(self, symbol: str = "BTCUSDT",
+                              intervals: int = 2000) -> tuple[pd.Series, pd.Series]:
+        """Fetch real perp funding-rate history + 8h spot closes from Binance.
+
+        Returns ``(funding, spot)`` Series aligned on funding-settlement times.
+        Uses the stdlib HTTP client honouring HTTPS_PROXY and the proxy CA
+        bundle — no ccxt dependency. Raises on network/policy failure (e.g. a
+        geo-fenced or policy-denied environment), so callers can fall back.
+        """
+        import json
+        import os
+        import ssl
+        import time
+        import urllib.request
+
+        ca = os.environ.get("REQUESTS_CA_BUNDLE") or "/root/.ccr/ca-bundle.crt"
+        ctx = ssl.create_default_context(cafile=ca) if os.path.exists(ca) \
+            else ssl.create_default_context()
+
+        def get(url: str):
+            req = urllib.request.Request(url, headers={"User-Agent": "edge-machine/0.1"})
+            with urllib.request.urlopen(req, timeout=30, context=ctx) as r:
+                return json.load(r)
+
+        # Funding history is capped at 1000 rows/call; page backwards.
+        rows, end = [], int(time.time() * 1000)
+        while len(rows) < intervals:
+            url = (f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={symbol}"
+                   f"&limit=1000&endTime={end}")
+            batch = get(url)
+            if not batch:
+                break
+            rows = batch + rows
+            end = batch[0]["fundingTime"] - 1
+            if len(batch) < 1000:
+                break
+        rows = rows[-intervals:]
+        fund = pd.Series(
+            [float(r["fundingRate"]) for r in rows],
+            index=pd.to_datetime([r["fundingTime"] for r in rows], unit="ms", utc=True),
+            name="funding",
+        )
+
+        # 8h spot closes to classify regime (align to funding timestamps).
+        kl = get(f"https://api.binance.com/api/v3/klines?symbol={symbol}"
+                 f"&interval=8h&limit=1000")
+        spot = pd.Series(
+            [float(k[4]) for k in kl],
+            index=pd.to_datetime([k[0] for k in kl], unit="ms", utc=True),
+            name="spot",
+        ).reindex(fund.index, method="nearest")
+        return fund, spot
+
     def _synthetic(self, n: int, timeframe: str, seed: int) -> pd.DataFrame:
         """Deterministic geometric-brownian-motion OHLCV, for offline dev."""
         rng = np.random.default_rng(seed)

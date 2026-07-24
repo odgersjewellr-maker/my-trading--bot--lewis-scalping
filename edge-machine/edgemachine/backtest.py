@@ -59,13 +59,14 @@ def vectorized_backtest(
     cost_model: CostModel | None = None,
     periods_per_year: int = 365,
     participation: pd.Series | None = None,
+    asset_return: pd.Series | None = None,
 ) -> BacktestResult:
     """Run a vectorized backtest.
 
     Parameters
     ----------
     prices:
-        Close prices, indexed by time.
+        Close prices, indexed by time. Also used for annualization index.
     target_position:
         Desired position each bar in units of capital, typically in [-1, 1]
         (1 = fully long, -1 = fully short, 0 = flat). Decided using information
@@ -77,13 +78,21 @@ def vectorized_backtest(
         Bars per year for annualization (365 for daily crypto, 8760 for hourly).
     participation:
         Optional per-bar fraction of volume consumed, for impact stress tests.
+    asset_return:
+        Optional per-bar return earned by holding +1 unit. Defaults to the price
+        return ``prices.pct_change()``. Pass this for non-directional edges whose
+        P&L is not price change — e.g. funding carry, where a +1 position earns
+        the funding rate, not the spot move.
     """
     cost_model = cost_model or CostModel(0.0, 0.0, 0.0)
 
     prices = prices.astype(float)
     target = target_position.reindex(prices.index).fillna(0.0)
 
-    market_ret = prices.pct_change(fill_method=None).fillna(0.0)
+    if asset_return is not None:
+        market_ret = asset_return.reindex(prices.index).fillna(0.0).astype(float)
+    else:
+        market_ret = prices.pct_change(fill_method=None).fillna(0.0)
 
     # --- look-ahead protection --------------------------------------------
     # The position decided at close of bar t earns the return from t -> t+1.

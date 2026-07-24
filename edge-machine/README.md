@@ -100,6 +100,26 @@ liquidation-cascade fading ranks low *despite* the strongest mechanism because
 its capacity is tiny and execution is colocation-hard. The backlog is the
 source of truth (`edgemachine/backlog.py`); `BACKLOG.md` is generated from it.
 
+## First real candidate: funding carry
+
+Backlog #1 (funding carry) is implemented in `edgemachine/strategies.py` and run
+through the gauntlet by `examples/run_funding_carry.py`. Because carry P&L is the
+funding rate — not price direction — the backtester and gauntlet now accept an
+`asset_return` stream that the position earns instead of price moves.
+
+```bash
+python examples/run_funding_carry.py   # tries real Binance funding, else synthetic
+```
+
+**Data access matters.** The script fetches real Binance perp funding when the
+network allows it. In restricted/geo-fenced environments (e.g. an org egress
+policy denying `fapi.binance.com`) it falls back to a **synthetic** funding
+series and says so — those results validate the machinery only. A synthetic run
+prints an absurd Sharpe (~15) precisely *because* the generator is too clean;
+real funding-carry Sharpe after true costs and basis risk is ~1-3. Run it where
+Binance is reachable for the real verdict. The model is first-order (funding
+minus both-leg costs); it omits basis-convergence P&L and hedge slippage.
+
 ## Next phases (not yet built)
 
 - **Phase 2 — live:** paper → tiny live, monitoring + kill switches.
