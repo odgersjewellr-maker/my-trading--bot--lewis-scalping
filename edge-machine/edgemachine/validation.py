@@ -200,8 +200,10 @@ def shuffle_test(position: pd.Series, market_ret: pd.Series, cost_rate: float = 
                  periods_per_year: int = 365, n_iter: int = 200, seed: int = 0):
     """Permutation null: does randomized entry timing do as well as the signal?
 
+    Independently permutes the position labels, which DESTROYS autocorrelation.
     Returns (actual_sharpe, p_value, null_distribution). p < 0.05 means the
-    signal's *timing* matters beyond chance.
+    signal beats random timing — but for a persistent (autocorrelated) signal
+    this null is too easy; pair it with ``rotation_test``.
     """
     actual = _strategy_sharpe(position, market_ret, cost_rate, periods_per_year)
     rng = np.random.default_rng(seed)
@@ -210,5 +212,36 @@ def shuffle_test(position: pd.Series, market_ret: pd.Series, cost_rate: float = 
     for i in range(n_iter):
         perm = pd.Series(rng.permutation(vals), index=position.index)
         null[i] = _strategy_sharpe(perm, market_ret, cost_rate, periods_per_year)
+    p = float((null >= actual).mean())
+    return actual, p, null
+
+
+def rotation_test(position: pd.Series, asset_return: pd.Series, cost_rate: float = 0.0,
+                  periods_per_year: int = 365, n_iter: int = 200, seed: int = 0):
+    """Circular-rotation null — the right test for a persistent/structural edge.
+
+    Instead of shuffling (which destroys autocorrelation and makes any
+    persistence look like skill), we *circularly rotate* the position series
+    against the returns by a random offset. This preserves the full
+    autocorrelation of BOTH series and breaks only their phase alignment, so the
+    null is "your timing is no better aligned with returns than a random phase."
+
+    Essential for carry-type edges: a strategy can beat the shuffle null purely
+    by riding an autocorrelated funding stream, yet fail rotation — revealing it
+    has no genuine timing skill, only exposure. Returns (actual, p, null); want
+    p < 0.05 for real timing skill (structural-exposure edges may legitimately
+    fail this while still being real — the DSR/holdout judge the premium itself).
+    """
+    actual = _strategy_sharpe(position, asset_return, cost_rate, periods_per_year)
+    n = len(position)
+    lo = max(1, n // 20)                     # avoid trivially small rotations
+    rng = np.random.default_rng(seed)
+    vals = position.to_numpy()
+    idx = position.index
+    null = np.empty(n_iter)
+    for i in range(n_iter):
+        shift = int(rng.integers(lo, max(lo + 1, n - lo)))
+        rot = pd.Series(np.roll(vals, shift), index=idx)
+        null[i] = _strategy_sharpe(rot, asset_return, cost_rate, periods_per_year)
     p = float((null >= actual).mean())
     return actual, p, null

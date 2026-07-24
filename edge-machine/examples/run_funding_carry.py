@@ -68,6 +68,15 @@ def main() -> None:
     # turnover we pay ~2x a single-leg trade. Tune to your venue/fee tier.
     costs = CostModel(taker_fee_bps=10.0, half_spread_bps=2.0)  # ~12 bps/turn, both legs
 
+    # Hedge slippage: keeping the two legs matched as price moves costs a small
+    # continuous drag ~ proportional to |spot move| each interval. This is an
+    # ASSUMPTION — tune hedge_slippage_coef to your venue/execution.
+    hedge_slippage_coef = 0.005                       # ~0.5% of each move bled to rebalancing
+    holding_cost = hedge_slippage_coef * spot.pct_change(fill_method=None).abs()
+    slip_drag = (holding_cost.mean()) * PERIODS_PER_YEAR
+    print(f"hedge slip  : coef {hedge_slippage_coef} -> ~{holding_cost.mean()*1e4:.2f} bps/interval "
+          f"(~{slip_drag*100:.1f}%/yr drag while fully deployed)\n")
+
     strategy_fn = carry_strategy_factory(funding)
     grid = {
         "entry_bps": [0.0, 0.5, 1.0, 2.0, 5.0],
@@ -81,6 +90,7 @@ def main() -> None:
         result = run_gauntlet(
             spot, strategy_fn, grid, cost_model=costs,
             asset_return=carry_ret,             # P&L = funding - Δbasis, not price
+            holding_cost=holding_cost,          # continuous hedge-rebalancing slippage
             periods_per_year=PERIODS_PER_YEAR,
             journal=jrn, name="funding_carry",
             market="binance:BTCUSDT-perp",
@@ -94,8 +104,9 @@ def main() -> None:
     if "SYNTHETIC" in source:
         print("SYNTHETIC DATA: this validates the pipeline end-to-end, NOT a live edge.")
         print("Re-run where Binance is reachable for the real verdict.")
-    print("Model now includes basis mark-to-market (funding - Δbasis). Still omits")
-    print("hedge slippage and exchange/counterparty risk — add those before trusting size.")
+    print("Model: funding - Δbasis - hedge slippage. The rotation p-value is the")
+    print("carry-specific null (keeps autocorrelation); shuffle is the weaker one.")
+    print("Still omits exchange/counterparty & liquidation risk — add before sizing.")
     print("-" * 72)
 
 

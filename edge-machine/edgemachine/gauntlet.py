@@ -50,6 +50,7 @@ class GauntletResult:
     plateau_score: float
     stressed_sharpe: float    # Sharpe under 2x costs
     shuffle_pvalue: float
+    rotation_pvalue: float    # circular-rotation null (autocorrelation-preserving)
     regimes: dict
     checks: dict = field(default_factory=dict)
     passed: bool = False
@@ -68,7 +69,8 @@ class GauntletResult:
             f"  PBO                : {self.pbo:7.2f}   [{mark(self.checks.get('pbo'))}]  (lower=better)",
             f"  plateau score      : {self.plateau_score:7.2f}   [{mark(self.checks.get('plateau'))}]",
             f"  Sharpe @ 2x cost   : {self.stressed_sharpe:7.2f}   [{mark(self.checks.get('survives_2x_cost'))}]",
-            f"  shuffle p-value    : {self.shuffle_pvalue:7.3f}   [{mark(self.checks.get('shuffle'))}]",
+            f"  shuffle p-value    : {self.shuffle_pvalue:7.3f}   [{mark(self.checks.get('shuffle'))}]  (breaks autocorr)",
+            f"  rotation p-value   : {self.rotation_pvalue:7.3f}   [{mark(self.checks.get('rotation'))}]  (keeps autocorr — timing skill)",
             f"  regime  hi/lo vol  : {self.regimes.get('high_vol_sharpe', float('nan')):.2f} / {self.regimes.get('low_vol_sharpe', float('nan')):.2f}",
             "  " + "-" * 58,
             f"  VERDICT            : {'>>> PASS — advance to paper' if self.passed else 'REJECT'}",
@@ -83,6 +85,7 @@ def run_gauntlet(
     cost_model: CostModel | None = None,
     *,
     asset_return: pd.Series | None = None,
+    holding_cost: pd.Series | None = None,
     periods_per_year: int = 365,
     holdout_frac: float = 0.2,
     n_splits: int = 5,
@@ -104,12 +107,15 @@ def run_gauntlet(
 
     if asset_return is not None:
         asset_return = asset_return.reindex(price.index).fillna(0.0).astype(float)
+    if holding_cost is not None:
+        holding_cost = holding_cost.reindex(price.index).fillna(0.0).astype(float)
 
     # Locked holdout — the winner touches this exactly once, at the very end.
     cut = int(n * (1 - holdout_frac))
     research = price.iloc[:cut]
     holdout_idx = price.index[cut:]
     research_asset_ret = None if asset_return is None else asset_return.loc[research.index]
+    research_holding_cost = None if holding_cost is None else holding_cost.loc[research.index]
     # Return stream the shuffle-null permutes against (funding for carry, else price).
     shuffle_ret = research_asset_ret if research_asset_ret is not None \
         else research.pct_change(fill_method=None).fillna(0.0)
@@ -122,7 +128,8 @@ def run_gauntlet(
     for params in combos:
         pos = strategy_fn(research, **params).reindex(research.index).fillna(0.0)
         net = vectorized_backtest(research, pos, cost_model, periods_per_year,
-                                  asset_return=research_asset_ret).returns_net
+                                  asset_return=research_asset_ret,
+                                  holding_cost=research_holding_cost).returns_net
         ret_cols.append(net.to_numpy())
         trial_sharpes.append(val.per_bar_sharpe(net.to_numpy()))
     R = np.column_stack(ret_cols)                       # (T, N)
@@ -152,10 +159,13 @@ def run_gauntlet(
     stressed = vectorized_backtest(
         research, strategy_fn(research, **best_params).reindex(research.index).fillna(0.0),
         cost_model.stressed(2.0), periods_per_year, asset_return=research_asset_ret,
+        holding_cost=None if research_holding_cost is None else research_holding_cost * 2.0,
     ).stats["sharpe"]
 
     best_pos = strategy_fn(research, **best_params).reindex(research.index).fillna(0.0)
     _, shuffle_p, _ = val.shuffle_test(
+        best_pos, shuffle_ret, cost_rate, periods_per_year, shuffle_iter)
+    _, rotation_p, _ = val.rotation_test(
         best_pos, shuffle_ret, cost_rate, periods_per_year, shuffle_iter)
 
     regimes = val.regime_breakdown(best_net, research, periods_per_year)
@@ -163,7 +173,7 @@ def run_gauntlet(
     # --- holdout: compute on FULL series (causal history), read holdout slice
     full_net = vectorized_backtest(
         price, strategy_fn(price, **best_params).reindex(price.index).fillna(0.0),
-        cost_model, periods_per_year, asset_return=asset_return,
+        cost_model, periods_per_year, asset_return=asset_return, holding_cost=holding_cost,
     ).returns_net
     holdout_sharpe = metrics.sharpe(full_net.loc[holdout_idx], periods_per_year)
 
@@ -175,6 +185,7 @@ def run_gauntlet(
         "plateau": plateau > plateau_threshold,
         "survives_2x_cost": stressed > 0,
         "shuffle": shuffle_p < shuffle_alpha,
+        "rotation": rotation_p < shuffle_alpha,
     }
     passed = all(checks.values())
 
@@ -182,8 +193,8 @@ def run_gauntlet(
         name=name, best_params=best_params, n_trials=len(combos),
         is_sharpe=is_sharpe, oos_sharpe=oos_sharpe, holdout_sharpe=holdout_sharpe,
         deflated_sharpe=dsr, sr_star=sr_star, pbo=pbo, plateau_score=plateau,
-        stressed_sharpe=stressed, shuffle_pvalue=shuffle_p, regimes=regimes,
-        checks=checks, passed=passed,
+        stressed_sharpe=stressed, shuffle_pvalue=shuffle_p, rotation_pvalue=rotation_p,
+        regimes=regimes, checks=checks, passed=passed,
     )
 
     if journal is not None:
@@ -197,6 +208,7 @@ def run_gauntlet(
             avg_turnover=stats["avg_turnover"], cost_drag=stats["cost_drag_annual"],
             stage="gauntlet", verdict="pass" if passed else "reject",
             notes=f"DSR={dsr:.3f} PBO={pbo:.3f} plateau={plateau:.2f} "
-                  f"holdout_sr={holdout_sharpe:.2f} shuffle_p={shuffle_p:.3f}",
+                  f"holdout_sr={holdout_sharpe:.2f} shuffle_p={shuffle_p:.3f} "
+                  f"rotation_p={rotation_p:.3f}",
         )
     return result

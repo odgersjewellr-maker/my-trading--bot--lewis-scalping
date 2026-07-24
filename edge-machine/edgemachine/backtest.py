@@ -60,6 +60,7 @@ def vectorized_backtest(
     periods_per_year: int = 365,
     participation: pd.Series | None = None,
     asset_return: pd.Series | None = None,
+    holding_cost: pd.Series | None = None,
 ) -> BacktestResult:
     """Run a vectorized backtest.
 
@@ -83,6 +84,12 @@ def vectorized_backtest(
         return ``prices.pct_change()``. Pass this for non-directional edges whose
         P&L is not price change — e.g. funding carry, where a +1 position earns
         the funding rate, not the spot move.
+    holding_cost:
+        Optional per-bar cost (return drag) charged proportional to ``|position
+        held|`` — a *continuous* cost of keeping a position on, as opposed to the
+        one-off turnover cost of changing it. Use it for e.g. hedge-rebalancing
+        slippage on a delta-neutral book. Charged in both directions (it's a
+        cost, not a signed return).
     """
     cost_model = cost_model or CostModel(0.0, 0.0, 0.0)
 
@@ -106,6 +113,9 @@ def vectorized_backtest(
     cost = cost_model.apply(turnover.shift(1).fillna(0.0), participation)
 
     net = gross - cost
+    if holding_cost is not None:
+        hc = holding_cost.reindex(prices.index).fillna(0.0).astype(float)
+        net = net - held.abs() * hc      # continuous cost while the position is on
     equity = metrics.equity_curve(net)
 
     return BacktestResult(

@@ -78,7 +78,8 @@ Run `python examples/demo_gauntlet.py` to see it in action. The checks:
 | **PBO** (CSCV) | < 0.5 | in-sample winner being below-median out-of-sample |
 | Parameter plateau | > 0.5 | lonely-spike params vs a robust neighborhood |
 | Sharpe @ 2× cost | > 0 | "edges" that are just unmodeled costs |
-| Shuffle p-value | < 0.05 | signals no better than random timing |
+| Shuffle p-value | < 0.05 | signals no better than random timing (breaks autocorrelation) |
+| **Rotation p-value** | < 0.05 | timing "skill" that's really just riding an autocorrelated signal (keeps autocorrelation — the honest null for persistent/carry edges) |
 
 Validated both ways: it rejects trendless noise, and it passes a genuinely
 mean-reverting series **once there's enough data** to clear the trials penalty
@@ -111,10 +112,19 @@ funding rate — not price direction — the backtester and gauntlet now accept 
 python examples/run_funding_carry.py   # tries real Binance funding, else synthetic
 ```
 
-The carry return is modelled as **`funding − Δbasis`**: you collect funding on
-the short perp but are *short the perp premium* (basis = perp/spot − 1), so you
-wear its mark-to-market — the real risk and drawdown source of carry. See
-`carry_asset_return()` for the derivation.
+The carry return is modelled as **`funding − Δbasis − hedge slippage`**:
+
+- **funding** you collect on the short perp,
+- **− Δbasis** because you're *short the perp premium* (basis = perp/spot − 1) and
+  wear its mark-to-market — the real risk/drawdown source of carry
+  (see `carry_asset_return()` for the derivation),
+- **− hedge slippage**, a continuous drag from rebalancing the two legs as price
+  moves, modelled as a `holding_cost` proportional to `|spot move|` (an
+  assumption you tune to your venue).
+
+On the synthetic run these frictions matter: hedge slippage alone is ~8-9%/yr of
+drag while deployed, against ~11%/yr gross funding — so realistic carry is thin,
+which is the honest conclusion.
 
 **Data access matters.** The script fetches real Binance funding + basis when
 the network allows it. In restricted/geo-fenced environments (e.g. an org egress
