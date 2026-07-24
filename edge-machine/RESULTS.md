@@ -102,3 +102,47 @@ and the gauntlet has (correctly) passed none. The cheap single-asset corners
 of crypto; higher-potential edges (cross-sectional, cross-venue dislocation,
 liquidation-cascade, on-chain flow) need multi-asset/microstructure plumbing the
 single-asset gauntlet doesn't yet have.
+
+## 2026-07-24 — CROSS-SECTIONAL ALT batch (6 variants) — 0 survivors, but a REAL decayed edge
+
+`examples/run_xsec.py`: adapter that runs a dollar-neutral top/bottom-tercile
+long-short alt basket (20 coins, daily rebalance, 7bps/turn charged) through the
+gauntlet as a pre-specified return stream. 5y real Binance daily.
+
+| variant | ann% | OOS | holdout | DSR | verdict |
+|---|---|---|---|---|---|
+| xsec_mom_30 | +22.2 | 0.83 | −1.26 | 0.96 | REJECT |
+| xsec_mom_60 | +8.8 | 0.35 | +0.02 | 0.70 | REJECT |
+| xsec_mom_90 | +11.3 | 0.49 | −0.82 | 0.86 | REJECT |
+| xsec_rev_3/7/14 | −63 to −73 | <0 | <0 | ~0 | REJECT |
+
+**The finding:** cross-sectional alt MOMENTUM was a genuinely strong edge —
+Sharpe **1.51 / 1.48 / 1.19 in 2021 / 2022 / 2023** — then decayed to flat
+(2024–25) and **inverted to −2.51 Sharpe (−79%) in 2026**. The gauntlet's
+holdout is 2026, so it correctly rejected a DECAYED edge (a naive full-sample
+backtest shows +22%/yr and looks tradeable). Reversal being strongly negative
+across the whole sample CONFIRMS momentum was the right direction — the alt
+cross-section trends, it doesn't revert (until the 2026 regime flip).
+
+**Adapter caveat (honest):** the constant-position fit neutralizes the gauntlet's
+shuffle/rotation timing-nulls (Sharpe is permutation-invariant with a flat
+position), so those printed 1.000 and carry no weight here; the verdict rests on
+holdout / OOS / DSR / cost-stress / regime, which remain valid. A weight-matrix-
+aware null would be the proper upgrade.
+
+**WATCH, not dead:** cross-sectional alt momentum is a real regime-conditional
+edge that reactivates in alt-cycle/dispersion regimes. Re-test if a new alt
+season appears; do NOT trade it now (it is currently inverted).
+
+## Session synthesis — 11 real ideas, 0 survivors, ONE coherent reason
+
+Carry (dormant), funding-fade (regime-conditional), tsmom (weak/overfit),
+reversal (negative), weekend (faint), xsec-momentum (real but decayed/inverted),
+xsec-reversal (anti-edge). The recurring theme is not "no edges exist" — it is
+that **every edge is REGIME-CONDITIONAL and they share a hidden driver (crypto
+risk-appetite / beta regime).** That means they are NOT independent: naively
+stacked, they are the same bet in different clothes and fail together in the same
+regime. The stack-many-edges thesis is right, but the edges must be regime-
+ORTHOGONAL (market-neutral microstructure, cross-venue funding dislocation,
+settlement-timestamp flow) — not more facets of crypto beta. That is where the
+machine should point next.
