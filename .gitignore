@@ -6,3 +6,5 @@ velotrade/.env
 hyrotrader/.env
 bybit/.env
 hyro-trial.log
+flow-exit-log-*.json
+flow-exit-signal-*.json
