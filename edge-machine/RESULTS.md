@@ -146,3 +146,36 @@ regime. The stack-many-edges thesis is right, but the edges must be regime-
 ORTHOGONAL (market-neutral microstructure, cross-venue funding dislocation,
 settlement-timestamp flow) — not more facets of crypto beta. That is where the
 machine should point next.
+
+## 2026-07-24 — cross-venue funding dislocation (#6, Binance vs Bybit) — REJECT (decisive)
+
+`examples/run_xvenue_carry.py`: the regime-ORTHOGONAL idea — an arb on the
+funding SPREAD (short richer venue's perp / long cheaper), price-neutral. Reuses
+carry_asset_return with spread as "funding", inter-venue divergence as "basis".
+1135 × 8h aligned (2024-09-26 → 2026-07-24).
+
+**Caught a data bug first (honesty ethos):** initial run showed divergence MTM
+vol 141.5 bps/interval — impossible for two BTC perps. Cause: Bybit 4h-kline
+CLOSE is the price 4h after its label, sampled 4h off Binance's price → raw BTC
+move injected as fake divergence. Fixed by sampling both venues' 4h-kline OPEN at
+the settlement instant; divergence fell to a sane 1.6 bps/interval.
+
+**Clean verdict:** REJECT, decisively. Spread mean **−0.016 bps/8h ≈ 0** — the two
+largest venues arbitrage BTC funding flat. Trading the 0.57 bps transient std
+against 14 bps/turn costs loses (in-sample Sharpe −3.69, OOS −2.30, 2x-cost
+−3.97). The dislocation edge, if any, lives in LESS-liquid alts / less-arbitraged
+venue pairs — not BTC on the two biggest venues.
+
+## Session map — 12 real ideas, 0 survivors, the accessible space is EFFICIENT
+
+Directional edges (carry/fade/momentum/reversal/weekend/xsec) are all
+REGIME-CONDITIONAL and share the crypto-beta regime driver → not independent,
+fail together. The one structurally regime-ORTHOGONAL idea (cross-venue arb) is
+ARBITRAGED FLAT on liquid BTC. Conclusion: **liquid crypto with daily/8h public
+data is efficient** — no easily-accessible stackable edge exists here. The
+machine is working perfectly (12 clean rejects, caught a decayed edge in 2021-23
+alt momentum, caught 2 of its own data bugs). Trading nothing beats trading
+noise. Harder-to-reach frontiers remain (illiquid alts; higher-frequency
+microstructure via the orderflow-depth data; the futures/prop domain where the
+firm's NQ opening-window survivor already lives) — but the daily-public-crypto
+edge hunt has been fairly mapped, and it is picked clean.
