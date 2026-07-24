@@ -111,14 +111,20 @@ funding rate — not price direction — the backtester and gauntlet now accept 
 python examples/run_funding_carry.py   # tries real Binance funding, else synthetic
 ```
 
-**Data access matters.** The script fetches real Binance perp funding when the
-network allows it. In restricted/geo-fenced environments (e.g. an org egress
-policy denying `fapi.binance.com`) it falls back to a **synthetic** funding
-series and says so — those results validate the machinery only. A synthetic run
-prints an absurd Sharpe (~15) precisely *because* the generator is too clean;
-real funding-carry Sharpe after true costs and basis risk is ~1-3. Run it where
-Binance is reachable for the real verdict. The model is first-order (funding
-minus both-leg costs); it omits basis-convergence P&L and hedge slippage.
+The carry return is modelled as **`funding − Δbasis`**: you collect funding on
+the short perp but are *short the perp premium* (basis = perp/spot − 1), so you
+wear its mark-to-market — the real risk and drawdown source of carry. See
+`carry_asset_return()` for the derivation.
+
+**Data access matters.** The script fetches real Binance funding + basis when
+the network allows it. In restricted/geo-fenced environments (e.g. an org egress
+policy denying `fapi.binance.com`) it falls back to a **synthetic** series and
+says so — those results validate the machinery only. Adding basis P&L is what
+makes the synthetic run honest: it drops the Sharpe from a fantasy ~15 (funding
+alone) into a realistic ~1-4 band, adds ~4.5× the risk, and the gauntlet then
+**rejects** a naively-tuned entry that collapses out-of-sample. Run it where
+Binance is reachable for the real verdict. Still omitted: hedge slippage and
+exchange/counterparty risk — add those before trusting size.
 
 ## Next phases (not yet built)
 

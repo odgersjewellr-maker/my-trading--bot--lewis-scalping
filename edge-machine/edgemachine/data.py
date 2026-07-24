@@ -104,13 +104,14 @@ class DataStore:
 
     # -------------------------------------------------------------- funding
     def fetch_funding_binance(self, symbol: str = "BTCUSDT",
-                              intervals: int = 2000) -> tuple[pd.Series, pd.Series]:
-        """Fetch real perp funding-rate history + 8h spot closes from Binance.
+                              intervals: int = 2000) -> tuple[pd.Series, pd.Series, pd.Series]:
+        """Fetch real perp funding-rate history + 8h spot & perp closes from Binance.
 
-        Returns ``(funding, spot)`` Series aligned on funding-settlement times.
-        Uses the stdlib HTTP client honouring HTTPS_PROXY and the proxy CA
-        bundle — no ccxt dependency. Raises on network/policy failure (e.g. a
-        geo-fenced or policy-denied environment), so callers can fall back.
+        Returns ``(funding, spot, basis)`` aligned on funding-settlement times,
+        where ``basis = perp_close/spot_close - 1`` (the perp premium the carry
+        book is short). Uses the stdlib HTTP client honouring HTTPS_PROXY and the
+        proxy CA bundle — no ccxt dependency. Raises on network/policy failure
+        (e.g. a geo-fenced or policy-denied environment) so callers can fall back.
         """
         import json
         import os
@@ -146,15 +147,18 @@ class DataStore:
             name="funding",
         )
 
-        # 8h spot closes to classify regime (align to funding timestamps).
-        kl = get(f"https://api.binance.com/api/v3/klines?symbol={symbol}"
-                 f"&interval=8h&limit=1000")
-        spot = pd.Series(
-            [float(k[4]) for k in kl],
-            index=pd.to_datetime([k[0] for k in kl], unit="ms", utc=True),
-            name="spot",
-        ).reindex(fund.index, method="nearest")
-        return fund, spot
+        # 8h spot + perp closes; align to funding timestamps and derive basis.
+        def closes(base: str) -> pd.Series:
+            kl = get(f"{base}?symbol={symbol}&interval=8h&limit=1000")
+            return pd.Series(
+                [float(k[4]) for k in kl],
+                index=pd.to_datetime([k[0] for k in kl], unit="ms", utc=True),
+            ).reindex(fund.index, method="nearest")
+
+        spot = closes("https://api.binance.com/api/v3/klines").rename("spot")
+        perp = closes("https://fapi.binance.com/fapi/v1/klines")
+        basis = (perp / spot - 1.0).rename("basis")
+        return fund, spot, basis
 
     def _synthetic(self, n: int, timeframe: str, seed: int) -> pd.DataFrame:
         """Deterministic geometric-brownian-motion OHLCV, for offline dev."""

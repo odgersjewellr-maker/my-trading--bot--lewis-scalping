@@ -19,24 +19,26 @@ import pandas as pd
 
 from edgemachine import CostModel, DataStore, ResearchJournal
 from edgemachine.gauntlet import run_gauntlet
-from edgemachine.strategies import carry_strategy_factory, generate_synthetic_funding
+from edgemachine.strategies import (
+    carry_asset_return, carry_strategy_factory, generate_synthetic_carry,
+)
 
 PERIODS_PER_YEAR = 3 * 365  # 8h funding intervals
 
 
-def load_data() -> tuple[pd.Series, pd.Series, str]:
-    """Return (funding, spot, source_label)."""
+def load_data() -> tuple[pd.Series, pd.Series, pd.Series, str]:
+    """Return (funding, spot, basis, source_label)."""
     store = DataStore("data")
     try:
-        funding, spot = store.fetch_funding_binance("BTCUSDT", intervals=2000)
+        funding, spot, basis = store.fetch_funding_binance("BTCUSDT", intervals=2000)
         if len(funding) < 300:
             raise RuntimeError("too few funding rows returned")
-        return funding, spot, "REAL Binance BTCUSDT perp funding"
+        return funding, spot, basis, "REAL Binance BTCUSDT perp funding + basis"
     except Exception as exc:
         print(f"[data] live funding unavailable ({exc!s}).")
-        print("[data] --> falling back to SYNTHETIC funding (machinery test only).")
-        funding, spot = generate_synthetic_funding(n=2400)
-        return funding, spot, "SYNTHETIC (offline fallback)"
+        print("[data] --> falling back to SYNTHETIC funding+basis (machinery test only).")
+        funding, spot, basis = generate_synthetic_carry(n=2400)
+        return funding, spot, basis, "SYNTHETIC (offline fallback)"
 
 
 def main() -> None:
@@ -44,14 +46,23 @@ def main() -> None:
     print("EDGE MACHINE — Funding Carry through the Gauntlet")
     print("=" * 72)
 
-    funding, spot, source = load_data()
+    funding, spot, basis, source = load_data()
+    carry_ret = carry_asset_return(funding, basis)
     ann_funding = funding.mean() * PERIODS_PER_YEAR
     print(f"\ndata source : {source}")
     print(f"intervals   : {len(funding)} x 8h  "
           f"({funding.index[0].date()} -> {funding.index[-1].date()})")
     print(f"mean funding: {funding.mean()*1e4:.3f} bps / 8h  "
           f"(~{ann_funding*100:.1f}% annualized if always long-carry)")
-    print(f"% intervals negative funding: {(funding < 0).mean()*100:.1f}%\n")
+    print(f"% intervals negative funding: {(funding < 0).mean()*100:.1f}%")
+    print(f"basis (perp premium): mean {basis.mean()*1e4:.1f} bps, "
+          f"MTM vol {basis.diff().std()*1e4:.1f} bps/interval")
+    # Decompose the +1-carry return stream into its two legs.
+    fund_vol = funding.std() * (PERIODS_PER_YEAR ** 0.5)
+    tot_vol = carry_ret.std() * (PERIODS_PER_YEAR ** 0.5)
+    print(f"return vol  : funding-only {fund_vol*100:.1f}%/yr  ->  "
+          f"with basis MTM {tot_vol*100:.1f}%/yr  "
+          f"({tot_vol/max(fund_vol,1e-9):.1f}x more risk)\n")
 
     # Costs: a carry round-trip touches BOTH legs (spot + perp), so per unit of
     # turnover we pay ~2x a single-leg trade. Tune to your venue/fee tier.
@@ -69,7 +80,7 @@ def main() -> None:
     with ResearchJournal("data/research_journal.db") as jrn:
         result = run_gauntlet(
             spot, strategy_fn, grid, cost_model=costs,
-            asset_return=funding,               # P&L is funding, not price
+            asset_return=carry_ret,             # P&L = funding - Δbasis, not price
             periods_per_year=PERIODS_PER_YEAR,
             journal=jrn, name="funding_carry",
             market="binance:BTCUSDT-perp",
@@ -83,8 +94,8 @@ def main() -> None:
     if "SYNTHETIC" in source:
         print("SYNTHETIC DATA: this validates the pipeline end-to-end, NOT a live edge.")
         print("Re-run where Binance is reachable for the real verdict.")
-    print("Reminder: this first-order model earns funding minus both-leg costs; it")
-    print("omits basis-convergence P&L and hedge slippage — add those before trusting size.")
+    print("Model now includes basis mark-to-market (funding - Δbasis). Still omits")
+    print("hedge slippage and exchange/counterparty risk — add those before trusting size.")
     print("-" * 72)
 
 
