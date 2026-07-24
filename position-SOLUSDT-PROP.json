@@ -3,7 +3,7 @@
   "entryPrice": 75.98,
   "quantity": 2787.693266,
   "sizeUSD": 211808.93435068004,
-  "stopLossPrice": 76.15142857142857,
+  "stopLossPrice": 76.015,
   "openedAt": "2026-07-24T01:05:46.254Z",
   "orderId": "PAPER-1784855146254",
   "stopOrderId": null,
