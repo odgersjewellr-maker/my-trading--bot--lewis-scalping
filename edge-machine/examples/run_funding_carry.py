@@ -13,6 +13,14 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+# Windows consoles default to cp1252 and raise UnicodeEncodeError on the Δ/→/—
+# in the framework's output (this project was built on Linux). Make stdout UTF-8
+# so the summaries print on any platform; harmless where already UTF-8.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except (AttributeError, ValueError):
+    pass
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import pandas as pd
