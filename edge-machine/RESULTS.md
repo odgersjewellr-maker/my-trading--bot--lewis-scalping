@@ -73,3 +73,32 @@ params lookback=10, entry_z=2.0.
 **Batch takeaway (2 real ideas, 0 survivors):** the gauntlet is doing its job —
 carry has no gross edge over costs, fade has real but regime-conditional structure
 that dies on the holdout. Neither is tuned-to-pass. Mortality is the point.
+
+## 2026-07-24 — BREADTH BATCH (3 independent mechanisms) — 0 survivors
+
+Built `examples/run_breadth.py`: the edge-STACKING sourcing loop (a registry of
+diverse strategies → strict gauntlet → survivor scoreboard; ≥2 uncorrelated
+survivors would feed build_portfolio). Ran 3 deliberately-independent, low-DOF
+mechanisms on 5y REAL daily BTC (2021-07-26 → 2026-07-24, 1825 bars):
+
+| idea | category | OOS | holdout | DSR | PBO | rot p | verdict |
+|---|---|---|---|---|---|---|---|
+| tsmom | trend | 0.87 | 0.70 | 0.80 | 0.75 | 0.095 | REJECT |
+| reversal | reversal | 0.20 | −1.29 | 0.40 | 0.01 | 0.095 | REJECT |
+| weekend_reversion | calendar | 0.34 | 0.61 | 0.77 | 0.14 | 0.065 | REJECT |
+
+Honest reads: **tsmom** has positive OOS+holdout (~0.7–0.9) — a real-ish weak
+momentum — but PBO 0.75 (overfit across the lookback grid) and rotation p=0.095
+(not significant vs the autocorr-preserving null). **reversal** dies on holdout
+(−1.29); short-term daily MR is negative in-sample-recent. **weekend_reversion**
+is the faintest pulse: positive OOS+holdout, low PBO 0.14, but just misses on
+DSR and rotation p=0.065. Two have positive holdouts but none clears the bar —
+correctly. Nothing tuned to pass.
+
+**Running scoreboard — 5 real ideas, 0 survivors, 0 stackable.** The stacking
+thesis is right and the engine is built; it is downstream of finding survivors,
+and the gauntlet has (correctly) passed none. The cheap single-asset corners
+(carry/momentum/reversal/calendar) are the most-arbitraged, lowest-alpha parts
+of crypto; higher-potential edges (cross-sectional, cross-venue dislocation,
+liquidation-cascade, on-chain flow) need multi-asset/microstructure plumbing the
+single-asset gauntlet doesn't yet have.
