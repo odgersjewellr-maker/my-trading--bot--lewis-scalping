@@ -1,0 +1,9 @@
+# Core (required) — the demo and pipeline run on just these two.
+pandas>=2.0
+numpy>=1.24
+
+# Optional — the code degrades gracefully if these are missing.
+pyarrow>=12.0   # parquet storage; falls back to CSV if absent
+ccxt>=4.0       # live exchange data; falls back to synthetic data if absent
+
+# The research journal uses stdlib sqlite3 — no dependency needed.

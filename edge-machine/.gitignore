@@ -1,0 +1,12 @@
+# Data snapshots and the research journal are local artifacts.
+data/*.parquet
+data/*.csv
+data/*.db
+data/*.db-journal
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
