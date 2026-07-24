@@ -16,6 +16,8 @@ from .data import DataStore
 from .backtest import vectorized_backtest, BacktestResult
 from .journal import ResearchJournal
 from .gauntlet import run_gauntlet, GauntletResult
+from .monitor import ExpectedBand, KillSwitchConfig, LiveMonitor
+from .paper import run_paper, PaperResult
 from . import metrics, validation, backlog, strategies
 from .backlog import EdgeIdea, BACKLOG
 
@@ -27,6 +29,11 @@ __all__ = [
     "ResearchJournal",
     "run_gauntlet",
     "GauntletResult",
+    "ExpectedBand",
+    "KillSwitchConfig",
+    "LiveMonitor",
+    "run_paper",
+    "PaperResult",
     "EdgeIdea",
     "BACKLOG",
     "metrics",

@@ -136,9 +136,39 @@ alone) into a realistic ~1-4 band, adds ~4.5× the risk, and the gauntlet then
 Binance is reachable for the real verdict. Still omitted: hedge slippage and
 exchange/counterparty risk — add those before trusting size.
 
+## Phase 2 — monitoring & kill switches (built)
+
+Once an edge passes the gauntlet, this layer runs it forward and pulls the plug
+on **pre-committed rules** — decided before deployment, not mid-drawdown.
+
+```bash
+python examples/demo_monitoring.py
+```
+
+- `ExpectedBand.from_returns()` — snapshots what the backtest promised (Sharpe +
+  bootstrap CI, mean, vol, max drawdown): the yardstick for live behaviour.
+- `LiveMonitor` — ingests realized returns bar by bar; emits **OK / WARN / KILL**
+  plus a position scale. Detectors: drawdown-breach (live DD worse than
+  `mult ×` backtest maxDD → KILL), a one-sided **CUSUM** on returns (persistent
+  losses → KILL), and a rolling-Sharpe floor (→ WARN, half size). A KILL latches
+  until a human resets it.
+- `run_paper()` — steps a strategy forward the way live trading does (hold last
+  bar's position, realize the return, feed the monitor, let the kill switch scale
+  the *next* target). Swap the data iterator for a websocket and the same
+  monitor/kill logic runs unchanged.
+
+Two lessons the build surfaced, baked into the defaults:
+
+1. **Reference decay detectors against zero, not the backtest mean.** A CUSUM
+   referenced against the (optimistic, in-sample) backtest mean false-alarms on
+   every healthy-but-regressed live series. The default fires on persistent
+   *losses*; the "underperforming but still positive" zone is the WARN's job.
+2. **Calibrate thresholds on the strategy's own healthy history.** The demo
+   verifies the kill switch does *not* fire on a healthy holdout before trusting
+   it live. In the decay scenario the switch cuts a −49% blind loss to −28%.
+
 ## Next phases (not yet built)
 
-- **Phase 2 — live:** paper → tiny live, monitoring + kill switches.
 - **Phase 3 — portfolio:** correlation-aware allocation + the improvement cadence.
 
 See the research-plan doc for the full spec.
