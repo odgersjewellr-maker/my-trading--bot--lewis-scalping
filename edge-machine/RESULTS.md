@@ -179,3 +179,38 @@ noise. Harder-to-reach frontiers remain (illiquid alts; higher-frequency
 microstructure via the orderflow-depth data; the futures/prop domain where the
 firm's NQ opening-window survivor already lives) — but the daily-public-crypto
 edge hunt has been fairly mapped, and it is picked clean.
+
+## 2026-07-25 — MICROSTRUCTURE / order-flow (first rung, 15m kline-delta) — 0 survivors
+
+`examples/run_micro.py`: aggressor flow WITHOUT tick data — Binance futures klines
+carry per-bar taker-buy volume, so delta = 2·taker_buy − vol and CVD = cumsum(delta).
+The Valentini/Rosato absorption primitive, quantified. 35,000 × 15m real BTC-perp
+(2025-07-25 → 2026-07-24).
+
+| idea | kind | IS | OOS | holdout | DSR | 2x-cost | rot p | verdict |
+|---|---|---|---|---|---|---|---|---|
+| delta_mom | momentum | −6.12 | −6.09 | −6.98 | 0.00 | −12.58 | 0.270 | REJECT |
+| absorb_fade | reversal | +0.26 | −0.73 | +0.92 | 0.17 | −1.34 | 0.010 | REJECT |
+
+**delta momentum is decisively DEAD** — chasing aggressor flow at 15m loses badly
+(−6 Sharpe everywhere): the flow is not persistent/informed at this resolution,
+and costs bury it. **absorption fade has a FAINT REAL PULSE** — positive holdout
+(+0.92) and rotation p=0.010 (significant vs the autocorrelation-preserving null,
+i.e. genuine timing structure) — Valentini's "absorbed aggression reverts" is a
+real effect. **But it is sub-cost:** OOS −0.73 at 1× and −1.34 at 2× cost. The
+Law-2 wall kills it.
+
+## THE universal finding — every real crypto edge is thin, and thin dies to taker costs
+
+Across IVB (5 tests), carry, fade, momentum, reversal, cross-sectional,
+cross-venue, and now order-flow: wherever a REAL effect appears (2021-23 alt
+momentum; funding fade in high-vol; absorption reversal), it is **too thin to
+clear taker costs.** Law 2 is the single universal killer, in every domain. The
+implication is decisive and useful: **the lever is EXECUTION, not signal.** No
+bigger signal is hiding; the question for any real-but-thin edge is whether MAKER
+execution (or a lower-frequency hold) drops the cost bar under the edge. The firm
+already measured that maker cuts the bar ~3.5× (IVB maker test) — but IVB had no
+gross edge to rescue. Absorption is the first candidate with BOTH a (faint) gross
+pulse AND the maker cost-lever available. That, plus the forward-only 1m/L2
+resolution (orderflow-depth collector), is the only crypto thread left worth
+pulling — and it is a forward-test infrastructure project, not another backtest.
