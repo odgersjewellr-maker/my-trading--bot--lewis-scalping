@@ -1,50 +1,58 @@
 {
   "watchlist": ["BTCUSDT"],
-  "default_timeframe": "1m",
+  "default_timeframe": "5m",
 
   "strategy": {
-    "name": "VWAP + RSI(3) + EMA(8) Scalping Strategy",
+    "name": "Candle Pattern Scalping — Engulfing + Pin Bar",
     "sources": ["Lewis Jackson"],
-    "description": "Three indicators, each doing a different job. EMA(8) for trend direction, VWAP for session bias, RSI(3) for entry timing. All three must align before a trade fires."
+    "description": "Simple price-action scalping. The trigger is a candlestick reversal pattern (engulfing or pin bar), but it only fires when the pattern agrees with the trend and session bias. Pattern = timing, EMA(21) + VWAP = context. No pattern is traded blindly."
   },
 
   "indicators": {
-    "ema_8": "Trend direction. Price above EMA(8) = bullish momentum. Below = bearish.",
-    "vwap": "Session bias. Price above VWAP = buyers in control. Below = sellers. Resets at midnight UTC.",
-    "rsi_3": "Entry timing. RSI on 3 candles only — extremely sensitive. Below 30 in an uptrend = snap-back setup. Above 70 in a downtrend = reversal likely."
+    "ema_21": "Trend direction on the entry timeframe. Price above EMA(21) = uptrend, only look for longs. Below = downtrend, only look for shorts.",
+    "vwap": "Session bias. Price above VWAP = buyers in control. Below = sellers. Resets at midnight UTC. Patterns are only taken in the direction of VWAP.",
+    "volume": "Confirmation. The pattern candle's volume should be at or above the 20-candle average — a real pattern comes with participation, not on a dead bar.",
+    "candle_pattern": "The entry trigger, read from raw OHLC. Bullish/bearish engulfing (current body fully engulfs the prior body) or pin bar/hammer/shooting star (small body, long rejection wick at least 2x the body)."
   },
 
   "bias_criteria": {
-    "bullish": ["Price is above VWAP", "Price is above EMA(8)"],
-    "bearish": ["Price is below VWAP", "Price is below EMA(8)"]
+    "bullish": ["Price is above VWAP", "Price is above EMA(21)"],
+    "bearish": ["Price is below VWAP", "Price is below EMA(21)"],
+    "neutral": ["Price is oscillating across VWAP and EMA(21) with no clear side — stand aside"]
   },
 
   "entry_rules": {
     "long": [
-      "Price is above VWAP — buyers in control for the session",
-      "Price is above EMA(8) — uptrend confirmed",
-      "RSI(3) has dropped below 30 — short-term pullback in an uptrend, snap-back likely"
+      "Trend is up — price is above EMA(21)",
+      "Session bias is up — price is above VWAP",
+      "A bullish reversal pattern just closed: bullish engulfing (green candle whose body fully engulfs the prior red body) OR a hammer / bullish pin bar (lower wick at least 2x the body, small body near the top of the range)",
+      "The pattern candle's volume is at or above the 20-candle average volume"
     ],
     "short": [
-      "Price is below VWAP — sellers in control",
-      "Price is below EMA(8) — downtrend confirmed",
-      "RSI(3) has spiked above 70 — overbought in a downtrend, reversal likely"
+      "Trend is down — price is below EMA(21)",
+      "Session bias is down — price is below VWAP",
+      "A bearish reversal pattern just closed: bearish engulfing (red candle whose body fully engulfs the prior green body) OR a shooting star / bearish pin bar (upper wick at least 2x the body, small body near the bottom of the range)",
+      "The pattern candle's volume is at or above the 20-candle average volume"
     ]
   },
 
   "exit_rules": [
-    "Exit when RSI(3) crosses back above 50 (for longs) or below 50 (for shorts)",
-    "Hard stop: 0.3% below entry for longs, 0.3% above entry for shorts",
-    "Take profit at next VWAP touch or EMA(8) cross"
+    "Hard stop for longs: just below the low of the pattern candle (the wick that got rejected)",
+    "Hard stop for shorts: just above the high of the pattern candle",
+    "Take profit at a fixed 1.5x the stop distance (1.5R) — scalps are taken quickly, not held for a swing",
+    "Time stop: if the trade has not hit target or stop within 12 candles, close it — the setup has gone stale",
+    "Exit early if price closes back through EMA(21) against the position"
   ],
 
   "risk_rules": [
-    "Risk maximum 1% of portfolio per trade",
+    "Risk maximum 1% of portfolio per trade — position size is derived from the stop distance, not a fixed lot",
     "Maximum trade size capped by MAX_TRADE_SIZE_USD in .env",
     "Maximum trades per day capped by MAX_TRADES_PER_DAY in .env",
-    "Do not trade if price is more than 1.5% away from VWAP — overextended",
-    "Paper trade first — validate this strategy on your specific asset before going live"
+    "No trade if price is more than 1.5% away from VWAP — overextended, the snap-back is already gone",
+    "No trade against the EMA(21) trend, ever — a pattern alone is not a signal",
+    "Skip patterns with a tiny range (body + wicks smaller than the recent average candle) — not enough conviction to scalp",
+    "Paper trade first — validate on your specific asset and timeframe before going live"
   ],
 
-  "notes": "Scalping strategy — designed for 1m to 5m timeframes. RSI(3) is intentionally fast and sensitive. Do not apply to higher timeframes."
+  "notes": "Candle-pattern scalping — designed for 1m to 5m timeframes, tuned here for 5m where patterns are cleaner than on 1m. The pattern is only the trigger; EMA(21) trend and VWAP bias are the filters that keep you from trading noise. Do not apply to higher timeframes without re-tuning the stop and target."
 }
