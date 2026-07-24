@@ -214,3 +214,40 @@ gross edge to rescue. Absorption is the first candidate with BOTH a (faint) gros
 pulse AND the maker cost-lever available. That, plus the forward-only 1m/L2
 resolution (orderflow-depth collector), is the only crypto thread left worth
 pulling — and it is a forward-test infrastructure project, not another backtest.
+
+## 2026-07-25 — absorption fade (inverted flow-watcher) — KILL — and a CORRECTION
+
+Pre-registered/frozen (`be53d4b`) BEFORE results, then run: 8 daily 6h SOL
+aggTrade windows, honest adverse-selection maker fills, real Binance fees.
+
+**This corrects an over-claim.** An earlier scratchpad look reported the absorption
+fade as "the first cost-clearing signal" (+0.45 bp/trade net) — WRONG, on two
+counts, both now fixed: (1) it used ~10× too-low fees (0.4 bp maker RT vs the real
+~4 bp), and (2) it filled the maker entry cleanly with NO adverse selection.
+
+**Honest result:** with adverse-selection fills — you rest a limit past the spike
+and fill ONLY when price trades through you (the continuation = the bad entry),
+missing the reversals (the easy wins) — the **GROSS edge flips NEGATIVE: −1.57 bp,
+46% win.** Adverse selection alone kills it, before fees. Net: −9.57 bp @ real
+8 bp RT, −5.57 bp even @ maker-both 4 bp best case; holdout Sharpe negative both
+ways. Per-window gross is pure noise (+17, −10, +5, −2.8 …). **VERDICT: KILL.**
+
+**Why it matters:** being the passive absorber means you are ADVERSELY SELECTED —
+you get filled precisely on the trades that run against you, not the ones that
+reverse. That is the deep reason non-colocated retail cannot market-make crypto
+microstructure. The "maker lever" is not free: the maker IS the adversely-selected
+counterparty. So the one lead with a gross pulse + a cost lever dies to a SECOND
+universal killer beyond Law-2 costs.
+
+## FINAL — 15 real ideas, 0 survivors, the crypto edge hunt is honestly complete
+
+Carry, fade, tsmom, reversal, weekend, cross-sectional (×6), cross-venue, order-
+flow momentum, order-flow absorption. Every real effect found is thin and dies to
+taker costs (Law 2); the one that had a gross pulse + maker lever (absorption)
+dies to adverse selection on the maker fill. The accessible crypto edge space —
+liquid names, public data, retail execution — is efficient. The machine worked
+perfectly: 15 clean rejections, a decayed edge caught, 2 data bugs caught, and one
+FALSE POSITIVE (this one, from sloppy scratchpad assumptions) caught and corrected
+by its own pre-registered discipline. That last catch is the point of the whole
+machine. Firm edge lives elsewhere (NQ opening-window futures survivor). The Edge
+Machine's standing value is as an honest rejection/monitoring engine.
