@@ -16,7 +16,8 @@ from .data import DataStore
 from .backtest import vectorized_backtest, BacktestResult
 from .journal import ResearchJournal
 from .gauntlet import run_gauntlet, GauntletResult
-from . import metrics, validation
+from . import metrics, validation, backlog
+from .backlog import EdgeIdea, BACKLOG
 
 __all__ = [
     "CostModel",
@@ -26,8 +27,11 @@ __all__ = [
     "ResearchJournal",
     "run_gauntlet",
     "GauntletResult",
+    "EdgeIdea",
+    "BACKLOG",
     "metrics",
     "validation",
+    "backlog",
 ]
 
 __version__ = "0.1.0"

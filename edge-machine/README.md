@@ -21,9 +21,11 @@ edges you can trust the numbers.
 | `edgemachine/journal.py` | Research journal (stdlib sqlite). Logs every hypothesis **including `n_trials`** — the hook the gauntlet needs for multiple-testing correction. |
 | `edgemachine/validation.py` | **Phase 1** — the anti-self-deception stats: Deflated/Probabilistic Sharpe, PBO (CSCV), walk-forward, parameter-plateau, regime breakdown, shuffle test. |
 | `edgemachine/gauntlet.py` | **Phase 1** — orchestrator: runs a param grid through the whole battery and returns one pass/reject verdict. |
+| `edgemachine/backlog.py` | The scored, mechanism-first crypto **idea backlog** — the fuel the gauntlet burns. Source of truth for `BACKLOG.md`. |
 | `config.py` | One place for all knobs (venue, fees, timeframe, holdout size). |
 | `examples/demo_sma_crossover.py` | End-to-end smoke test: data → signal → cost-aware backtest → journal. |
 | `examples/demo_gauntlet.py` | Runs a 25-variant grid through the Validation Gauntlet. |
+| `examples/show_backlog.py` | Prints the ranked backlog, seeds it into the journal, regenerates `BACKLOG.md`. |
 
 ## Quick start
 
@@ -82,10 +84,25 @@ Validated both ways: it rejects trendless noise, and it passes a genuinely
 mean-reverting series **once there's enough data** to clear the trials penalty
 (DSR rises 0.88 → 0.94 → 0.99 as history grows 800 → 1,500 → 3,000 bars).
 
+## The idea backlog (built)
+
+16 mechanism-first crypto hypotheses, each scored 1-5 on six dimensions
+(mechanism, capacity, executability, data, independence, durability) and ranked
+by their product. See **`BACKLOG.md`** for the full table + detail cards, or:
+
+```bash
+python examples/show_backlog.py   # ranked list + seeds journal + regenerates BACKLOG.md
+```
+
+Top of the list is where retail edge actually lives — carry trades with a clear
+forced counterparty (funding carry, cash-and-carry basis) rank highest;
+liquidation-cascade fading ranks low *despite* the strongest mechanism because
+its capacity is tiny and execution is colocation-hard. The backlog is the
+source of truth (`edgemachine/backlog.py`); `BACKLOG.md` is generated from it.
+
 ## Next phases (not yet built)
 
 - **Phase 2 — live:** paper → tiny live, monitoring + kill switches.
 - **Phase 3 — portfolio:** correlation-aware allocation + the improvement cadence.
-- **Idea backlog:** a scored set of mechanism-first crypto hypotheses to feed the gauntlet.
 
 See the research-plan doc for the full spec.
