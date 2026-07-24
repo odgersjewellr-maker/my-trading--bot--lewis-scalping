@@ -19,8 +19,11 @@ edges you can trust the numbers.
 | `edgemachine/backtest.py` | Vectorized backtester with built-in **look-ahead protection**. |
 | `edgemachine/metrics.py` | Sharpe, Sortino, max drawdown, CAGR, hit rate, turnover. |
 | `edgemachine/journal.py` | Research journal (stdlib sqlite). Logs every hypothesis **including `n_trials`** — the hook the gauntlet needs for multiple-testing correction. |
+| `edgemachine/validation.py` | **Phase 1** — the anti-self-deception stats: Deflated/Probabilistic Sharpe, PBO (CSCV), walk-forward, parameter-plateau, regime breakdown, shuffle test. |
+| `edgemachine/gauntlet.py` | **Phase 1** — orchestrator: runs a param grid through the whole battery and returns one pass/reject verdict. |
 | `config.py` | One place for all knobs (venue, fees, timeframe, holdout size). |
 | `examples/demo_sma_crossover.py` | End-to-end smoke test: data → signal → cost-aware backtest → journal. |
+| `examples/demo_gauntlet.py` | Runs a 25-variant grid through the Validation Gauntlet. |
 
 ## Quick start
 
@@ -49,11 +52,40 @@ model and journal exist before any edge hunting begins.
 3. Mechanism before pattern → the journal *requires* you to state who loses and why.
 4. Edges combine through low correlation, not individual greatness.
 
+## The Validation Gauntlet (Phase 1 — built)
+
+A candidate must survive **all** checks; expect ~90% mortality.
+
+```python
+from edgemachine import CostModel
+from edgemachine.gauntlet import run_gauntlet
+
+result = run_gauntlet(price, my_strategy,
+                      param_grid={"lookback": [10, 20, 30], "entry_z": [1.0, 1.5, 2.0]},
+                      cost_model=CostModel(), mechanism="who is forced to trade against me")
+print(result.summary_text())   # PASS / REJECT with every number behind it
+```
+
+Run `python examples/demo_gauntlet.py` to see it in action. The checks:
+
+| Check | Passes when | Catches |
+|---|---|---|
+| Walk-forward OOS Sharpe | > 0 | fits that don't generalize forward |
+| Locked holdout Sharpe | > 0 | data you tuned on masquerading as OOS |
+| **Deflated Sharpe** | > 0.95 | a good Sharpe found only by trying many variants |
+| **PBO** (CSCV) | < 0.5 | in-sample winner being below-median out-of-sample |
+| Parameter plateau | > 0.5 | lonely-spike params vs a robust neighborhood |
+| Sharpe @ 2× cost | > 0 | "edges" that are just unmodeled costs |
+| Shuffle p-value | < 0.05 | signals no better than random timing |
+
+Validated both ways: it rejects trendless noise, and it passes a genuinely
+mean-reverting series **once there's enough data** to clear the trials penalty
+(DSR rises 0.88 → 0.94 → 0.99 as history grows 800 → 1,500 → 3,000 bars).
+
 ## Next phases (not yet built)
 
-- **Phase 1 — Validation Gauntlet:** Deflated Sharpe, walk-forward, PBO,
-  parameter-plateau + 2×-cost + regime tests. Reusable, drops onto any backtest.
 - **Phase 2 — live:** paper → tiny live, monitoring + kill switches.
 - **Phase 3 — portfolio:** correlation-aware allocation + the improvement cadence.
+- **Idea backlog:** a scored set of mechanism-first crypto hypotheses to feed the gauntlet.
 
 See the research-plan doc for the full spec.

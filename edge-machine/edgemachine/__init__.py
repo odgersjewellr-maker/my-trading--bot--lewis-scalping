@@ -15,7 +15,8 @@ from .costs import CostModel
 from .data import DataStore
 from .backtest import vectorized_backtest, BacktestResult
 from .journal import ResearchJournal
-from . import metrics
+from .gauntlet import run_gauntlet, GauntletResult
+from . import metrics, validation
 
 __all__ = [
     "CostModel",
@@ -23,7 +24,10 @@ __all__ = [
     "vectorized_backtest",
     "BacktestResult",
     "ResearchJournal",
+    "run_gauntlet",
+    "GauntletResult",
     "metrics",
+    "validation",
 ]
 
 __version__ = "0.1.0"
