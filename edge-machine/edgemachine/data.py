@@ -128,17 +128,23 @@ class DataStore:
             with urllib.request.urlopen(req, timeout=30, context=ctx) as r:
                 return json.load(r)
 
-        # Funding history is capped at 1000 rows/call; page backwards.
-        rows, end = [], int(time.time() * 1000)
+        # Funding history returns up to 500 rows/call (NOT 1000 — the endpoint
+        # silently caps it); page backwards until we have `intervals` or the
+        # venue is exhausted. A seen-set guards against a non-progressing loop.
+        rows, end, seen = [], int(time.time() * 1000), set()
         while len(rows) < intervals:
             url = (f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={symbol}"
-                   f"&limit=1000&endTime={end}")
+                   f"&limit=500&endTime={end}")
             batch = get(url)
             if not batch:
                 break
             rows = batch + rows
-            end = batch[0]["fundingTime"] - 1
-            if len(batch) < 1000:
+            oldest = batch[0]["fundingTime"]
+            if oldest in seen:
+                break
+            seen.add(oldest)
+            end = oldest - 1
+            if len(batch) < 500:
                 break
         rows = rows[-intervals:]
         fund = pd.Series(
@@ -147,13 +153,28 @@ class DataStore:
             name="funding",
         )
 
-        # 8h spot + perp closes; align to funding timestamps and derive basis.
+        # 8h spot + perp closes; page klines (1000/call) back far enough to COVER
+        # the full funding span, else nearest-reindex mis-maps old funding rows to
+        # recent prices. Align to funding timestamps and derive basis.
+        start_ms = int(fund.index[0].value // 1_000_000)
+
         def closes(base: str) -> pd.Series:
-            kl = get(f"{base}?symbol={symbol}&interval=8h&limit=1000")
-            return pd.Series(
+            kl, end_k = [], int(time.time() * 1000)
+            while True:
+                chunk = get(f"{base}?symbol={symbol}&interval=8h&limit=1000&endTime={end_k}")
+                if not chunk:
+                    break
+                kl = chunk + kl
+                first = chunk[0][0]
+                if first <= start_ms or len(chunk) < 1000 or first >= end_k:
+                    break
+                end_k = first - 1
+            ser = pd.Series(
                 [float(k[4]) for k in kl],
                 index=pd.to_datetime([k[0] for k in kl], unit="ms", utc=True),
-            ).reindex(fund.index, method="nearest")
+            )
+            ser = ser[~ser.index.duplicated(keep="last")]
+            return ser.reindex(fund.index, method="nearest")
 
         spot = closes("https://api.binance.com/api/v3/klines").rename("spot")
         perp = closes("https://fapi.binance.com/fapi/v1/klines")
