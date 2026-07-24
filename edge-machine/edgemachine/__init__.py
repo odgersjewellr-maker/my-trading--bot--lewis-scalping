@@ -18,7 +18,9 @@ from .journal import ResearchJournal
 from .gauntlet import run_gauntlet, GauntletResult
 from .monitor import ExpectedBand, KillSwitchConfig, LiveMonitor
 from .paper import run_paper, PaperResult
-from . import metrics, validation, backlog, strategies
+from .portfolio import build_portfolio, Portfolio
+from .cadence import machine_kpis, render_kpis
+from . import metrics, validation, backlog, strategies, portfolio, cadence
 from .backlog import EdgeIdea, BACKLOG
 
 __all__ = [
@@ -34,6 +36,10 @@ __all__ = [
     "LiveMonitor",
     "run_paper",
     "PaperResult",
+    "build_portfolio",
+    "Portfolio",
+    "machine_kpis",
+    "render_kpis",
     "EdgeIdea",
     "BACKLOG",
     "metrics",

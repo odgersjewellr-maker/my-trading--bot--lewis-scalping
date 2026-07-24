@@ -167,8 +167,42 @@ Two lessons the build surfaced, baked into the defaults:
    verifies the kill switch does *not* fire on a healthy holdout before trusting
    it live. In the decay scenario the switch cuts a −49% blind loss to −28%.
 
-## Next phases (not yet built)
+## Phase 3 — portfolio & improvement cadence (built)
 
-- **Phase 3 — portfolio:** correlation-aware allocation + the improvement cadence.
+The payoff of the whole machine: uncorrelated edges combine to a higher Sharpe
+than any alone. The allocator's real job is to **manufacture low correlation**.
+
+```bash
+python examples/demo_portfolio.py   # combination math + correlation-aware weights
+python examples/machine_status.py   # full loop + machine-health KPIs
+```
+
+- `build_portfolio()` with three allocators: `inverse_variance` (blind to
+  correlation — baseline), `min_variance` (w ∝ Σ⁻¹1), and `risk_parity` (equal
+  risk contribution — verified: risk contributions come out equal, and a
+  redundant correlated edge is automatically down-weighted).
+- `Portfolio.report()` shows weights, per-edge risk contributions, the
+  diversification ratio, effective number of bets, and the **Sharpe uplift over
+  the weighted-average edge**. The demo confirms N uncorrelated edges stack to
+  ~√N Sharpe.
+- `machine_kpis()` / `render_kpis()` — the improvement-cadence dashboard read
+  from the journal: ideas in backlog, gauntlet runs, **validation hit-rate**
+  (too high ⇒ p-hacking/weak gauntlet; too low ⇒ weak sourcing), live/retired
+  counts.
+
+## Status: the machine is structurally complete
+
+| Phase | Module(s) | Demo |
+|---|---|---|
+| 0 — factory floor | `data`, `costs`, `backtest`, `metrics`, `journal` | `demo_sma_crossover.py` |
+| 1 — Validation Gauntlet | `validation`, `gauntlet` | `demo_gauntlet.py` |
+| Idea backlog | `backlog` | `show_backlog.py` |
+| First edge — funding carry | `strategies` (+ basis P&L, hedge slippage) | `run_funding_carry.py` |
+| 2 — monitoring & kill switches | `monitor`, `paper` | `demo_monitoring.py` |
+| 3 — portfolio & cadence | `portfolio`, `cadence` | `demo_portfolio.py`, `machine_status.py` |
+
+The highest-value next step is not more code — it's running the backlog
+candidates through the gauntlet on **real data** (needs an environment where the
+exchange is reachable), then promoting any genuine survivors to paper.
 
 See the research-plan doc for the full spec.
