@@ -1,229 +1,102 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NKB Trading Bot — Live Dashboard</title>
+<meta http-equiv="refresh" content="600">
+<title>Firm Mission Control</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, 'Segoe UI', Arial, sans-serif; background: #0b0e14; color: #e2e8f0; min-height: 100vh; padding: 24px 16px; }
-  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
-  .header h1 { font-size: 18px; font-weight: 600; letter-spacing: 0.02em; }
-  .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
-  .badge-paper { background: #1e3a5f; color: #60a5fa; }
-  .badge-live  { background: #14532d; color: #4ade80; }
-  .refresh-info { font-size: 12px; color: #64748b; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 16px; }
-  .card { background: #141820; border: 1px solid #1e2535; border-radius: 12px; padding: 20px; }
-  .card-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: #64748b; margin-bottom: 16px; font-weight: 600; }
-  .stat { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #1a1f2e; font-size: 13px; }
-  .stat:last-child { border-bottom: none; }
-  .stat-label { color: #64748b; }
-  .stat-value { font-weight: 600; }
-  .pos { color: #4ade80; }
-  .neg { color: #f87171; }
-  .neutral { color: #94a3b8; }
-  .state-bull { color: #00e5ff; font-weight: 700; }
-  .state-bear { color: #ff2e63; font-weight: 700; }
-  .state-neutral { color: #64748b; }
-  .big-number { font-size: 32px; font-weight: 700; margin: 8px 0 4px; }
-  .big-label { font-size: 12px; color: #64748b; }
-  .signal-box { text-align: center; padding: 16px; border-radius: 8px; margin-bottom: 12px; }
-  .signal-bull { background: rgba(0,229,255,0.08); border: 1px solid rgba(0,229,255,0.2); }
-  .signal-bear { background: rgba(255,46,99,0.08);  border: 1px solid rgba(255,46,99,0.2); }
-  .signal-none { background: rgba(100,116,139,0.08); border: 1px solid rgba(100,116,139,0.2); }
-  .signal-text { font-size: 20px; font-weight: 700; letter-spacing: 0.05em; }
-  table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  th { text-align: left; padding: 8px 6px; border-bottom: 1px solid #1e2535; color: #64748b; font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
-  td { padding: 8px 6px; border-bottom: 1px solid #141820; }
-  tr:last-child td { border-bottom: none; }
-  .mode-paper   { color: #60a5fa; }
-  .mode-live    { color: #4ade80; }
-  .mode-blocked { color: #334155; }
-  .no-data { color: #334155; font-style: italic; font-size: 13px; text-align: center; padding: 24px 0; }
-  .position-open { border-color: #00e5ff44; }
-  #last-updated { font-size: 11px; color: #334155; margin-top: 20px; text-align: center; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; animation: pulse 2s infinite; }
-  .dot-live { background: #4ade80; }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-  .bands { display: flex; gap: 10px; margin-top: 8px; }
-  .band-item { flex: 1; background: #0b0e14; border-radius: 6px; padding: 8px 10px; text-align: center; font-size: 11px; color: #64748b; }
-  .band-item strong { display: block; font-size: 13px; color: #e2e8f0; margin-top: 2px; }
-</style>
-</head>
-<body>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,'Segoe UI',Arial,sans-serif;background:#0b0e14;color:#e2e8f0;padding:22px 18px;max-width:1180px;margin:0 auto}
+h1{font-size:22px}h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#8b94a7;margin:30px 0 12px}
+.sub{color:#8b94a7;font-size:12.5px;margin-top:3px}.sub2{color:#8b94a7;font-size:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.card{background:#141824;border:1px solid #232a3a;border-radius:11px;padding:15px 17px}
+.ch{display:flex;align-items:center;gap:8px}.ic{font-size:16px}.cn{font-weight:600;font-size:14px}
+.host{color:#8b94a7;font-size:11.5px;margin:2px 0 8px}
+.big{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums}
+.read{color:#9aa3b5;font-size:12px;line-height:1.45;border-top:1px solid #232a3a;margin-top:10px;padding-top:9px}
+.badge{margin-left:auto;font-size:10px;padding:2px 7px;border-radius:5px;font-weight:600}
+.b-paper{background:#1e3a5f;color:#60a5fa}.b-live{background:#12351f;color:#4ade80}.b-live-cand{background:#12351f;color:#4ade80}
+.b-blocked{background:#2a2e38;color:#8b94a7}.b-research{background:#33285a;color:#a78bfa}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{text-align:left;padding:8px 8px;border-bottom:1px solid #1c2230}
+th{color:#8b94a7;font-weight:500;font-size:11px;text-transform:uppercase}
+.pos{color:#4ade80}.neg{color:#f87171}.warn{color:#fbbf24}.mut{color:#8b94a7}.mono{font-family:ui-monospace,monospace;font-size:11.5px;color:#c3cbdb}
+.pill{font-size:10.5px;padding:2px 8px;border-radius:9px;font-weight:600;white-space:nowrap}
+.p-kill{background:#3d1a19;color:#ff9d97}.p-warn{background:#3a3016;color:#fbbf24}.p-pass{background:#12351f;color:#4ade80}
+.panel{background:#141824;border:1px solid #232a3a;border-radius:11px;padding:6px 16px 12px;overflow-x:auto}
+.foot{color:#6b7280;font-size:11.5px;margin-top:26px;line-height:1.6;border-top:1px solid #1c2230;padding-top:12px}
+</style></head><body>
+<h1>🛰️ Firm Mission Control</h1>
+<div class="sub">Systematic trading firm · every experiment, verdict, and project in one place · generated 2026-07-25 03:36Z · auto-refresh 10m</div>
 
-<div class="header">
-  <h1>
-    <span class="dot dot-live"></span>
-    NKB Trading Bot
-    <span class="badge badge-paper" id="mode-badge">PAPER</span>
-  </h1>
-  <div class="refresh-info">Auto-refreshes every 30s</div>
-</div>
-
+<h2>Live experiments</h2>
 <div class="grid">
-  <!-- Portfolio card -->
   <div class="card">
-    <div class="card-title">Portfolio</div>
-    <div class="big-number" id="portfolio-value">—</div>
-    <div class="big-label">Current value (USD)</div>
-    <div style="margin-top:16px">
-      <div class="stat"><span class="stat-label">Total P&L</span><span class="stat-value" id="total-pnl">—</span></div>
-      <div class="stat"><span class="stat-label">Win rate</span><span class="stat-value" id="win-rate">—</span></div>
-      <div class="stat"><span class="stat-label">Trades closed</span><span class="stat-value" id="trades-closed">—</span></div>
-      <div class="stat"><span class="stat-label">Symbol</span><span class="stat-value" id="symbol">BTCUSDT</span></div>
-      <div class="stat"><span class="stat-label">Timeframe</span><span class="stat-value" id="timeframe">5m</span></div>
-    </div>
+    <div class="ch"><span class="ic">🌳</span><span class="cn">FirmTree — IVB decision tree</span><span class="badge b-paper">paper</span></div>
+    <div class="host">Oracle (paper)</div>
+    <div class="big pos">+11.08R</div>
+    <div class="sub">34 trades · SOL +8.3R · BTC +0.5R · ETH +2.3R</div>
+    <div class="read">Regime, not edge. The 2-yr offline replay is negative unconditioned; live green rides a trend window. Watching for n≥20 demotes.</div>
   </div>
-
-  <!-- NKB Signal card -->
   <div class="card">
-    <div class="card-title">NKB Signal</div>
-    <div class="signal-box signal-none" id="signal-box">
-      <div class="signal-text" id="signal-text">—</div>
-    </div>
-    <div class="bands">
-      <div class="band-item">Upper Band<strong id="upper-band">—</strong></div>
-      <div class="band-item">Kernel MA<strong id="kernel-ma">—</strong></div>
-      <div class="band-item">Lower Band<strong id="lower-band">—</strong></div>
-    </div>
-    <div style="margin-top:12px">
-      <div class="stat"><span class="stat-label">Last run</span><span class="stat-value" id="last-run">—</span></div>
-    </div>
+    <div class="ch"><span class="ic">📈</span><span class="cn">NQ opening-window (09:45)</span><span class="badge b-live-cand">live-cand</span></div>
+    <div class="host">PC (forward paper)</div>
+    <div class="big pos">$100,000</div>
+    <div class="sub">+0.0% · 0 sessions since 2026-07-24</div>
+    <div class="read">The firm's ONE genuinely validated candidate — passed a blind 2021-26 holdout. Right cost regime (futures). Gate 5: 100 trades to verdict.</div>
   </div>
-
-  <!-- Position card -->
-  <div class="card" id="position-card">
-    <div class="card-title">Open Position</div>
-    <div id="position-content"><div class="no-data">No open position</div></div>
+  <div class="card">
+    <div class="ch"><span class="ic">🟡</span><span class="cn">HyroTrader / Bybit demo</span><span class="badge b-blocked">blocked</span></div>
+    <div class="host">separate Oracle box</div>
+    <div class="big mut">not wired</div>
+    <div class="sub">no access from here</div>
+    <div class="read">The real Bybit demo runs on a second Oracle instance not connected to this dashboard. The SOL-PROP card is the BitGet paper stand-in, not this.</div>
   </div>
+  <div class="card">
+    <div class="ch"><span class="ic">🔬</span><span class="cn">Edge Machine</span><span class="badge b-research">research</span></div>
+    <div class="host">research engine</div>
+    <div class="big mut">15 → 0</div>
+    <div class="sub">ideas tested → survivors · 3807 lifetime trials</div>
+    <div class="read">Crypto edge hunt mapped: liquid public-data space is efficient. Working as designed — caught a decayed edge, 2 data bugs, and one of its own false positives.</div>
+  </div>
+  <div class="card">
+    <div class="ch"><span class="ic">💹</span><span class="cn">Phase 0 cost collector</span><span class="badge b-live">live</span></div>
+    <div class="host">PC</div>
+    <div class="big pos">running</div>
+    <div class="sub">empirical spread/slippage per fill</div>
+    <div class="read">Measures real costs so Law-2 calls stop being assumed. PnL is pre-declared noise — it's a measuring instrument, not a book.</div>
+  </div></div>
+
+<h2>Paper books (NKB · BitGet)</h2>
+<div class="panel"><table>
+<tr><th>book</th><th>value</th><th>return</th><th>note</th></tr>
+  <tr><td>BTC paper</td><td>$1,005</td><td class="pos">+0.5%</td><td class="sub2">13 trades · BitGet paper</td></tr>
+  <tr><td>SOL paper</td><td>$991</td><td class="neg">−0.9%</td><td class="sub2">24 trades · BitGet paper</td></tr>
+  <tr><td>SOL-PROP</td><td>$111,968</td><td class="warn">+14.0%</td><td class="sub2">13 trades · PASSED — but 38% win, top-3 = 111% of profit → regime luck, not edge</td></tr></table></div>
+
+<h2>Research verdict map — the honest ledger</h2>
+<div class="panel"><table>
+<tr><th>initiative</th><th>verdict</th><th>why</th></tr>
+  <tr><td>IVB-on-crypto</td><td><span class="pill p-kill">CLOSED</span></td><td class="sub2">5 pre-registered kills (runner, router, near-TP, taker, maker). No gross edge + cost wall.</td></tr>
+  <tr><td>Regime router</td><td><span class="pill p-kill">KILLED</span></td><td class="sub2">1,499 SOL sessions, CPCV: uplift negative, session = decoration. Regime-gating makes it worse, not better.</td></tr>
+  <tr><td>Funding carry</td><td><span class="pill p-kill">REJECT</span></td><td class="sub2">Dormant regime; ~0 mean funding. Two independent codebases agree (firm + Edge Machine).</td></tr>
+  <tr><td>Xsec alt momentum</td><td><span class="pill p-warn">DECAYED</span></td><td class="sub2">Real edge 2021-23 (Sharpe >1.1), inverted −79% in 2026. Gauntlet caught it on the holdout.</td></tr>
+  <tr><td>Absorption / order-flow</td><td><span class="pill p-kill">REJECT</span></td><td class="sub2">Real signal but sub-cost, and the maker fill is adversely selected. Law 2 + adverse selection.</td></tr>
+  <tr><td>NKB SOL-PROP pass</td><td><span class="pill p-warn">REGIME LUCK</span></td><td class="sub2">+14% but ~57% base-rate barrier survival; top-3 trades = 111% of profit. Config optimal, don't fund.</td></tr>
+  <tr><td>NQ opening-window</td><td><span class="pill p-pass">SURVIVED (blind)</span></td><td class="sub2">Passed a blind 2021-26 holdout. The one candidate with real validation — forward-testing now.</td></tr></table></div>
+
+<h2>Project directory — what / where / status</h2>
+<div class="panel"><table>
+<tr><th>project</th><th>location</th><th>status</th></tr>
+  <tr><td>NKB paper bots (BTC, SOL)</td><td class="mono">my-trading--bot · GitHub Actions */15</td><td class="sub2">live paper, no validated edge</td></tr>
+  <tr><td>NKB SOL-PROP</td><td class="mono">my-trading--bot · Actions · BitGet paper</td><td class="sub2">HyroTrader-STYLE dry-run — regime luck</td></tr>
+  <tr><td>HyroTrader/Bybit demo</td><td class="mono">separate Oracle instance</td><td class="sub2">adapter built+tested; live demo not wired in</td></tr>
+  <tr><td>FirmTree (IVB tree)</td><td class="mono">Oracle box · cron 5m · trading-firm/tree</td><td class="sub2">paper, regime not edge, accruing evidence</td></tr>
+  <tr><td>NQ opening-window</td><td class="mono">PC task · aee-pro/forward</td><td class="sub2">forward paper — the validated candidate</td></tr>
+  <tr><td>Phase 0 cost collector</td><td class="mono">PC task · forward-tests/intraday-regime</td><td class="sub2">measuring real costs</td></tr>
+  <tr><td>Edge Machine</td><td class="mono">my-trading--bot @ hedge-fund branch</td><td class="sub2">research engine — rejection/monitoring</td></tr>
+  <tr><td>Firm HQ (verdicts, memory)</td><td class="mono">trading-firm (private)</td><td class="sub2">VERDICTS_INDEX, DECISION_LIBRARY, backtests</td></tr></table></div>
+
+<div class="foot">
+<b style="color:#9aa3b5">The firm's one rule:</b> show the honest read, not the green number. After a full research arc, the accessible crypto edge space is efficient (15 ideas, 0 survivors); the paper books are regime, not edge; the single genuinely-validated candidate is the NQ opening-window futures survivor. This board exists to keep that honest — track everything, celebrate nothing unproven.<br>
+Sources: FirmTree &amp; NQ read live-local; NKB books &amp; Edge Machine from repo state; HyroTrader demo pending its box's access. Regenerate: <span class="mono">node tools/firm-dashboard.mjs</span> → deploy to <span class="mono">my-trading--bot /docs/index.html</span>.
 </div>
-
-<!-- Recent trades -->
-<div class="card">
-  <div class="card-title">Recent Trades</div>
-  <div id="trades-content"><div class="no-data">Loading...</div></div>
-</div>
-
-<div id="last-updated">Last updated: —</div>
-
-<script>
-const REPO = 'odgersjewellr-maker/my-trading--bot--lewis-scalping';
-const RAW  = `https://raw.githubusercontent.com/${REPO}/main`;
-
-async function fetchRaw(file) {
-  const res = await fetch(`${RAW}/${file}?t=${Date.now()}`);
-  if (!res.ok) throw new Error(`${file} not found`);
-  return res.text();
-}
-
-async function fetchJson(file) {
-  return JSON.parse(await fetchRaw(file));
-}
-
-function fmt(n) { return n != null ? '$' + parseFloat(n).toFixed(2) : '—'; }
-function pnlClass(n) { return n > 0 ? 'pos' : n < 0 ? 'neg' : 'neutral'; }
-
-async function refresh() {
-  try {
-    // Load state files
-    const [portfolio, nkbState, position, csvText, logText] = await Promise.allSettled([
-      fetchJson('portfolio.json'),
-      fetchJson('nkb-state.json'),
-      fetchJson('position.json'),
-      fetchRaw('trades.csv'),
-      fetchJson('safety-check-log.json'),
-    ]);
-
-    // Portfolio
-    const pv = portfolio.status === 'fulfilled' ? portfolio.value.value : null;
-    document.getElementById('portfolio-value').textContent = pv != null ? '$' + pv.toFixed(2) : '—';
-
-    // NKB state
-    if (nkbState.status === 'fulfilled') {
-      const s = nkbState.value.state;
-      const box = document.getElementById('signal-box');
-      const txt = document.getElementById('signal-text');
-      box.className = 'signal-box ' + (s === 1 ? 'signal-bull' : s === -1 ? 'signal-bear' : 'signal-none');
-      txt.className = 'signal-text ' + (s === 1 ? 'state-bull' : s === -1 ? 'state-bear' : 'state-neutral');
-      txt.textContent = s === 1 ? '▲ BULLISH' : s === -1 ? '▼ BEARISH' : '— NEUTRAL';
-      const upd = nkbState.value.updatedAt;
-      if (upd) document.getElementById('last-run').textContent = new Date(upd).toLocaleTimeString();
-    }
-
-    // Position
-    const pos = position.status === 'fulfilled' ? position.value : null;
-    const posCard = document.getElementById('position-card');
-    const posContent = document.getElementById('position-content');
-    if (pos && pos.side) {
-      posCard.classList.add('position-open');
-      const pnlUSD = pos.side === 'long'
-        ? (pos.currentPrice - pos.entryPrice) * pos.quantity
-        : (pos.entryPrice - pos.currentPrice) * pos.quantity;
-      posContent.innerHTML = `
-        <div class="stat"><span class="stat-label">Side</span><span class="stat-value ${pos.side === 'long' ? 'state-bull' : 'state-bear'}">${pos.side.toUpperCase()}</span></div>
-        <div class="stat"><span class="stat-label">Entry price</span><span class="stat-value">${fmt(pos.entryPrice)}</span></div>
-        <div class="stat"><span class="stat-label">Size</span><span class="stat-value">${fmt(pos.sizeUSD)}</span></div>
-        <div class="stat"><span class="stat-label">Quantity</span><span class="stat-value">${pos.quantity}</span></div>
-        <div class="stat"><span class="stat-label">Opened</span><span class="stat-value">${new Date(pos.openedAt).toLocaleString()}</span></div>
-      `;
-    } else {
-      posCard.classList.remove('position-open');
-      posContent.innerHTML = '<div class="no-data">No open position</div>';
-    }
-
-    // Performance from log
-    if (logText.status === 'fulfilled') {
-      const log = logText.value;
-      const exits = log.trades.filter(t => t.type === 'exit' && t.orderPlaced);
-      const wins = exits.filter(e => e.pnlUSD > 0).length;
-      const totalPnl = exits.reduce((s, e) => s + e.pnlUSD, 0);
-      const wr = exits.length > 0 ? (wins / exits.length * 100).toFixed(1) + '%' : '—';
-      document.getElementById('total-pnl').innerHTML = `<span class="${pnlClass(totalPnl)}">${exits.length ? fmt(totalPnl) : '—'}</span>`;
-      document.getElementById('win-rate').textContent = wr;
-      document.getElementById('trades-closed').textContent = exits.length;
-    }
-
-    // Trades CSV
-    if (csvText.status === 'fulfilled') {
-      const lines = csvText.value.trim().split('\n').filter(l => l && !l.includes('NOTE'));
-      const rows = lines.slice(1).reverse().slice(0, 15);
-      if (rows.length === 0) {
-        document.getElementById('trades-content').innerHTML = '<div class="no-data">No trades yet</div>';
-      } else {
-        const trs = rows.map(line => {
-          const c = line.split(',');
-          const mode = (c[11] || '').trim();
-          const notes = (c[12] || '').replace(/^"|"$/g, '');
-          const side = c[4] || '';
-          const price = c[6] ? '$' + parseFloat(c[6]).toFixed(2) : '—';
-          const total = c[7] ? '$' + parseFloat(c[7]).toFixed(2) : '—';
-          return `<tr>
-            <td>${c[0] || ''} ${c[1] || ''}</td>
-            <td><strong class="${side === 'BUY' ? 'pos' : side === 'SELL' ? 'neg' : ''}">${side || '—'}</strong></td>
-            <td>${price}</td>
-            <td>${total}</td>
-            <td class="mode-${mode.toLowerCase()}">${mode}</td>
-            <td style="color:#475569;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${notes}</td>
-          </tr>`;
-        }).join('');
-        document.getElementById('trades-content').innerHTML = `
-          <table>
-            <tr><th>Date / Time</th><th>Side</th><th>Price</th><th>Total</th><th>Mode</th><th>Notes</th></tr>
-            ${trs}
-          </table>`;
-      }
-    }
-
-    document.getElementById('last-updated').textContent = 'Last updated: ' + new Date().toLocaleTimeString();
-  } catch (err) {
-    console.error(err);
-  }
-}
-
-refresh();
-setInterval(refresh, 30000);
-</script>
-</body>
-</html>
+</body></html>
