@@ -1,1 +1,11 @@
-null
+{
+  "side": "short",
+  "entryPrice": 74.43,
+  "quantity": 13.854775,
+  "sizeUSD": 1031.21090325,
+  "stopLossPrice": 74.69928571428572,
+  "openedAt": "2026-07-27T22:50:37.562Z",
+  "orderId": "PAPER-1785192637562",
+  "stopOrderId": null,
+  "pyramided": 0
+}
