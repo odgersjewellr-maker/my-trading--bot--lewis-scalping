@@ -90,6 +90,52 @@ it holds on both session definitions.
 
 ---
 
+## 3b. When does it turn — and is it the same time each day?
+
+Short answer: **yes, roughly — the turn clusters at the US cash open (~13:00–14:00
+UTC ≈ 09:30 New York), and up-days and down-days turn at about the same time.**
+But it's an hour-wide *window*, not a set-your-watch minute.
+
+Two ways to see it:
+
+- **Where the fade bottoms (win-rate).** The share of days offside vs London is
+  greatest in the first 1–2 h after the NY open (continuation troughs 47.5 % at
+  +2h). The trough clock-time barely moves when you shift the London definition —
+  both the 07:00 and 08:00 clocks bottom around **13:00–14:00 UTC** — which is why
+  it looks *clock-anchored to the US open* rather than tied to "N hours after
+  London."
+- **The average price path (artifact-free).** Direction-adjusted mean move vs the
+  NY-open price, per 30 min (2019+):
+
+  | UTC | 12:00 | 12:30 | 13:30 | 14:00 | 15:00 | 16:30 | 18:00 | 19:30 |
+  |---|---|---|---|---|---|---|---|---|
+  | mean move | +0.01 % | +0.03 % | +0.04 % | +0.06 % | +0.06 % | +0.09 % | +0.10 % | **+0.11 %** |
+
+  The *mean* dips only marginally at the open (the fade is a lot of small red days,
+  not a big average drop) and then **grinds in London's direction all afternoon**,
+  strongest into the US close (~19:00–20:00 UTC). So the picture isn't a symmetric
+  V that rolls back over — it's **"small shake-out near the US open, then trend
+  into the close."**
+
+**Symmetry.** Up-days (turn = the NY low) and down-days (turn = the NY high) reach
+that counter-extreme at essentially the same clock: median **14.2 vs 14.8 UTC**.
+The *mechanism* is mirror-image; only the *reliability* is asymmetric (the long
+side is better, per §5).
+
+**Is there a precise "it turns now" trigger? No.** Per-day turn times are spread
+across the US morning, and the popular *stop-run* tell — the counter-move first
+sweeping the London high/low — happens on only **37 %** of days and, when it does,
+the London direction resumes **75.6 %** of the time vs **78.7 %** on non-sweep days.
+i.e. the sweep is a common *entry location*, not a predictive signal. **The clock
+(US open) is the indication; there is no magic per-candle tell.**
+
+**How to use it:** treat **~13:00–14:30 UTC (09:00–10:30 New York)** as the window
+where the early fade exhausts and London's direction tends to resume. Let that
+shake-out happen, position in London's direction *after* it, and hold toward the
+US close where continuation is strongest — rather than chasing at the open.
+
+---
+
 ## 4. The honesty check: a >50 % win rate here is *not* free money
 
 Winning slightly more than half the time only pays if your winners aren't smaller
