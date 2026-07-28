@@ -21,9 +21,11 @@
  *              given, results are also split news vs non-news.
  * Env: RVOL_END (13.5), RVOL_LOOKBACK (20), RVOL_HI (1.2), RVOL_LO (0.8).
  *
- * Verdict (BTC 2019+): LONG side (buy after a red London) is the standout; filters
- * test whether restricting to high-participation days lifts it. Needs 1-min data
- * WITH a volume column. See docs/research/london-ny-direction.md.
+ * We enter WITH London's direction on the reclaim, so: D<0 = red/down London =>
+ * SHORT the failed bounce; D>0 = green/up London => LONG the failed dip.
+ * Verdict (BTC 2019+): the SHORT side (sell after a red London) is the standout;
+ * filters test whether restricting to high-participation days lifts it. Needs 1-min
+ * data WITH a volume column. See docs/research/london-ny-direction.md.
  */
 import fs from "fs";import zlib from "zlib";import readline from "readline";
 const FILE=process.argv[2];
@@ -111,18 +113,24 @@ function line(label,rs){ if(rs.length<20){console.log(`   ${label.padEnd(30)} n=
   const e=expec(rs,'rClose'); console.log(`   ${label.padEnd(30)} n=${String(rs.length).padStart(4)}  win ${pct(e.win).padStart(6)}  avgR ${e.avgR>=0?'+':''}${e.avgR.toFixed(2)}  PF ${e.pf.toFixed(2)}`);}
 
 function report(){
-  const longs=trades.filter(t=>t.D<0), withRV=trades.filter(t=>t.rvol!=null);
+  const reds=trades.filter(t=>t.D<0), greens=trades.filter(t=>t.D>0), withRV=trades.filter(t=>t.rvol!=null);
   console.log(`=== SWEEP + RECLAIM with PARTICIPATION FILTERS [2019+] (stop→close, R units) ===`);
+  console.log(`   enter WITH London's dir on the reclaim: D<0 red/down London => SHORT; D>0 green/up London => LONG.`);
   console.log(`   fires ${trades.length} days | ${withRV.length} have RVol history | median risk ${pct(med(trades.map(t=>t.risk)))} | RVol window ${NY_OPEN}:00-${RVOL_END}:00 UTC\n`);
-  console.log(`  -- baseline --`);
+  console.log(`  -- baseline by side --`);
   line("ALL sweep+reclaim",trades);
-  line("LONG (buy, red London)",longs);
-  line("SHORT (sell, green London)",trades.filter(t=>t.D>0));
+  line("SELL after RED London (D<0)",reds);
+  line("BUY  after GREEN London (D>0)",greens);
+  console.log(`\n  -- per-year (stop→close avgR / win), robustness of each side --`);
+  for(let y=2019;y<=2024;y++){const ry=reds.filter(t=>t.year===y),gy=greens.filter(t=>t.year===y);
+    if(ry.length+gy.length<10)continue;
+    const er=ry.length?expec(ry,'rClose'):null,eg=gy.length?expec(gy,'rClose'):null;
+    console.log(`   ${y}:  SELL/red  n=${String(ry.length).padStart(3)} avgR ${er?(er.avgR>=0?'+':'')+er.avgR.toFixed(2):' n/a '} win ${er?pct(er.win):'  n/a'}  |  BUY/green n=${String(gy.length).padStart(3)} avgR ${eg?(eg.avgR>=0?'+':'')+eg.avgR.toFixed(2):' n/a '} win ${eg?pct(eg.win):'  n/a'}`);}
   console.log(`\n  -- RELATIVE VOLUME (opening ${NY_OPEN}:00-${RVOL_END}:00 vs trailing-${RVOL_LOOKBACK}d median) --`);
   line(`RVol HIGH (>=${RVOL_HI})  ALL`, withRV.filter(t=>t.rvol>=RVOL_HI));
   line(`RVol MID (${RVOL_LO}-${RVOL_HI})   ALL`, withRV.filter(t=>t.rvol>=RVOL_LO&&t.rvol<RVOL_HI));
   line(`RVol LOW (<${RVOL_LO})    ALL`, withRV.filter(t=>t.rvol<RVOL_LO));
-  line(`RVol HIGH (>=${RVOL_HI})  LONG`, withRV.filter(t=>t.rvol>=RVOL_HI&&t.D<0));
+  line(`RVol HIGH · SELL/red side`, withRV.filter(t=>t.rvol>=RVOL_HI&&t.D<0));
   console.log(`\n  -- RANGE EXPANSION (opening range vs trailing-${RVOL_LOOKBACK}d median) --`);
   line("RangeExp HIGH (>=1.3) ALL", trades.filter(t=>t.rangeExp!=null&&t.rangeExp>=1.3));
   line("RangeExp LOW  (<1.0) ALL", trades.filter(t=>t.rangeExp!=null&&t.rangeExp<1.0));
@@ -130,9 +138,8 @@ function report(){
   line("NFP-proxy day  ALL", trades.filter(t=>t.nfp));
   line("non-NFP day    ALL", trades.filter(t=>!t.nfp));
   if(NEWS){ line("NEWS_CSV day   ALL", trades.filter(t=>t.news)); line("non-news day   ALL", trades.filter(t=>t.news===false)); }
-  console.log(`\n  -- STACKED (the prediction: participation concentrates the edge) --`);
-  line("LONG + RVol HIGH", withRV.filter(t=>t.D<0&&t.rvol>=RVOL_HI));
-  line("LONG + RVol HIGH + RangeExp>=1.2", withRV.filter(t=>t.D<0&&t.rvol>=RVOL_HI&&t.rangeExp!=null&&t.rangeExp>=1.2));
+  console.log(`\n  -- STACKED (best filter) --`);
+  line("SELL/red + RVol HIGH", withRV.filter(t=>t.D<0&&t.rvol>=RVOL_HI));
   console.log(`\n   1R ≈ ${pct(med(trades.map(t=>t.risk)))}. avgR × risk ≈ gross %/trade; costs ~0.05-0.10% = 0.15-0.30R.`);
-  console.log(`   RVol/RangeExp use only pre-entry data (trailing median, opening window before typical ${((t)=>String(Math.floor(t)).padStart(2,'0')+':'+String(Math.round((t%1)*60)).padStart(2,'0'))(med(trades.map(t=>t.entT)))} entry).`);
+  console.log(`   RVol/RangeExp use only pre-entry data (trailing median + opening window before the typical ${((t)=>String(Math.floor(t)).padStart(2,'0')+':'+String(Math.round((t%1)*60)).padStart(2,'0'))(med(trades.map(t=>t.entT)))} entry).`);
 }

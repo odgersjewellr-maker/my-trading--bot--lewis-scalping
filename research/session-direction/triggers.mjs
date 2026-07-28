@@ -10,10 +10,10 @@
  * clock baselines.
  *
  *   node triggers.mjs <ohlcv-minute.csv[.gz]>
- *   LONG_ONLY=1 node triggers.mjs data.csv.gz   # only down-London (=buy) days
+ *   RED_ONLY=1 node triggers.mjs data.csv.gz   # only red/down-London days (D<0)
  *
  * Env: GATE_LO/GATE_HI (entry window UTC, def 12.5/18), STOP/TGT (bracket, def
- * 0.010/0.020), LONG_ONLY (def 0). Needs 1-minute data with a volume column
+ * 0.010/0.020), RED_ONLY (def 0). Needs 1-minute data with a volume column
  * (VWAP trigger). Verdict: momentum/breakout triggers don't beat entering at the
  * open; "London sweep + reclaim" (T3) does — see sweep-reclaim.mjs for the deep-dive.
  */
@@ -22,7 +22,7 @@ const FILE=process.argv[2];
 const L_OPEN=7, NY_OPEN=12, NY_END=20;
 const GATE_LO=+(process.env.GATE_LO??12.5), GATE_HI=+(process.env.GATE_HI??18.0); // when entries allowed (UTC)
 const STOP=+(process.env.STOP??0.010), TGT=+(process.env.TGT??0.020);            // bracket
-const LONG_ONLY=(process.env.LONG_ONLY??"0")==="1";                              // restrict to buy-after-red-London
+const RED_ONLY=(process.env.RED_ONLY??process.env.LONG_ONLY??"0")==="1";         // restrict to red/down-London days (D<0); entering WITH dir = SHORT
 function makeStream(p){const r=fs.createReadStream(p);return p.endsWith(".gz")?r.pipe(zlib.createGunzip()):r;}
 let header=null,iTs,iO,iH,iL,iC,iV;
 function detect(c){const l=c.map(x=>x.trim().toLowerCase());const f=(...n)=>l.findIndex(x=>n.includes(x));iTs=f("timestamp","time","date");iO=f("open");iH=f("high");iL=f("low");iC=f("close");iV=f("volume","vol");}
@@ -57,7 +57,7 @@ function finalize(){
   const {dow,lOpen,lHigh,lLow,boundary,mins}=day;
   if(dow===0||dow===6||lOpen===null||boundary===null||mins.length<120)return;
   const D=sign(boundary-lOpen); if(D===0)return;
-  if(LONG_ONLY && D>0)return; // keep only down-London (=buy) days
+  if(RED_ONLY && D>0)return; // keep only red/down-London days (D<0); entering with dir = SHORT
   const gate=i=>mins[i].clock>=GATE_LO&&mins[i].clock<GATE_HI;
 
   // cumulative NY VWAP
@@ -127,7 +127,7 @@ rl.on("close",()=>{finalize();report();});
 
 function report(){
   const base=R["B0 enter@NYopen(12:00)"].ret.length;
-  console.log(`=== TRIGGER LAB — resume London's direction in NY  [2019+, ${LONG_ONLY?"DOWN-London/BUY only":"all days"}] ===`);
+  console.log(`=== TRIGGER LAB — resume London's direction in NY  [2019+, ${RED_ONLY?"red/down-London only (D<0, short)":"all days"}] ===`);
   console.log(`   universe: ${base} days | bracket stop ${pct(STOP)} / target ${pct(TGT)} | entries ${GATE_LO}:00-${GATE_HI}:00 UTC\n`);
   console.log(`   trigger                        cover  close-exit:win  avg   PF  | bracket:win  avg   PF  | entT`);
   const order=Object.keys(R);

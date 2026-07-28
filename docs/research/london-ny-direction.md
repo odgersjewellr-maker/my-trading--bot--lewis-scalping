@@ -221,22 +221,29 @@ run to the close (2019+, median 1R ≈ 0.33 %; `sweep-reclaim.mjs`):
 | Sweep + reclaim, stop→close | Trades | Win | Avg R | PF |
 |---|---|---|---|---|
 | All | 568 | 26 % | +0.46 | 1.64 |
-| **Long (buy after red London)** | **291** | **29 %** | **+0.74** | **2.08** |
-| Short (sell after green London) | 277 | 23 % | +0.16 | 1.21 |
+| **SELL after a red London** (D<0) | **291** | **29 %** | **+0.74** | **2.08** |
+| Buy after a green London (D>0) | 277 | 23 % | +0.16 | 1.21 |
 
-Positive in **5 of 6 years** (only 2022 flat). It's a low-win-rate, let-winners-run
-profile — losers cap at −1R, winners run multi-R into the US close — and the **long
-side is the one to trade** (short is weak; long bias again).
+> **Direction — read carefully.** We enter *with* London's direction on the reclaim,
+> so a **red/down London day is a SHORT** (price sweeps the London *high*, fails, and
+> resumes down) and a green day is a long. This is a *different, later* trade from the
+> §5 fade (which *buys* the early NY-open dip) — don't conflate them.
+
+The **sell/red side is the one with the edge** (PF 2.08); the buy/green side is weak
+(1.21). But be honest about the shape — it's **lumpy and year-dependent**. Per-year
+avgR on the sell side is +0.09 / +0.27 / **+2.16** / −0.09 / +0.71 / **+1.69**
+(2019→2024): positive in 5 of 6 years but *carried by 2021 and 2024*, and 2022 was
+its worst. Treat "PF 2" as a fat-tailed average, not a steady wage.
 
 **Caveats that bite here:** the stop is tight (~0.33 % = 1R), so a ~0.05–0.10 %
-round-trip cost is **0.15–0.30 R** — the *all* set gets thin after fees, the *long*
+round-trip cost is **0.15–0.30 R** — the *all* set gets thin after fees, the *sell/red*
 set keeps room. The fat right tail leans on trend days, so expect droughts and
 occasional big winners, not a smooth curve.
 
 **Bottom line on triggers:** there is no per-candle "it turns now" signal. The
 tradeable structure is *sweep of the London range near the US open → reclaim →
-enter with London's direction (long side) → stop beyond the wick → hold toward the
-close.*
+enter with London's direction (the sell/red side has the edge) → stop beyond the wick
+→ manage the exit (see §5e).*
 
 ---
 
@@ -254,11 +261,11 @@ volume vs its trailing-20-day median, known before the ~14:30 entry
 | **RVol ≥ 1.2× (high volume)** | 175 | 32 % | +0.78 | **2.21** |
 | RVol 0.8–1.2× | 133 | 26 % | +0.22 | 1.30 |
 | RVol < 0.8× (quiet) | 254 | 23 % | +0.39 | 1.52 |
-| **Long + RVol ≥ 1.2×** | 90 | 33 % | +0.81 | **2.30** |
+| **Sell/red + RVol ≥ 1.2×** | 90 | 33 % | +0.81 | **2.30** |
 
 **Prediction confirmed:** high relative-volume days lift the edge — PF 1.64 → 2.21
-(all), long side 2.08 → 2.30, win rate up to 33 %. Best clean filter = *long side on
-a high-volume day.*
+(all), sell/red side 2.08 → 2.30, win rate up to 33 %. Best clean filter = *the
+sell/red side on a high-volume day.*
 
 Two honest wrinkles:
 - **Volume helps; raw range doesn't.** A range-expansion filter (wide opening
@@ -270,10 +277,41 @@ Two honest wrinkles:
   suggestive, underpowered. A real econ calendar via `NEWS_CSV=…` would test
   FOMC/CPI/NFP properly; the hook is built into the script.
 
-Caveats: filtered samples are smaller (n ≈ 90 for long + high-vol, ~15/yr) so guard
-against overfitting — though the lift matches theory, which lends credibility. 1R is
-still ~0.33 %, so costs remain a real bite. RVol uses only pre-entry data (trailing
-median + opening window before the typical entry).
+Caveats: filtered samples are smaller (n ≈ 90 for sell/red + high-vol, ~15/yr) so
+guard against overfitting — though the lift matches theory, which lends credibility.
+1R is still ~0.33 %, so costs remain a real bite. RVol uses only pre-entry data
+(trailing median + opening window before the typical entry).
+
+---
+
+## 5e. The win rate is a dial (the exit, not the entry)
+
+A ~29 % win rate isn't a weak edge — it's the **exit** we chose (*hold to close*),
+which maximises the average winner at the cost of win rate. On the *same* entries
+(sell/red side, n = 291), swapping the exit walks you along a win-rate/reward curve
+(`exit-lab.mjs`, gross, 2019+):
+
+| Exit policy | Win | No-loss | Avg R | PF |
+|---|---|---|---|---|
+| Hold to close *(current)* | 29 % | 29 % | +0.74 | 2.08 |
+| Target 1R | **58 %** | 58 % | +0.16 | 1.41 |
+| Target 1.5R | 50 % | 50 % | +0.22 | 1.45 |
+| **Scale ½ off at +1R, rest runs** | **58 %** | 58 % | +0.40 | 2.01 |
+| **Stop → breakeven after +1R** | 20 % | **58 %** | +0.64 | **2.61** |
+
+- **A fixed 1R target doubles the win rate (29 % → 58 %)** — but the average winner
+  shrinks from +0.74R to +0.16R and total expectancy falls. You didn't improve the
+  edge, you *moved along the curve.*
+- **Scale ½ off at +1R** is the sweet spot: ~58 % win *and* PF ~2.0 — you bank a
+  winner more than half the time while the other half keeps the fat tail.
+- **Stop → breakeven after +1R** takes a full loss only ~42 % of the time (58 %
+  no-loss) and keeps almost all the expectancy (PF 2.61) — best if it's the *losing*
+  that's hard to sit through.
+
+The lesson generalises: **win rate and average winner trade off; pick the point that
+matches your temperament, not the highest number.** A higher win rate here does not
+mean a better system — often a worse one after costs (target-1R nets ~+0.05 %/trade
+gross, barely above fees; hold-to-close and scale-out keep more).
 
 ---
 
@@ -301,14 +339,15 @@ median range (survives normal noise), with a 1–1.5× target.
   typical round-trip fee.
 
 **Do (highest-confidence first):**
-1. **Long the sweep-and-reclaim after a red London** (see §5c) — the sharpest
-   mechanical setup. Near the US open (~13:00–14:30 UTC) let price run the London
-   low and *reclaim* it, then go long; stop just under the swept wick (~0.3–0.5 %),
-   and let it run toward the US close rather than scalping a tight target. PF ~2
-   gross on the long side, best while price is above its 20-day trend. **Filter to
-   high relative-volume days** (opening volume ≥ ~1.2× its 20-day norm) — that lifts
-   it to PF ~2.3 (§5d); skip wide-range/trend days. Low win rate (~30 %) — it pays
-   through the trend-day winners, so size for the droughts.
+1. **Sell the sweep-and-reclaim after a *red* London** (see §5c) — the sharpest
+   mechanical setup (note: it's a **short**, entering *with* the down-London
+   direction). Near the US open (~13:00–14:30 UTC) let price run *above* the London
+   high and *reclaim* back below it, then go short; stop just above the swept wick
+   (~0.3–0.5 %). **Filter to high relative-volume days** (opening volume ≥ ~1.2× its
+   20-day norm) — lifts PF ~2.1 → ~2.3 (§5d); skip wide-range/trend days. Manage the
+   exit to taste (§5e): hold-to-close for max expectancy (~29 % win), or **scale ½
+   off at +1R** for a ~58 % win while keeping PF ~2.0. Caveat: the edge is lumpy
+   (carried by 2021 & 2024) and it's a short in a long-biased asset — size small.
 2. **Expect the NY-open trap.** If you *want* to trade London's direction, don't
    chase the open — wait out the first 1–2 h and enter the pullback; the move
    tends to reassert into the US afternoon (~53 % by 19:00 UTC).
