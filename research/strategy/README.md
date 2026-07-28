@@ -11,8 +11,26 @@ with a mild volatility cap. Roughly **halves buy-and-hold's drawdown** (−93 % 
 
 | File | What it does |
 |---|---|
-| `backtest.mjs` | Causal daily long/flat engine + strategy library (buy&hold, SMA200, MA-cross, Donchian, TSMOM, vol-target, ensemble, ensemble+vol-cap). Prints CAGR / MaxDD / Sharpe / Sortino / Calmar / win% / exposure / trades. Costs included. |
-| `compare.mjs` | Runs the flagship (`Ensemble+VolCap`) on two assets and a 50/50 portfolio; monthly/yearly win rates; writes `curves.json`. |
+| **`portfolio.mjs`** ⭐ | **The recommended strategy.** Multi-asset trend portfolio: per-coin trend ensemble → inverse-vol sleeves, gated by BTC's trend and a portfolio vol cap. Prints CAGR / MaxDD / Sharpe / Sortino / Calmar / **profit factor** / win rates. Modern-era +52% CAGR, −40% DD, PF ~3.0. |
+| `backtest.mjs` | Single-asset engine + strategy library (buy&hold, SMA200, MA-cross, Donchian, TSMOM, vol-target, ensemble, ensemble+vol-cap). CAGR / MaxDD / Sharpe / Sortino / Calmar / win% / exposure / trades. |
+| `compare.mjs` | Runs the single-asset flagship on two assets and a 50/50 portfolio; monthly/yearly win rates; writes `curves.json`. |
+
+## Recommended: the multi-asset portfolio
+
+```bash
+# fetch a basket of daily closes (CoinMetrics community, PriceUSD column):
+mkdir uni && for a in btc eth ltc xrp xlm xmr doge bch etc ada link bnb trx; do
+  curl -sL "https://raw.githubusercontent.com/coinmetrics/data/master/csv/$a.csv" \
+  | awk -F, 'NR==1{for(i=1;i<=NF;i++)if($i=="PriceUSD")p=i;if(!p)exit;print "Date,Close";next}$p+0>0{print substr($1,1,10)","$p}' > uni/$a.csv; done
+
+node research/strategy/portfolio.mjs uni 2020-01-01          # modern era
+VOL_CAP=0.30 node research/strategy/portfolio.mjs uni        # lower drawdown (risk dial)
+COST=0.003 node research/strategy/portfolio.mjs uni 2020-01-01   # stress costs
+```
+
+Env: `VOL_CAP` (portfolio vol target, the risk dial; 0=off), `BTC_GATE` (1=on),
+`SIG_TGT` (per-sleeve vol 0.20), `CAP` (max/name 0.35), `REBAL` (days, 5), `COST`.
+A `btc.csv` must be in the directory (for the BTC-beta gate).
 
 ## Get data (any `Date,Close` daily CSV)
 

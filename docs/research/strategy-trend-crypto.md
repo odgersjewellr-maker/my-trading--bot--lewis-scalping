@@ -1,10 +1,15 @@
-# A robust crypto strategy: trend-ensemble with a volatility cap
+# A robust crypto trend strategy — single-asset flagship & multi-asset portfolio
 
-*Full autonomy brief: "the best strategy you can make to profit the most with the
-lowest drawdown and the highest win rate."* Here it is — with the honest caveat that
-**those three goals fight each other**, so I optimised for the thing that actually
-compounds wealth safely: **risk-adjusted return (Sharpe / Calmar) and drawdown
-control**, and I report win rate straight (it's the weakest of the three — see §7).
+*Full autonomy brief: "the best strategy you can make — best profit factor, less
+drawdown, high return."* Here it is — with the honest caveat that profit, drawdown,
+and win rate **fight each other**, so I optimised for what compounds wealth safely:
+**risk-adjusted return (Sharpe / Calmar), drawdown control, and profit factor**, and
+report win rate straight (it's the weakest of the three — §7).
+
+> **Recommendation in one line:** the **multi-asset trend portfolio** (next section)
+> — 13 coins, per-asset trend + inverse-vol sizing, gated by BTC's trend and a
+> portfolio vol cap. Modern-era **+52 % CAGR, −40 % drawdown, Sharpe 1.29, monthly
+> profit factor ~3.0**. The single-asset version (§5) is the simpler building block.
 
 ## TL;DR — the recommendation
 
@@ -24,6 +29,55 @@ asset). It wins by **roughly halving the drawdown** while keeping a similar
 risk-adjusted return — turning a −93 % "can't-hold-it" ride into a ~−43 % one, and
 turning buy-and-hold's −73 %/−64 % *worst years* into −27 %/−23 %. That is what lets
 you size up, use leverage safely, or simply not capitulate at the bottom (§8).
+
+## 0. The upgrade — multi-asset portfolio (the actual recommendation)
+
+The single-asset version above is the building block. Running the *same* trend logic
+across a **basket of 13 large-caps** (BTC, ETH, LTC, XRP, XLM, XMR, DOGE, BCH, ETC,
+ADA, LINK, BNB, TRX) — with two portfolio-level de-risk overlays — is strictly better
+in the modern era: more return, less drawdown, higher profit factor.
+
+| Multi-asset portfolio | 2014+ | 2018+ | **2020+ (modern)** | single-asset flagship 2020+ |
+|---|---|---|---|---|
+| CAGR | +62 % | +37 % | **+52 %** | +36 % |
+| Max drawdown | −47 % | −49 % | **−40 %** | −50 % |
+| Sharpe | 1.44 | 1.01 | **1.29** | 1.06 |
+| Calmar | 1.31 | 0.75 | **1.30** | 0.71 |
+| **Monthly profit factor** | 3.41 | 2.50 | **3.07** | — |
+| Positive years | 69 % | 67 % | **71 %** | — |
+
+The portfolio beats the single-asset flagship on **every** axis in 2020+. The headline
+is the **monthly profit factor ≈ 3.0** — for every $1 of losing months it makes ~$3 of
+winning months. (The full-history +82 %/−76 % *raw* basket was inflated by a +7,148 %
+2017; the overlays and the modern-era rows are the honest go-forward picture.)
+
+**Why diversification alone failed — and what fixed it.** Naively spreading across 13
+coins made drawdown *worse* (−76 %): crypto correlations go to ~1 in a crash, so the
+whole basket dumps together — diversification deserts you exactly when you need it.
+Two **time-series** overlays are what actually control drawdown:
+- **BTC-beta gate** — scale the whole book by BTC's own trend vote. When the market
+  leader rolls below trend, stand aside. Alone: −76 % → −58 % at almost no return cost.
+- **Portfolio vol cap** — scale by `min(1, 0.40 / trailing-30d realized vol)`; reacts
+  fast when volatility spikes (crashes). Adds: −58 % → −47 % (−40 % in 2020+).
+
+**Robust, not curve-fit.** Holds from 10 → 30 bp costs (+52 %→+50 %), works with
+monthly rebalancing (+46 %/−43 %), and the vol cap is a clean risk *dial* (0.30 →
+−36 % DD; 0.50 → +56 % CAGR) with no knife-edge peak — same untuned params across
+2014+/2018+/2020+.
+
+**The rules (each day):**
+1. For every coin, the four trend votes of §5 → `base_i = ¼·(votes)`.
+2. Inverse-vol sleeve: `sleeve_i = base_i × min(0.35, 0.20 / annualVol_i)` (risk parity,
+   ≤ 35 % per name).
+3. Sum sleeves; if > 1 scale to 1 — no leverage; holds **cash** automatically when few
+   coins trend.
+4. **× BTC-beta gate** (BTC's base vote) **× vol cap** `min(1, 0.40 / realizedPortVol)`.
+5. Rebalance ~weekly (monthly also works). Long/flat, no shorting.
+
+Run it: `node research/strategy/portfolio.mjs <dir-of-Date,Close-csvs>`. Use this if you
+can hold a basket; use the single-asset flagship (§5) if you trade only one coin. The
+vol cap (`VOL_CAP` env) is your risk dial — lower it for less drawdown, raise it for
+more return.
 
 ## 1. Why this and not the intraday session stuff
 
