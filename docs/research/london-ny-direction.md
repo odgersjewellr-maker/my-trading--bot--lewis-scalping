@@ -240,6 +240,43 @@ close.*
 
 ---
 
+## 5d. Does high participation concentrate the edge? (volume filter)
+
+Prior art (Gao et al.'s intraday-momentum result; Zarattini's "stocks in play")
+predicts the edge should live on **high-participation days**. Testing that on the
+sweep + reclaim with a **relative-volume filter** — opening-window (12:00–13:30 UTC)
+volume vs its trailing-20-day median, known before the ~14:30 entry
+(`sweep-reclaim.mjs`, stop→close in R):
+
+| Subset | n | Win | Avg R | PF |
+|---|---|---|---|---|
+| baseline (all) | 568 | 26 % | +0.46 | 1.64 |
+| **RVol ≥ 1.2× (high volume)** | 175 | 32 % | +0.78 | **2.21** |
+| RVol 0.8–1.2× | 133 | 26 % | +0.22 | 1.30 |
+| RVol < 0.8× (quiet) | 254 | 23 % | +0.39 | 1.52 |
+| **Long + RVol ≥ 1.2×** | 90 | 33 % | +0.81 | **2.30** |
+
+**Prediction confirmed:** high relative-volume days lift the edge — PF 1.64 → 2.21
+(all), long side 2.08 → 2.30, win rate up to 33 %. Best clean filter = *long side on
+a high-volume day.*
+
+Two honest wrinkles:
+- **Volume helps; raw range doesn't.** A range-expansion filter (wide opening
+  range) *hurts* — PF 1.13 vs 1.85 for narrow-range days — because wide-range days
+  are trend/expansion days where the fade gets run over. We want a **liquid but
+  not-yet-exploded** day: high volume, *normal* range. (For a *reversal* setup it's
+  the liquidity that pays, not the volatility — a refinement of Gao's "volatile days".)
+- **NFP-proxy days** (first Friday, 8:30 ET jobs release) win 36 % but n = 28 —
+  suggestive, underpowered. A real econ calendar via `NEWS_CSV=…` would test
+  FOMC/CPI/NFP properly; the hook is built into the script.
+
+Caveats: filtered samples are smaller (n ≈ 90 for long + high-vol, ~15/yr) so guard
+against overfitting — though the lift matches theory, which lends credibility. 1R is
+still ~0.33 %, so costs remain a real bite. RVol uses only pre-entry data (trailing
+median + opening window before the typical entry).
+
+---
+
 ## 6. Volatility, for sizing (2019+)
 
 | Metric | Mean | Median |
@@ -268,8 +305,10 @@ median range (survives normal noise), with a 1–1.5× target.
    mechanical setup. Near the US open (~13:00–14:30 UTC) let price run the London
    low and *reclaim* it, then go long; stop just under the swept wick (~0.3–0.5 %),
    and let it run toward the US close rather than scalping a tight target. PF ~2
-   gross on the long side, best while price is above its 20-day trend. Low win
-   rate (~30 %) — it pays through the trend-day winners, so size for the droughts.
+   gross on the long side, best while price is above its 20-day trend. **Filter to
+   high relative-volume days** (opening volume ≥ ~1.2× its 20-day norm) — that lifts
+   it to PF ~2.3 (§5d); skip wide-range/trend days. Low win rate (~30 %) — it pays
+   through the trend-day winners, so size for the droughts.
 2. **Expect the NY-open trap.** If you *want* to trade London's direction, don't
    chase the open — wait out the first 1–2 h and enter the pullback; the move
    tends to reassert into the US afternoon (~53 % by 19:00 UTC).

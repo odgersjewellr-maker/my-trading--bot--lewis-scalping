@@ -25,6 +25,21 @@ P&L — use this as a filter, not a trigger.
 > The trigger scripts need **minute** data, not hourly. Grab the public Bitstamp
 > set (option B below) or fetch 1-minute klines: `node fetch-hourly.js BTCUSDT 1m 2019-01-01`.
 
+**`sweep-reclaim.mjs` participation filters** (splits the setup by how active the day
+is — the edge concentrates on high relative-volume days, §5d of the write-up):
+
+```bash
+node sweep-reclaim.mjs btcusd_1min.csv.gz                 # baseline + RVol/range/NFP splits
+NEWS_CSV=us-macro-dates.csv node sweep-reclaim.mjs data.gz  # add a real econ calendar
+```
+
+| Var | Default | Meaning |
+|---|---|---|
+| `RVOL_END` | `13.5` | end (UTC) of the opening volume window used for Relative Volume |
+| `RVOL_LOOKBACK` | `20` | trailing weekdays for the RVol / range baselines |
+| `RVOL_HI` / `RVOL_LO` | `1.2` / `0.8` | high / low RVol bucket thresholds |
+| `NEWS_CSV` | — | optional file with `YYYY-MM-DD` event dates (FOMC/CPI/NFP); adds a news-day split. Without it, a first-Friday **NFP proxy** is used. |
+
 ## Run it
 
 ```bash
