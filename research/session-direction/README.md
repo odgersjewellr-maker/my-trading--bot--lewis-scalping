@@ -17,8 +17,13 @@ P&L — use this as a filter, not a trigger.
 | File | What it does |
 |---|---|
 | `analyze.mjs` | The study. Reads an OHLCV CSV (1-min or 1-h, plain or `.gz`), prints the report, writes `session-direction-results.{json,txt}`. Zero dependencies. |
+| `triggers.mjs` | Entry-trigger lab: compares VWAP-reclaim, opening-range break, NY-open reclaim, and London sweep+reclaim vs naive baselines. Needs **1-minute** data (with volume). |
+| `sweep-reclaim.mjs` | Deep-dive on the winning trigger (London sweep + reclaim) with a structural stop; per-year + long/short. Needs 1-minute data. |
 | `fetch-hourly.js` | Pulls hourly candles from Binance to `<SYMBOL>-<INTERVAL>.csv` (run where Binance is reachable — your machine / Railway). |
 | `session-direction-results.json` | Committed output from the BTC/USD 2012–2025 run, for reference. |
+
+> The trigger scripts need **minute** data, not hourly. Grab the public Bitstamp
+> set (option B below) or fetch 1-minute klines: `node fetch-hourly.js BTCUSDT 1m 2019-01-01`.
 
 ## Run it
 

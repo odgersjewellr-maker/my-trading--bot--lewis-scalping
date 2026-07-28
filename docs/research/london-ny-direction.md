@@ -194,6 +194,52 @@ end.
 
 ---
 
+## 5c. Timing the entry: which trigger?
+
+If the resumption clusters at the US open, can a *trigger* beat simply entering at
+the open? I tested several (BTC 2019+, enter in London's direction, scored both
+held-to-close and on a fixed 1 %/2 % bracket — `triggers.mjs`):
+
+| Trigger (all days) | Fires | Win (to close) | Avg | PF | Median entry |
+|---|---|---|---|---|---|
+| enter @ NY open *(baseline)* | 100 % | 52.5 % | +0.11 % | 1.16 | 12:00 |
+| VWAP reclaim | 99 % | 52.1 % | +0.09 % | 1.13 | 12:31 |
+| NY-open reclaim | 87 % | 51.8 % | +0.10 % | 1.16 | 12:33 |
+| Opening-range break (NY / US) | ~80 % | ~49 % | +0.02 % | 1.03 | 13:00–14:20 |
+| **London sweep + reclaim** | **37 %** | **52.6 %** | **+0.17 %** | **1.30** | **14:27** |
+
+- **Momentum / breakout triggers don't help.** VWAP-reclaim and NY-open-reclaim ≈
+  the baseline; opening-range breakouts are *worse* (you buy the high).
+- **Only sweep + reclaim beats it:** let price run the London high/low (a stop
+  grab), wait for it to close back inside the range, and enter on that reclaim.
+  It's selective (37 % of days) and its median entry — **14:27 UTC** — lands
+  squarely in the US-open window §3b flagged.
+
+Traded the natural way — structural stop just beyond the swept wick, let winners
+run to the close (2019+, median 1R ≈ 0.33 %; `sweep-reclaim.mjs`):
+
+| Sweep + reclaim, stop→close | Trades | Win | Avg R | PF |
+|---|---|---|---|---|
+| All | 568 | 26 % | +0.46 | 1.64 |
+| **Long (buy after red London)** | **291** | **29 %** | **+0.74** | **2.08** |
+| Short (sell after green London) | 277 | 23 % | +0.16 | 1.21 |
+
+Positive in **5 of 6 years** (only 2022 flat). It's a low-win-rate, let-winners-run
+profile — losers cap at −1R, winners run multi-R into the US close — and the **long
+side is the one to trade** (short is weak; long bias again).
+
+**Caveats that bite here:** the stop is tight (~0.33 % = 1R), so a ~0.05–0.10 %
+round-trip cost is **0.15–0.30 R** — the *all* set gets thin after fees, the *long*
+set keeps room. The fat right tail leans on trend days, so expect droughts and
+occasional big winners, not a smooth curve.
+
+**Bottom line on triggers:** there is no per-candle "it turns now" signal. The
+tradeable structure is *sweep of the London range near the US open → reclaim →
+enter with London's direction (long side) → stop beyond the wick → hold toward the
+close.*
+
+---
+
 ## 6. Volatility, for sizing (2019+)
 
 | Metric | Mean | Median |
@@ -218,9 +264,12 @@ median range (survives normal noise), with a 1–1.5× target.
   typical round-trip fee.
 
 **Do (highest-confidence first):**
-1. **Long the NY-open dip after a down London** — the one robustly positive
-   mechanical setup (~54 %). Best when price is still above its 20-day trend.
-   Stop ~1.3–1.8 %, first target the London-open price / +1 %.
+1. **Long the sweep-and-reclaim after a red London** (see §5c) — the sharpest
+   mechanical setup. Near the US open (~13:00–14:30 UTC) let price run the London
+   low and *reclaim* it, then go long; stop just under the swept wick (~0.3–0.5 %),
+   and let it run toward the US close rather than scalping a tight target. PF ~2
+   gross on the long side, best while price is above its 20-day trend. Low win
+   rate (~30 %) — it pays through the trend-day winners, so size for the droughts.
 2. **Expect the NY-open trap.** If you *want* to trade London's direction, don't
    chase the open — wait out the first 1–2 h and enter the pullback; the move
    tends to reassert into the US afternoon (~53 % by 19:00 UTC).
@@ -262,6 +311,10 @@ node research/session-direction/fetch-hourly.js SOLUSDT
 # 2. run the study (session hours overridable via env)
 node research/session-direction/analyze.mjs BTCUSDT-1h.csv
 L_OPEN=8 NY_OPEN=13 NY_END=21 node research/session-direction/analyze.mjs SOLUSDT-1h.csv
+
+# 3. entry-trigger research (needs 1-minute data with a volume column)
+node research/session-direction/triggers.mjs      btcusd_1min.csv.gz   # compare triggers
+node research/session-direction/sweep-reclaim.mjs btcusd_1min.csv.gz   # deep-dive the winner
 ```
 
 Everything above was produced by the same script; the raw output is committed as
