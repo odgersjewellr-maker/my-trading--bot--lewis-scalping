@@ -1,0 +1,340 @@
+<title>London → New York: does the session direction continue?</title>
+<style>
+  :root{
+    --ground:#EEF1F5; --surface:#FFFFFF; --surface-2:#F6F8FA;
+    --ink:#161C28; --muted:#586374; --faint:#8A94A3; --hair:#E1E6EC;
+    --accent:#C7891F; --accent-ink:#946213;
+    --pos:#1F9E8C; --neg:#D8524C; --posw:#1F9E8C22; --negw:#D8524C1f;
+    --ref:#98A2B2;
+    --chart-surface:#FFFFFF;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --ground:#0C121C; --surface:#151D2B; --surface-2:#111927;
+      --ink:#E7ECF3; --muted:#95A1B4; --faint:#657188; --hair:#243043;
+      --accent:#E0A94A; --accent-ink:#E0A94A;
+      --pos:#2FA48F; --neg:#E0605A; --posw:#2FA48F26; --negw:#E0605A22;
+      --ref:#5C6880; --chart-surface:#151D2B;
+    }
+  }
+  :root[data-theme="light"]{
+    --ground:#EEF1F5; --surface:#FFFFFF; --surface-2:#F6F8FA;
+    --ink:#161C28; --muted:#586374; --faint:#8A94A3; --hair:#E1E6EC;
+    --accent:#C7891F; --accent-ink:#946213;
+    --pos:#1F9E8C; --neg:#D8524C; --posw:#1F9E8C22; --negw:#D8524C1f; --ref:#98A2B2;
+    --chart-surface:#FFFFFF;
+  }
+  :root[data-theme="dark"]{
+    --ground:#0C121C; --surface:#151D2B; --surface-2:#111927;
+    --ink:#E7ECF3; --muted:#95A1B4; --faint:#657188; --hair:#243043;
+    --accent:#E0A94A; --accent-ink:#E0A94A;
+    --pos:#2FA48F; --neg:#E0605A; --posw:#2FA48F26; --negw:#E0605A22; --ref:#5C6880;
+    --chart-surface:#151D2B;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
+    line-height:1.55;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+  .wrap{max-width:940px;margin:0 auto;padding:clamp(20px,5vw,64px) clamp(16px,4vw,40px) 80px}
+  .mono{font-family:var(--mono)}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--accent-ink);font-weight:600}
+  h1{font-size:clamp(28px,5.2vw,46px);line-height:1.06;letter-spacing:-.02em;font-weight:800;
+    text-wrap:balance;margin:.5em 0 .3em}
+  h2{font-size:clamp(19px,3vw,24px);letter-spacing:-.01em;font-weight:750;margin:0 0 4px;text-wrap:balance}
+  .lede{font-size:clamp(16px,2.2vw,18.5px);color:var(--muted);max-width:64ch;margin:.2em 0 0}
+  .lede b{color:var(--ink);font-weight:650}
+  a{color:var(--accent-ink)}
+  /* meta chips */
+  .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+  .chip{font-family:var(--mono);font-size:12px;color:var(--muted);background:var(--surface);
+    border:1px solid var(--hair);border-radius:999px;padding:5px 11px}
+  .chip b{color:var(--ink);font-weight:600}
+  /* session timeline strip */
+  .rail{margin:26px 0 8px;background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:16px 18px 14px}
+  .rail-track{position:relative;height:34px;border-radius:8px;overflow:hidden;display:flex;
+    background:var(--surface-2);border:1px solid var(--hair)}
+  .seg{display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11.5px;
+    font-weight:600;letter-spacing:.03em;color:var(--ink)}
+  .seg.pre{flex:2;color:var(--faint)}
+  .seg.lon{flex:5;background:linear-gradient(var(--posw),var(--posw));color:var(--muted);border-left:1px solid var(--hair)}
+  .seg.ny{flex:8;background:linear-gradient(var(--accent) 0 0);background-color:transparent;
+    background-image:repeating-linear-gradient(45deg,transparent 0 6px,var(--negw) 6px 12px);
+    color:var(--muted);border-left:2px solid var(--accent)}
+  .rail-ticks{display:flex;justify-content:space-between;margin-top:7px;font-family:var(--mono);
+    font-size:11px;color:var(--faint)}
+  .rail-cap{font-size:12.5px;color:var(--muted);margin-top:10px}
+  .rail-cap b{color:var(--ink);font-weight:600}
+  /* stat tiles */
+  .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:30px 0 8px}
+  @media(max-width:720px){.tiles{grid-template-columns:repeat(2,1fr)}}
+  .tile{background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:16px 15px 14px;
+    display:flex;flex-direction:column;gap:3px}
+  .tile .k{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+  .tile .v{font-family:var(--mono);font-size:clamp(26px,4.4vw,33px);font-weight:600;letter-spacing:-.01em;line-height:1.05}
+  .tile .s{font-size:12.5px;color:var(--muted);line-height:1.35}
+  .v.pos{color:var(--pos)} .v.neg{color:var(--neg)} .v.acc{color:var(--accent-ink)}
+  .stripe{height:3px;border-radius:3px;margin-bottom:11px}
+  .stripe.pos{background:var(--pos)} .stripe.neg{background:var(--neg)}
+  .stripe.acc{background:var(--accent)} .stripe.mut{background:var(--ref)}
+  /* section */
+  section{margin-top:44px}
+  .sub{color:var(--muted);font-size:14.5px;margin:2px 0 0;max-width:70ch}
+  .card{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:20px clamp(14px,2.5vw,24px);margin-top:16px}
+  .figwrap{overflow-x:auto}
+  figcaption{font-size:12.5px;color:var(--faint);font-family:var(--mono);margin-top:12px;text-align:center}
+  /* chart */
+  .chart-hold{position:relative}
+  svg{display:block;width:100%;height:auto}
+  .gridline{stroke:var(--hair);stroke-width:1}
+  .refline{stroke:var(--ref);stroke-width:1.5;stroke-dasharray:5 5}
+  .axlabel{fill:var(--faint);font-family:var(--mono);font-size:11px}
+  .axtitle{fill:var(--muted);font-family:var(--mono);font-size:11px;letter-spacing:.04em}
+  .dline{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round}
+  .dot{stroke:var(--chart-surface);stroke-width:2}
+  .dlab{font-family:var(--mono);font-size:11px;font-weight:600;fill:var(--ink)}
+  .zonelab{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.04em}
+  .tip{position:absolute;pointer-events:none;opacity:0;transform:translate(-50%,-118%);
+    background:var(--ink);color:var(--ground);font-family:var(--mono);font-size:11.5px;
+    padding:7px 9px;border-radius:8px;white-space:nowrap;transition:opacity .1s;z-index:5;line-height:1.4}
+  .tip b{color:var(--surface)}
+  .crosshair{stroke:var(--faint);stroke-width:1;stroke-dasharray:3 3;opacity:0}
+  /* asym bars */
+  .bars{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:600px){.bars{grid-template-columns:1fr}}
+  .barcard{border:1px solid var(--hair);border-radius:13px;padding:15px 16px;background:var(--surface-2)}
+  .barcard .top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:12px}
+  .barcard .name{font-weight:700;font-size:15px}
+  .barcard .tag{font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:6px;font-weight:600}
+  .tag.buy{color:var(--pos);background:var(--posw)} .tag.sell{color:var(--neg);background:var(--negw)}
+  .track{height:26px;background:var(--surface);border:1px solid var(--hair);border-radius:7px;position:relative;overflow:hidden}
+  .fill{height:100%;border-radius:6px 0 0 6px;display:flex;align-items:center;padding-left:9px;
+    font-family:var(--mono);font-size:12px;font-weight:600;color:#fff}
+  .fill.pos{background:var(--pos)} .fill.neg{background:var(--neg)}
+  .mid{position:absolute;top:-3px;bottom:-3px;left:50%;width:1.5px;background:var(--ref)}
+  .barmeta{display:flex;justify-content:space-between;margin-top:9px;font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .barmeta b{color:var(--ink)}
+  /* callout */
+  .callout{border:1px solid var(--hair);border-left:3px solid var(--accent);background:var(--surface);
+    border-radius:0 13px 13px 0;padding:16px 20px;margin-top:16px}
+  .callout p{margin:0;color:var(--muted);font-size:14.5px}.callout b{color:var(--ink)}
+  /* playbook */
+  .play{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}
+  @media(max-width:640px){.play{grid-template-columns:1fr}}
+  .col{background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:6px 4px 10px}
+  .col h3{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;
+    padding:12px 16px 8px;margin:0;display:flex;align-items:center;gap:8px}
+  .col.do h3{color:var(--pos)} .col.dont h3{color:var(--neg)}
+  .col ul{list-style:none;margin:0;padding:0}
+  .col li{padding:9px 16px;border-top:1px solid var(--hair);font-size:14px;display:flex;gap:10px;align-items:flex-start}
+  .col li .m{font-family:var(--mono);flex:none;margin-top:1px}
+  .col.do li .m{color:var(--pos)} .col.dont li .m{color:var(--neg)}
+  .col li b{font-weight:650}
+  /* footer */
+  footer{margin-top:46px;padding-top:20px;border-top:1px solid var(--hair);color:var(--faint);font-size:13px}
+  footer .cav{color:var(--muted);max-width:74ch}
+  footer code{font-family:var(--mono);background:var(--surface-2);border:1px solid var(--hair);
+    padding:1px 6px;border-radius:5px;font-size:12px;color:var(--ink)}
+  .reduced *{transition:none!important}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Session research · BTC/USD · 2012–2025</div>
+    <h1>Does London's direction carry into New York?</h1>
+    <p class="lede">From the London open the market picks a way. The trader's
+      assumption is that New York keeps pushing it. Across <b>3,329 weekday
+      sessions</b> of minute data, that assumption is <b>barely better than a coin
+      flip</b> — and in the first two hours after the NY open it slightly
+      <b>reverses</b>. Here's the real shape, and the one asymmetry worth trading.</p>
+    <div class="meta">
+      <span class="chip">data&nbsp;<b>Bitstamp 1-min · 6.85M candles</b></span>
+      <span class="chip">London-led&nbsp;<b>07→12 UTC</b></span>
+      <span class="chip">New York&nbsp;<b>12→20 UTC</b></span>
+      <span class="chip">focus&nbsp;<b>2019–2025 · n=1,570</b></span>
+      <span class="chip">gross of fees</span>
+    </div>
+  </header>
+
+  <div class="rail" aria-label="The trading day, as analysed">
+    <div class="rail-track">
+      <div class="seg pre">Asia</div>
+      <div class="seg lon">◂ LONDON sets direction ▸</div>
+      <div class="seg ny">◂ NEW YORK — does it continue? ▸</div>
+    </div>
+    <div class="rail-ticks"><span>00:00</span><span>07:00 London</span><span>12:00 NY open</span><span>20:00 US close</span></div>
+    <p class="rail-cap"><b>Direction</b> = sign of the move from London open to NY open.
+      <b>Continuation</b> = does the NY window keep going that same way?</p>
+  </div>
+
+  <!-- headline tiles -->
+  <div class="tiles">
+    <div class="tile"><div class="stripe mut"></div><div class="k">Continues at NY close</div>
+      <div class="v">52.7%</div><div class="s">2019+. A coin flip — most of it is just BTC's upward drift.</div></div>
+    <div class="tile"><div class="stripe neg"></div><div class="k">First 2h after NY open</div>
+      <div class="v neg">47.5%</div><div class="s">Below 50% (z=−2.0): the move tends to <b>fade</b> the open.</div></div>
+    <div class="tile"><div class="stripe pos"></div><div class="k">Buy dip after red London</div>
+      <div class="v pos">53.5%</div><div class="s">The one robust edge — long-bias, not session magic.</div></div>
+    <div class="tile"><div class="stripe acc"></div><div class="k">Gross edge / trade</div>
+      <div class="v acc">~0.05%</div><div class="s">≈ one round-trip fee. Costs decide P&amp;L, not direction.</div></div>
+  </div>
+
+  <!-- DECAY CURVE -->
+  <section>
+    <h2>The shape: fade early, reassert late</h2>
+    <p class="sub">Probability that price is <em>still</em> going London's way, measured hour by hour
+      after the New York open (2019+). It dips below the coin-flip line right after the open, then
+      the original direction slowly comes back into the US afternoon.</p>
+    <div class="card">
+      <div class="figwrap"><figure style="margin:0">
+        <div class="chart-hold" id="chartHold">
+          <svg id="decay" viewBox="0 0 720 340" role="img"
+            aria-label="Continuation probability from 48.7% at +1h, dipping to 47.5% at +2h, rising to 53.2% at +7h.">
+          </svg>
+          <div class="tip" id="tip"></div>
+        </div>
+        <figcaption>P(still in London's direction) vs hours after NY open · dashed line = 50% coin flip</figcaption>
+      </figure></div>
+    </div>
+  </section>
+
+  <!-- ASYMMETRY -->
+  <section>
+    <h2>The one asymmetry: buy weakness, don't sell strength</h2>
+    <p class="sub">Split the NY-open reaction by which way London went (2019+, held 2h). Fading a
+      down-London — <b>buying</b> the dip — pays. Fading an up-London — <b>shorting</b> the rip — doesn't.
+      It's BTC's long bias, and it's stable across session definitions.</p>
+    <div class="card">
+      <div class="bars">
+        <div class="barcard">
+          <div class="top"><span class="name">London DOWN → buy the NY open</span><span class="tag buy">LONG</span></div>
+          <div class="track"><div class="fill pos" style="width:53.5%">53.5% win</div><div class="mid"></div></div>
+          <div class="barmeta"><span>profit factor <b>1.04</b></span><span>edge <b>positive</b></span></div>
+        </div>
+        <div class="barcard">
+          <div class="top"><span class="name">London UP → short the NY open</span><span class="tag sell">SHORT</span></div>
+          <div class="track"><div class="fill neg" style="width:51.3%">51.3% win</div><div class="mid"></div></div>
+          <div class="barmeta"><span>profit factor <b>0.75</b></span><span>edge <b>negative</b></span></div>
+        </div>
+      </div>
+      <p class="rail-cap" style="margin-top:14px">Vertical line = 50%. On the alternate 08:00/13:00 clock the buy
+        reads 55.6% / PF 1.08 and the short 50.2% / PF 0.90 — same verdict.</p>
+    </div>
+  </section>
+
+  <!-- HONESTY CALLOUT -->
+  <section>
+    <h2>Why "&gt;50%" isn't free money</h2>
+    <div class="callout"><p>The fade wins slightly more often, but each winner is <b>smaller</b> than
+      each loser (+0.54% vs −0.67% at +2h) — you clip small gains until a trend day runs you over.
+      Net <b>profit factor sits at ~0.9–1.2 gross</b>, and its sign flips between session definitions.
+      After ~<b>0.05–0.10% round-trip cost</b>, the naive "follow London" and "fade the open" trades are
+      both break-even to negative. This is a <b>filter</b>, not a trigger.</p></div>
+  </section>
+
+  <!-- PLAYBOOK -->
+  <section>
+    <h2>How to trade it</h2>
+    <p class="sub">Highest-confidence idea first. Everything here is context to stack with your own setups —
+      sized off a typical NY session (median range 2.6%, median net move ~1.0%).</p>
+    <div class="play">
+      <div class="col do">
+        <h3>◆ Do</h3>
+        <ul>
+          <li><span class="m">1</span><span><b>Long the NY-open dip after a down London</b> — the one robustly positive setup (~54%). Best while price is above its 20-day trend.</span></li>
+          <li><span class="m">2</span><span><b>Expect the open trap.</b> To trade London's way, wait out the first 1–2h and enter the pullback; it reasserts into the US afternoon (~53%).</span></li>
+          <li><span class="m">3</span><span><b>Use it as confluence.</b> Best continuation = London dir aligned with the 20-day trend <em>and</em> a ≥0.5% London push (~53–55%).</span></li>
+          <li><span class="m">4</span><span><b>Anchor to local clocks.</b> London 08:00 / NY 09:30 local — the effect shifts an hour with daylight-saving.</span></li>
+        </ul>
+      </div>
+      <div class="col dont">
+        <h3>✕ Don't</h3>
+        <ul>
+          <li><span class="m">✕</span><span><b>Chase the NY open</b> in London's direction. Into the first 1–2h that's a below-50% bet.</span></li>
+          <li><span class="m">✕</span><span><b>Short a strong up-London</b> into New York. Negative expectancy (PF 0.75–0.90).</span></li>
+          <li><span class="m">✕</span><span><b>Treat it as mechanical.</b> The gross edge is ~half a round-trip fee — trade only the filtered setups, prefer maker fills.</span></li>
+          <li><span class="m">✕</span><span><b>Assume it's constant.</b> Yearly continuation swings 45%→57%. A soft, drifting tendency.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p class="cav"><b style="color:var(--ink)">Method &amp; caveats.</b> BTC/USD, Bitstamp 1-minute candles, weekdays only.
+      Continuation is measured on hourly closes (no intrabar stop/target path); P&amp;L is gross of fees; one instrument/venue.
+      Every headline was re-run on a second session definition (London 08:00 / NY 13:00) to survive the daylight-saving smear.
+      Reproduce or extend to SOLUSDT with <code>research/session-direction/analyze.mjs</code>.</p>
+  </footer>
+</div>
+
+<script>
+(function(){
+  if(matchMedia('(prefers-reduced-motion:reduce)').matches) document.body.classList.add('reduced');
+
+  // decay data (2019+, cfg 07/12/20)
+  const D=[{k:1,by:'13:00',v:48.7,z:-1.1},{k:2,by:'14:00',v:47.5,z:-2.0},{k:3,by:'15:00',v:50.0,z:0.0},
+           {k:4,by:'16:00',v:50.3,z:0.2},{k:5,by:'17:00',v:50.4,z:0.3},{k:6,by:'18:00',v:51.5,z:1.2},
+           {k:7,by:'19:00',v:53.2,z:2.5},{k:8,by:'20:00',v:52.7,z:2.1}];
+  const W=720,H=340,mL=44,mR=18,mT=26,mB=46;
+  const plotW=W-mL-mR, plotH=H-mT-mB;
+  const yMin=46, yMax=54;
+  const X=i=>mL+plotW*(i/(D.length-1));
+  const Y=v=>mT+plotH*(1-(v-yMin)/(yMax-yMin));
+  const svg=document.getElementById('decay');
+  const NS='http://www.w3.org/2000/svg';
+  const el=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+
+  // zone tints (above / below 50)
+  svg.appendChild(el('rect',{x:mL,y:mT,width:plotW,height:Y(50)-mT,fill:'var(--posw)'}));
+  svg.appendChild(el('rect',{x:mL,y:Y(50),width:plotW,height:mT+plotH-Y(50),fill:'var(--negw)'}));
+  // gridlines + y labels
+  for(let v=46;v<=54;v+=2){
+    svg.appendChild(el('line',{x1:mL,y1:Y(v),x2:mL+plotW,y2:Y(v),class:'gridline'}));
+    const t=el('text',{x:mL-8,y:Y(v)+3.5,class:'axlabel','text-anchor':'end'});t.textContent=v+'%';svg.appendChild(t);
+  }
+  // 50% reference
+  svg.appendChild(el('line',{x1:mL,y1:Y(50),x2:mL+plotW,y2:Y(50),class:'refline'}));
+  const rl=el('text',{x:mL+plotW-2,y:Y(50)-7,class:'zonelab','text-anchor':'end',fill:'var(--ref)'});
+  rl.textContent='50% · coin flip';svg.appendChild(rl);
+  // zone labels
+  const zc=el('text',{x:mL+6,y:mT+13,class:'zonelab',fill:'var(--pos)'});zc.textContent='▲ CONTINUES';svg.appendChild(zc);
+  const zf=el('text',{x:mL+6,y:mT+plotH-6,class:'zonelab',fill:'var(--neg)'});zf.textContent='▼ FADES';svg.appendChild(zf);
+  // x labels + axis title
+  D.forEach((d,i)=>{const t=el('text',{x:X(i),y:H-mB+18,class:'axlabel','text-anchor':'middle'});
+    t.textContent='+'+d.k+'h';svg.appendChild(t);});
+  const xt=el('text',{x:mL+plotW/2,y:H-6,class:'axtitle','text-anchor':'middle'});
+  xt.textContent='HOURS AFTER NEW YORK OPEN';svg.appendChild(xt);
+
+  // line
+  let dpath='';D.forEach((d,i)=>{dpath+=(i?'L':'M')+X(i)+' '+Y(d.v)+' ';});
+  svg.appendChild(el('path',{d:dpath,class:'dline'}));
+  // dots + selective labels
+  D.forEach((d,i)=>{
+    const c=d.v>=50?'var(--pos)':'var(--neg)';
+    svg.appendChild(el('circle',{cx:X(i),cy:Y(d.v),r:5,fill:c,class:'dot'}));
+    if([0,1,6,7].includes(i)){
+      const above=d.v>=50;
+      const t=el('text',{x:X(i),y:Y(d.v)+(above?-13:19),class:'dlab','text-anchor':'middle'});
+      t.textContent=d.v.toFixed(1)+'%';svg.appendChild(t);
+    }
+  });
+  // crosshair + hover hit targets
+  const cross=el('line',{y1:mT,y2:mT+plotH,class:'crosshair'});svg.appendChild(cross);
+  const tip=document.getElementById('tip'), hold=document.getElementById('chartHold');
+  D.forEach((d,i)=>{
+    const hit=el('rect',{x:X(i)-plotW/(2*(D.length-1)),y:mT,width:plotW/(D.length-1),height:plotH,fill:'transparent'});
+    hit.style.cursor='crosshair';
+    hit.addEventListener('pointerenter',()=>{
+      cross.setAttribute('x1',X(i));cross.setAttribute('x2',X(i));cross.style.opacity='1';
+      const rect=svg.getBoundingClientRect(), hr=hold.getBoundingClientRect(), sx=rect.width/W;
+      tip.style.left=(rect.left-hr.left+X(i)*sx)+'px';
+      tip.style.top=(rect.top-hr.top+Y(d.v)*(rect.height/H))+'px';
+      tip.innerHTML='<b>+'+d.k+'h · by '+d.by+'</b><br>continue '+d.v.toFixed(1)+'%<br>z '+(d.z>0?'+':'')+d.z.toFixed(1)+' vs 50%';
+      tip.style.opacity='1';
+    });
+    hit.addEventListener('pointerleave',()=>{tip.style.opacity='0';cross.style.opacity='0';});
+    svg.appendChild(hit);
+  });
+})();
+</script>

@@ -1,0 +1,43 @@
+================================================================
+ LONDON -> NEW YORK  DIRECTION-CONTINUATION STUDY
+================================================================
+data file        : btcusd_1min.csv.gz   (rows in window: 3,708,719)
+session (UTC)     : London-led 7:00->12:00 | NY 12:00->20:00
+sample            : 3329 weekday days (2012-01-04 -> 2025-01-06)
+detailed window   : 2019+  (n=1570)
+
+--- 1. Does NY close in London's direction? ---
+  all years: continue 49.23% [CI 47.54%-50.93%] z=-0.9 | after UP 54.99% | after DOWN 43.76% | base P(NY up) 55.33%
+  2019+    : continue 52.68% [CI 50.21%-55.14%] z=2.1 | after UP 54.43% | after DOWN 51.00% | base P(NY up) 51.66%
+  2021+    : continue 53.01% [CI 49.99%-56.03%] z=1.9 | after UP 52.57% | after DOWN 53.48% | base P(NY up) 49.67%
+
+--- 2. Continuation decay: P(still in London dir) at NY_open + kh  [2019+] ---
+  +1h (by 13:00): continue 48.66%  z=-1.1  avgDirMove 0.03%  n=1570
+  +2h (by 14:00): continue 47.52%  z=-2.0  avgDirMove 0.04%  n=1570
+  +3h (by 15:00): continue 50.00%  z=0.0  avgDirMove 0.07%  n=1570
+  +4h (by 16:00): continue 50.25%  z=0.2  avgDirMove 0.06%  n=1570
+  +5h (by 17:00): continue 50.38%  z=0.3  avgDirMove 0.09%  n=1570
+  +6h (by 18:00): continue 51.46%  z=1.2  avgDirMove 0.06%  n=1570
+  +7h (by 19:00): continue 53.18%  z=2.5  avgDirMove 0.10%  n=1570
+  +8h (by 20:00): continue 52.68%  z=2.1  avgDirMove 0.11%  n=1570
+
+--- 3. FADE vs FOLLOW gross expectancy (enter at NY open, exit +kh) [2019+] ---
+  +1h  FOLLOW win 48.66% avg 0.03% PF 1.17 | FADE win 51.15% avg -0.03% PF 0.85 (avgW +0.37% avgL -0.45%)
+  +2h  FOLLOW win 47.52% avg 0.04% PF 1.13 | FADE win 52.42% avg -0.04% PF 0.89 (avgW +0.54% avgL -0.67%)
+  +3h  FOLLOW win 50.00% avg 0.07% PF 1.19 | FADE win 49.87% avg -0.07% PF 0.84 (avgW +0.70% avgL -0.83%)
+  +4h  FOLLOW win 50.25% avg 0.06% PF 1.14 | FADE win 49.68% avg -0.06% PF 0.87 (avgW +0.83% avgL -0.94%)
+  +8h  FOLLOW win 52.68% avg 0.11% PF 1.16 | FADE win 47.32% avg -0.11% PF 0.86 (avgW +1.46% avgL -1.52%)
+
+--- 4. Early NY-open fade split by London direction [2019+, exit +2h] ---
+  London UP  -> fade = SHORT: n=768 win 51.30% avg -0.09% PF 0.75
+  London DOWN -> fade = LONG : n=802 win 53.49% avg 0.01% PF 1.04
+
+--- 5. Trend-alignment filter (net-close continuation) [2019+] ---
+  aligned with trend  : continue 53.67%  followPF 1.22  avgDirRet 0.15%  n=818
+  against trend        : continue 51.60%  followPF 1.11  avgDirRet 0.07%  n=752
+  aligned + push>=0.5% : continue 55.07%  followPF 1.30  avgDirRet 0.23%  n=434
+
+--- 6. NY session volatility (for sizing) [2019+] ---
+  NY high-low range : mean 3.17%  median 2.61%
+  |net open->close|  : mean 1.49%  median 1.03%
+  London move into NY: mean |move| 0.87%
