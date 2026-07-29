@@ -1,0 +1,52 @@
+{
+  "watchlist": ["BTCUSDT"],
+  "default_timeframe": "4H",
+
+  "strategy": {
+    "name": "Heikin Ashi + SuperTrend — Pro Colour Variant",
+    "sources": ["Lewis Jackson"],
+    "description": "Long-only, colour-timed trend strategy that only trades inside a confirmed up-regime and sizes every trade by risk. Enter on the first green Heikin-Ashi candle while the regime gate is open; exit on the first red candle, a regime break, or the ATR stop. Sharpened from the base HA+SuperTrend plan through systematic testing and validated out-of-sample. Full plan: docs/heiken-ashi-supertrend-pro.md."
+  },
+
+  "indicators": {
+    "supertrend": "Regime direction. ATR(10) x 3.0. Must be bullish (line below price) for longs to be allowed.",
+    "ema_200": "Trend filter. Price must be above EMA(200).",
+    "ema_50": "Regime confirmation. EMA(50) must be above EMA(200) — the medium-term structure has turned up.",
+    "heikin_ashi": "Entry and exit timing. Enter on the first green candle inside the regime; exit on the first red candle.",
+    "atr_10": "Risk unit. The 2x ATR stop defines both the hard stop and the position size."
+  },
+
+  "bias_criteria": {
+    "bullish": ["SuperTrend bullish", "Close above EMA(200)", "EMA(50) above EMA(200)"],
+    "bearish": ["Any regime condition fails — strategy stands aside (long-only, no shorts)"]
+  },
+
+  "entry_rules": {
+    "long": [
+      "Regime gate open: SuperTrend bullish AND close > EMA(200) AND EMA(50) > EMA(200)",
+      "Current Heikin-Ashi candle is green (haClose > haOpen)",
+      "No position currently open"
+    ],
+    "short": [
+      "None — this variant is long-only. Shorts were a net drag in testing; in a downtrend the strategy stays flat, not short."
+    ]
+  },
+
+  "exit_rules": [
+    "Exit on the first red Heikin-Ashi candle (haClose < haOpen) — the primary, win-rate exit",
+    "Exit on a regime break: SuperTrend flips bearish, or close falls below EMA(200), or EMA(50) crosses below EMA(200)",
+    "Hard stop: 2 x ATR(10) below entry — the disaster brake",
+    "No breakeven stop, no scale-out, no trailing stop — each was tested and each reduced performance"
+  ],
+
+  "risk_rules": [
+    "Risk-based sizing: size each trade so hitting the 2x ATR stop loses a fixed % of equity (the return dial — 2% prudent, 5% aggressive)",
+    "One position at a time — no pyramiding, no averaging down",
+    "Maximum trade size capped by MAX_TRADE_SIZE_USD in .env",
+    "Maximum trades per day capped by MAX_TRADES_PER_DAY in .env",
+    "Never override the exit — the decision tree exits you",
+    "Paper trade on your specific asset and timeframe before going live"
+  ],
+
+  "notes": "Long-only, colour-timed, regime-gated, risk-sized. Best on 1H/4H/1D. Expect a low win rate (~37% on daily BTC) with profit factor around 1.9-2.1: many small losses, a few trend legs that carry it. Validated out-of-sample (era-by-era plus a 2023-07 train/test split where the unseen test period matched the training period). Risk % sets the drawdown — 5% gave ~24% max drawdown historically. The regime gate keeps you flat, not short, in downtrends. Single-asset (BTC) validation only; re-check on your market before going live."
+}

@@ -1,0 +1,191 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+//@version=6
+// ════════════════════════════════════════════════════════════════════════════
+//  Heikin Ashi + SuperTrend — PRO COLOUR variant
+//  Companion plan: docs/heiken-ashi-supertrend-pro.md
+//
+//  A long-only, colour-timed trend strategy that only operates inside a
+//  confirmed up-regime, and sizes every trade by risk (not a blunt % of equity):
+//
+//    REGIME GATE  SuperTrend bullish  AND  close > EMA200  AND  EMA50 > EMA200
+//    ENTRY        first green Heikin-Ashi candle inside the regime
+//    EXIT         first red HA candle, OR regime break, OR the 2×ATR hard-stop
+//    SIZING       risk a fixed % of equity to the ATR stop  ← the pro lever
+//
+//  Validated out-of-sample (era-by-era + a 2023-07 train/test holdout) in
+//  backtest-hast-pro.js. Deliberately has NO breakeven / scale-out / trailing
+//  overlay — each was tested and each hurt.
+// ════════════════════════════════════════════════════════════════════════════
+
+strategy(
+     title                 = "HA+ST Pro Colour",
+     shorttitle            = "HA+ST Pro",
+     overlay               = true,
+     initial_capital       = 1000,
+     pyramiding            = 0,
+     commission_type       = strategy.commission.percent,
+     commission_value      = 0.06,
+     process_orders_on_close = true,
+     calc_on_every_tick    = false,
+     max_bars_back         = 500)
+
+
+// ============================================================
+//  SECTION 1  ─  INPUTS
+// ============================================================
+
+grpReg = "╔═════════ Regime Gate ═════════╗"
+i_atrPeriod = input.int(10,  "SuperTrend ATR Length", minval=1, group=grpReg)
+i_atrMult   = input.float(3.0,"SuperTrend Multiplier", minval=0.5, step=0.1, group=grpReg)
+i_emaSlow   = input.int(200, "Trend EMA (slow)", minval=1, group=grpReg,
+     tooltip="Price must be above this and the fast EMA must be above it for longs to be allowed.")
+i_emaFast   = input.int(50,  "Regime EMA (fast)", minval=1, group=grpReg,
+     tooltip="EMA50 > EMA200 defines the up-regime. Robust across 50–100; avoid 20–30 (too twitchy).")
+
+grpRisk = "╔═════════ Risk & Sizing ═════════╗"
+i_riskPct   = input.float(2.0, "Risk % of equity per trade", minval=0.1, step=0.1, group=grpRisk,
+     tooltip="Each trade is sized so that hitting the ATR stop loses this % of equity. This is the return dial — 2% is prudent, 5% is the aggressive 'max' from the backtest. Drawdown scales with it.")
+i_stopAtr   = input.float(2.0, "Stop distance (× ATR)", minval=0.1, step=0.1, group=grpRisk,
+     tooltip="Initial hard-stop distance from entry, in ATRs. Also the risk unit (1R) for sizing.")
+
+grpVis = "╔═════════ Visuals ═════════╗"
+i_showST    = input.bool(true, "Plot SuperTrend", group=grpVis)
+i_showEMA   = input.bool(true, "Plot Regime EMAs", group=grpVis)
+i_colorBars = input.bool(true, "Colour Bars by Heikin Ashi", group=grpVis)
+i_showTable = input.bool(true, "Show Decision-Tree Dashboard", group=grpVis)
+i_dashPos   = input.string("Bottom Right", "Dashboard Position",
+     options=["Top Right", "Top Left", "Top Center", "Middle Right", "Middle Left",
+              "Middle Center", "Bottom Right", "Bottom Left", "Bottom Center"], group=grpVis)
+i_dashSize  = input.string("Normal", "Dashboard Text Size",
+     options=["Tiny", "Small", "Normal", "Large", "Huge"], group=grpVis)
+
+
+// ============================================================
+//  SECTION 2  ─  PALETTE + HELPERS
+// ============================================================
+
+C_BULL    = #26a69a
+C_BEAR    = #ef5350
+C_NEUTRAL = #b2b5be
+C_FRAME   = #787b86
+C_BG      = #0c0e15
+C_TEXT    = #d1d4dc
+C_TEXT_60 = color.new(#d1d4dc, 40)
+
+strToPos(s) =>
+    switch s
+        "Top Right"     => position.top_right
+        "Top Left"      => position.top_left
+        "Top Center"    => position.top_center
+        "Middle Right"  => position.middle_right
+        "Middle Left"   => position.middle_left
+        "Middle Center" => position.middle_center
+        "Bottom Right"  => position.bottom_right
+        "Bottom Left"   => position.bottom_left
+        => position.bottom_center
+
+strToSize(s) =>
+    switch s
+        "Tiny"  => size.tiny
+        "Small" => size.small
+        "Normal"=> size.normal
+        "Large" => size.large
+        => size.huge
+
+
+// ============================================================
+//  SECTION 3  ─  INDICATORS
+// ============================================================
+
+haClose = (open + high + low + close) / 4
+var float haOpen = na
+haOpen := na(haOpen[1]) ? (open + close) / 2 : (haOpen[1] + haClose[1]) / 2
+haGreen = haClose > haOpen
+haRed   = haClose < haOpen
+
+[stLine, stDir] = ta.supertrend(i_atrMult, i_atrPeriod)
+stBull = stDir < 0
+
+emaSlow = ta.ema(close, i_emaSlow)
+emaFast = ta.ema(close, i_emaFast)
+atrVal  = ta.atr(i_atrPeriod)
+
+// Regime gate: long allowed only inside a confirmed up-trend
+regimeLong = stBull and close > emaSlow and emaFast > emaSlow
+
+
+// ============================================================
+//  SECTION 4  ─  DECISION TREE  →  ORDERS
+// ============================================================
+//  ENTRY : first green HA candle while the regime gate is open
+//  EXIT  : first red HA candle, regime break, or the ATR hard-stop
+//  SIZE  : qty so that the ATR stop = i_riskPct of equity
+
+stopDist = i_stopAtr * atrVal
+riskCash = strategy.equity * (i_riskPct / 100.0)
+qtyRaw   = stopDist > 0 ? riskCash / stopDist : 0.0
+qty      = math.min(qtyRaw, close > 0 ? strategy.equity / close : 0.0) // spot: no leverage
+
+enterLong = regimeLong and haGreen and strategy.position_size == 0
+
+var float stopLevel = na
+if enterLong
+    stopLevel := close - stopDist
+    strategy.entry("Long", strategy.long, qty=qty)
+
+// Hard stop (disaster brake) — fixed at entry
+strategy.exit("Stop", from_entry="Long", stop=stopLevel)
+
+// Colour / regime exit at close
+if strategy.position_size > 0 and (haRed or not regimeLong)
+    strategy.close("Long", comment="colour/regime")
+
+
+// ============================================================
+//  SECTION 5  ─  PLOTTING + ALERTS
+// ============================================================
+
+plot(i_showST  ? stLine  : na, "SuperTrend", color=stBull ? C_BULL : C_BEAR, linewidth=2, style=plot.style_linebr)
+plot(i_showEMA ? emaSlow : na, "EMA slow", color=color.new(#FFB74D, 0), linewidth=1)
+plot(i_showEMA ? emaFast : na, "EMA fast", color=color.new(#42A5F5, 0), linewidth=1)
+barcolor(i_colorBars ? (haGreen ? C_BULL : haRed ? C_BEAR : C_NEUTRAL) : na, title="Heikin Ashi Bars")
+plotshape(enterLong, "Entry", style=shape.triangleup, location=location.belowbar, color=C_BULL, size=size.small, text="IN")
+
+alertcondition(enterLong, "HA+ST Pro Entry", "HA+ST Pro: ENTER LONG on {{ticker}} @ {{close}}")
+alertcondition(strategy.position_size > 0 and (haRed or not regimeLong), "HA+ST Pro Exit", "HA+ST Pro: EXIT LONG on {{ticker}} @ {{close}}")
+
+
+// ============================================================
+//  SECTION 6  ─  DECISION-TREE DASHBOARD
+// ============================================================
+
+const int DASH_ROWS = 8
+var table tbl = table.new(strToPos(i_dashPos), 2, DASH_ROWS,
+     bgcolor=color.new(C_BG, 10), frame_color=C_FRAME, frame_width=1,
+     border_color=color.new(C_FRAME, 65), border_width=1)
+
+f_row(row, label, valTxt, valColor) =>
+    table.cell(tbl, 0, row, label, text_color=C_TEXT, text_size=strToSize(i_dashSize), text_halign=text.align_left,  text_font_family=font.family_monospace)
+    table.cell(tbl, 1, row, valTxt, text_color=valColor, text_size=strToSize(i_dashSize), text_halign=text.align_right, text_font_family=font.family_monospace)
+
+if i_showTable and barstate.islast
+    stTxt   = stBull ? "▲ up" : "▼ down"
+    emaTxt  = close > emaSlow ? "PASS ↑" : "FAIL ↓"
+    fastTxt = emaFast > emaSlow ? "PASS ↑" : "FAIL ↓"
+    regTxt  = regimeLong ? "● OPEN" : "○ CLOSED"
+    regCol  = regimeLong ? C_BULL : C_BEAR
+    haTxt   = haGreen ? "● GREEN" : haRed ? "● RED" : "— DOJI"
+    haCol   = haGreen ? C_BULL : haRed ? C_BEAR : C_NEUTRAL
+    inPos   = strategy.position_size > 0
+    decTxt  = enterLong ? "▲ ENTER" : (inPos and (haRed or not regimeLong)) ? "✕ EXIT" : inPos ? "■ HOLD" : "— WAIT"
+    decCol  = enterLong or (inPos and not (haRed or not regimeLong)) ? C_BULL : inPos ? C_BEAR : C_NEUTRAL
+
+    table.cell(tbl, 0, 0, "HA+ST PRO", text_color=C_TEXT, text_size=strToSize(i_dashSize), bgcolor=color.new(C_FRAME, 75), text_halign=text.align_left, text_font_family=font.family_monospace)
+    table.cell(tbl, 1, 0, "TREE", text_color=C_TEXT, text_size=strToSize(i_dashSize), bgcolor=color.new(C_FRAME, 75), text_halign=text.align_right, text_font_family=font.family_monospace)
+    f_row(1, "SuperTrend",   stTxt,   stBull ? C_BULL : C_BEAR)
+    f_row(2, "Close>EMA200", emaTxt,  close > emaSlow ? C_BULL : C_BEAR)
+    f_row(3, "EMA50>200",    fastTxt, emaFast > emaSlow ? C_BULL : C_BEAR)
+    f_row(4, "▶ Regime",     regTxt,  regCol)
+    f_row(5, "HA Candle",    haTxt,   haCol)
+    f_row(6, "▶ Decision",   decTxt,  decCol)
+    f_row(7, "Position",     inPos ? "LONG @ " + str.tostring(strategy.position_avg_price, format.mintick) : "flat", inPos ? C_BULL : C_TEXT_60)
