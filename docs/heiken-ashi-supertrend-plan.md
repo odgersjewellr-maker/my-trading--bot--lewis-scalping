@@ -156,7 +156,7 @@ wasn't fit to this one price series.
 1. Open the Pine Editor, paste [`heiken-ashi-supertrend.pine`](../heiken-ashi-supertrend.pine), and **Add to chart**.
 2. Open the **Strategy Tester** tab — the equity curve, trade list, and stats populate automatically. The script's defaults ($1000 capital, 80 % equity per trade, 0.06 % commission, fills on close) mirror the Node backtest so the numbers line up.
 3. Read the **decision-tree dashboard** (bottom-right): it shows the live state of each node — SuperTrend, HA candle, EMA filter, wick, and the resulting Decision — so you can see exactly why it did (or didn't) fire.
-4. Set alerts from the four `alertcondition`s (Long/Short entry, Long/Short exit) to drive the bot's webhook.
+4. **Automate the bot:** the script emits plain-text **`BUY` / `SELL`** signals — the exact contract `server.js` scans for (it does *not* parse JSON). Fill the **Bot Webhook Secret** input, then create one alert of type **"Any alert() function call"** pointed at `http://YOUR_BOT_HOST/webhook`. It fires `BUY` on a long entry / short cover and `SELL` on a short entry / long exit. The matching `alertcondition`s carry the same keyword for phone/email notifications.
 
 ### In this repo
 

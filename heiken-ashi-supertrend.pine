@@ -196,13 +196,35 @@ plotshape(shortSignal, "Short Entry", style=shape.triangledown, location=locatio
 
 
 // ============================================================
-//  SECTION 8  ─  ALERTS
+//  SECTION 8  ─  ALERTS  (human-readable + bot webhook)
 // ============================================================
+//  The bot's /webhook scans the alert body for the words BUY / SELL
+//  (server.js). Mapped to its long/short reversal model:
+//    BUY  = go long          (long entry, or cover a short)
+//    SELL = go short / flat   (short entry, or exit a long)
 
-alertcondition(longSignal,  "HA+ST Long Entry",  "HA+ST: LONG signal on {{ticker}} @ {{close}}")
-alertcondition(shortSignal, "HA+ST Short Entry", "HA+ST: SHORT signal on {{ticker}} @ {{close}}")
-alertcondition(strategy.position_size > 0 and flipBear, "HA+ST Exit Long",  "HA+ST: EXIT LONG on {{ticker}} @ {{close}}")
-alertcondition(strategy.position_size < 0 and flipBull, "HA+ST Exit Short", "HA+ST: EXIT SHORT on {{ticker}} @ {{close}}")
+grpAuto = "╔═══════ Webhook Automation ═══════╗"
+i_webhookSecret = input.string("", "Bot Webhook Secret", group=grpAuto,
+     tooltip="Paste your bot's WEBHOOK_SECRET so the alert body authorises the trade. Sent as a prefix on the BUY/SELL message. Blank if none. Lives in your chart settings — never in the shared script.")
+
+exitLong  = strategy.position_size > 0 and flipBear and not shortSignal
+exitShort = strategy.position_size < 0 and flipBull and not longSignal
+buyEvent  = longSignal  or exitShort
+sellEvent = shortSignal or exitLong
+webhookMsg(sig) => (i_webhookSecret != "" ? i_webhookSecret + " " : "") + sig
+
+// Human-readable notifications — now also carry the BUY/SELL keyword.
+alertcondition(longSignal,  "HA+ST — BUY (long)",       "HA+ST BUY long {{ticker}} @ {{close}}")
+alertcondition(shortSignal, "HA+ST — SELL (short)",     "HA+ST SELL short {{ticker}} @ {{close}}")
+alertcondition(exitLong,    "HA+ST — SELL (exit long)", "HA+ST SELL exit-long {{ticker}} @ {{close}}")
+alertcondition(exitShort,   "HA+ST — BUY (exit short)", "HA+ST BUY exit-short {{ticker}} @ {{close}}")
+
+// Recommended for the bot: one alert of type "Any alert() function call"
+// pointed at http://YOUR_BOT/webhook — fires the exact authorised body.
+if buyEvent
+    alert(webhookMsg("BUY"),  alert.freq_once_per_bar_close)
+if sellEvent
+    alert(webhookMsg("SELL"), alert.freq_once_per_bar_close)
 
 
 // ============================================================

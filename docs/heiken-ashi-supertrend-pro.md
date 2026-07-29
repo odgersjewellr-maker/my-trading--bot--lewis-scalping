@@ -125,6 +125,25 @@ node backtest-hast-pro.js                 # full report + sizing ladder + out-of
 node backtest-hast-pro.js your-data.csv   # any Date,Open,High,Low,Close,Volume CSV
 ```
 
+**Automate the bot (webhook).** The Pine emits **plain-text `BUY` / `SELL`**
+signals — the exact contract `server.js` expects (it scans the alert body for
+those words; it does *not* parse JSON). Since this variant is long-only in spot,
+**BUY = enter, SELL = exit (flatten).**
+
+1. Fill the **Bot Webhook Secret** input with your `WEBHOOK_SECRET` (it's sent as a
+   prefix on the message; it stays in your chart settings, never in the script).
+   Make sure that secret doesn't contain the letters `buy` or `sell` — the bot
+   keyword-matches the whole body and checks `BUY` first.
+2. Create **one** alert, condition **"Any alert() function call"**, Webhook URL
+   `http://YOUR_BOT_HOST/webhook`. That single alert fires `BUY` on entry and
+   `SELL` on exit.
+3. Prefer notifications instead? The `HA+ST Pro — BUY` / `— SELL` alertconditions
+   carry the same keyword (minus the secret) for phone/email.
+
+> The intrabar 2×ATR hard-stop is a backtest safety and won't emit its own SELL —
+> the 1-candle colour exit almost always fires first, and the bot runs its own
+> stop. Keep the bot in paper/spot mode until you've watched it live.
+
 ---
 
 ## Config reference

@@ -151,8 +151,29 @@ plot(i_showEMA ? emaFast : na, "EMA fast", color=color.new(#42A5F5, 0), linewidt
 barcolor(i_colorBars ? (haGreen ? C_BULL : haRed ? C_BEAR : C_NEUTRAL) : na, title="Heikin Ashi Bars")
 plotshape(enterLong, "Entry", style=shape.triangleup, location=location.belowbar, color=C_BULL, size=size.small, text="IN")
 
-alertcondition(enterLong, "HA+ST Pro Entry", "HA+ST Pro: ENTER LONG on {{ticker}} @ {{close}}")
-alertcondition(strategy.position_size > 0 and (haRed or not regimeLong), "HA+ST Pro Exit", "HA+ST Pro: EXIT LONG on {{ticker}} @ {{close}}")
+// ── Webhook automation ─────────────────────────────────────
+//  This bot is long-only in spot: BUY = enter, SELL = exit (flatten). Its
+//  /webhook just scans the alert body for the words BUY / SELL (server.js),
+//  optionally prefixed with your secret — so the body must contain them literally.
+
+grpAuto = "╔═══════ Webhook Automation ═══════╗"
+i_webhookSecret = input.string("", "Bot Webhook Secret", group=grpAuto,
+     tooltip="Paste your bot's WEBHOOK_SECRET so the alert body authorises the trade. Sent as a prefix on the BUY/SELL message. Blank if the bot has no secret. Lives in your chart settings — never in the shared script.")
+
+exitSignal = strategy.position_size > 0 and (haRed or not regimeLong)
+webhookMsg(sig) => (i_webhookSecret != "" ? i_webhookSecret + " " : "") + sig
+
+// Human-readable notifications — now also carry the BUY/SELL keyword, so a
+// webhook pointed at these works too when no secret is required.
+alertcondition(enterLong,  "HA+ST Pro — BUY",  "HA+ST Pro BUY {{ticker}} @ {{close}}")
+alertcondition(exitSignal, "HA+ST Pro — SELL", "HA+ST Pro SELL exit {{ticker}} @ {{close}}")
+
+// Recommended for the bot: one alert of type "Any alert() function call"
+// pointed at http://YOUR_BOT/webhook — these fire the exact authorised body.
+if enterLong
+    alert(webhookMsg("BUY"),  alert.freq_once_per_bar_close)
+if exitSignal
+    alert(webhookMsg("SELL"), alert.freq_once_per_bar_close)
 
 
 // ============================================================
