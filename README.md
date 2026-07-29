@@ -229,6 +229,10 @@ The example `rules.json` uses the van de Poppe + Tone Vays BTC strategy. To buil
 | `trades.csv` | Tax-ready trade record — auto-written on every execution |
 | `docs/setup-windows.md` | Windows-specific MCP setup |
 | `docs/setup-linux.md` | Linux-specific MCP setup |
+| `docs/heiken-ashi-supertrend-plan.md` | **Heikin Ashi + SuperTrend decision-tree trading plan** — the tree, the rules, and the backtest |
+| `heiken-ashi-supertrend.pine` | TradingView `strategy()` for the plan above — backtest it in the Strategy Tester |
+| `rules-heiken-ashi-supertrend.json` | The plan as a `rules.json` strategy spec for the bot's safety check |
+| `backtest-hast.js` | Node backtest for the HA+SuperTrend strategy (`node backtest-hast.js [--optimize]`) |
 
 ---
 

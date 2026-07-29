@@ -1,0 +1,50 @@
+{
+  "watchlist": ["BTCUSDT"],
+  "default_timeframe": "4H",
+
+  "strategy": {
+    "name": "Heikin Ashi + SuperTrend Decision-Tree Strategy",
+    "sources": ["Lewis Jackson"],
+    "description": "Trend-following decision tree. SuperTrend sets direction and the trigger (its flip), Heikin Ashi confirms momentum, and an EMA200 filter keeps trades on the right side of the higher-timeframe trend. Every bar resolves to exactly one action: long, short, hold, or wait. Full plan and backtest in docs/heiken-ashi-supertrend-plan.md."
+  },
+
+  "indicators": {
+    "supertrend": "Direction + trigger. ATR(10) x 3.0 bands. Green line under price = uptrend, red line over price = downtrend. A flip of the line is the entry trigger.",
+    "heikin_ashi": "Momentum confirmation. Smoothed candles from OHLC. Green (haClose > haOpen) confirms buyers; red confirms sellers. A small opposing wick means a strong, one-sided candle.",
+    "ema_200": "Trend filter / bias gate. Longs only when price is above EMA(200); shorts only when below. Removing this filter roughly halves profit factor in backtest."
+  },
+
+  "bias_criteria": {
+    "bullish": ["SuperTrend is bullish (line below price)", "Price is above EMA(200)"],
+    "bearish": ["SuperTrend is bearish (line above price)", "Price is below EMA(200)"]
+  },
+
+  "entry_rules": {
+    "long": [
+      "SuperTrend has just flipped bullish on this candle",
+      "Heikin-Ashi candle is green (haClose > haOpen)",
+      "Price is above EMA(200) — aligned with the higher-timeframe trend"
+    ],
+    "short": [
+      "SuperTrend has just flipped bearish on this candle",
+      "Heikin-Ashi candle is red (haClose < haOpen)",
+      "Price is below EMA(200) — aligned with the higher-timeframe trend"
+    ]
+  },
+
+  "exit_rules": [
+    "Exit long when SuperTrend flips bearish; exit short when SuperTrend flips bullish (primary exit — lets winners run the whole trend leg)",
+    "Hard stop: 2 x ATR(10) from entry (below entry for longs, above for shorts) — the disaster brake",
+    "One position at a time — no pyramiding, no averaging down"
+  ],
+
+  "risk_rules": [
+    "Risk maximum 1% of portfolio per trade — distance to the ATR stop sets the position size",
+    "Maximum trade size capped by MAX_TRADE_SIZE_USD in .env",
+    "Maximum trades per day capped by MAX_TRADES_PER_DAY in .env",
+    "Never override the stop — the decision tree exits you, you do not hold and hope",
+    "Paper trade on your specific asset and timeframe before going live"
+  ],
+
+  "notes": "Trend-following, not scalping — best on 1H/4H/1D where trend legs are clean. Expect a low win rate (~33% in the daily BTC backtest) with a profit factor above 1.5: most trades are small losses and a few ride an entire trend for the gains. Do not try to raise the win rate; it cuts the winners. Optional strong-candle gate (opposing HA wick <= 30% of body) trades less often for a similar edge. The EMA200 filter is essential — keep it on. For 1m-5m scalping, drop the EMA to 50 and the ATR multiplier toward 2.0, and validate on paper first."
+}

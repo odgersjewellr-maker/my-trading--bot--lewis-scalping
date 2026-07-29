@@ -1,0 +1,275 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+//@version=6
+// ════════════════════════════════════════════════════════════════════════════
+//  Heikin Ashi + SuperTrend — Decision-Tree Strategy
+//  Companion plan: docs/heiken-ashi-supertrend-plan.md
+//
+//  The engine walks one decision tree on every closed bar:
+//    SuperTrend flip  →  Heikin-Ashi colour  →  (EMA filter)  →  (wick strength)  →  trade
+//  Exits fire on the opposite SuperTrend flip or an ATR hard-stop.
+//
+//  This is a strategy() script, so TradingView's Strategy Tester backtests it
+//  directly. Defaults mirror backtest-hast.js (initial $1000, 80% equity/trade,
+//  fills on bar close) so on-chart results line up with the repo's Node backtest.
+// ════════════════════════════════════════════════════════════════════════════
+
+strategy(
+     title                 = "Heikin Ashi + SuperTrend Tree",
+     shorttitle            = "HA+ST Tree",
+     overlay               = true,
+     initial_capital       = 1000,
+     default_qty_type      = strategy.percent_of_equity,
+     default_qty_value     = 80,
+     pyramiding            = 0,
+     commission_type       = strategy.commission.percent,
+     commission_value      = 0.06,
+     process_orders_on_close = true,
+     calc_on_every_tick    = false,
+     max_bars_back         = 500)
+
+
+// ============================================================
+//  SECTION 1  ─  INPUTS
+// ============================================================
+
+grpST = "╔═════════ SuperTrend ═════════╗"
+i_atrPeriod = input.int(10,   "ATR Length",         minval=1, group=grpST,
+     tooltip="ATR lookback for the SuperTrend bands. Lower = tighter, flips sooner.")
+i_atrMult   = input.float(3.0,"ATR Multiplier",     minval=0.5, step=0.1, group=grpST,
+     tooltip="Band distance in ATRs. Higher = fewer, later flips (more trend, less noise).")
+
+grpHA = "╔═══════ Heikin Ashi Gate ═══════╗"
+i_useWick   = input.bool(false, "Require Strong Candle", group=grpHA,
+     tooltip="ON = only take the trade when the Heikin-Ashi candle has a small opposing wick (momentum confirmation).")
+i_wickThresh= input.float(0.30, "Max Opposing Wick (× body)", minval=0.0, step=0.05, group=grpHA,
+     tooltip="A candle is 'strong' when its opposing wick is at most this fraction of the body. Only used when Require Strong Candle is ON.")
+
+grpFilter = "╔═══════ Trend Filter ═══════╗"
+i_useEMA    = input.bool(true, "EMA Trend Filter",   group=grpFilter,
+     tooltip="ON = longs only above the EMA, shorts only below it. Backtests far better than raw — keeps you on the right side of the higher-timeframe trend.")
+i_emaLen    = input.int(200,   "EMA Length",         minval=1, group=grpFilter,
+     tooltip="Trend-filter EMA. 200 is the robust default; 100 trades more often.")
+
+grpRisk = "╔═════════ Risk ═════════╗"
+i_atrStopMult = input.float(2.0, "ATR Stop Multiplier", minval=0.1, step=0.1, group=grpRisk,
+     tooltip="Hard stop distance from entry, in ATRs. The SuperTrend flip is the primary exit; this is the disaster brake.")
+i_allowLong   = input.bool(true, "Allow Longs",  group=grpRisk)
+i_allowShort  = input.bool(true, "Allow Shorts", group=grpRisk)
+
+grpVis = "╔═════════ Visuals ═════════╗"
+i_showST    = input.bool(true, "Plot SuperTrend",  group=grpVis)
+i_showEMA   = input.bool(true, "Plot EMA Filter",  group=grpVis)
+i_colorBars = input.bool(true, "Colour Bars by Heikin Ashi", group=grpVis)
+i_showTable = input.bool(true, "Show Decision-Tree Dashboard", group=grpVis)
+i_dashPos   = input.string("Bottom Right", "Dashboard Position",
+     options=["Top Right", "Top Left", "Top Center",
+              "Middle Right", "Middle Left", "Middle Center",
+              "Bottom Right", "Bottom Left", "Bottom Center"], group=grpVis)
+i_dashSize  = input.string("Normal", "Dashboard Text Size",
+     options=["Tiny", "Small", "Normal", "Large", "Huge"], group=grpVis)
+
+
+// ============================================================
+//  SECTION 2  ─  PALETTE + HELPERS
+// ============================================================
+
+C_BULL    = #26a69a
+C_BEAR    = #ef5350
+C_NEUTRAL = #b2b5be
+C_FRAME   = #787b86
+C_BG      = #0c0e15
+C_TEXT    = #d1d4dc
+C_TEXT_60 = color.new(#d1d4dc, 40)
+
+strToPos(s) =>
+    switch s
+        "Top Right"     => position.top_right
+        "Top Left"      => position.top_left
+        "Top Center"    => position.top_center
+        "Middle Right"  => position.middle_right
+        "Middle Left"   => position.middle_left
+        "Middle Center" => position.middle_center
+        "Bottom Right"  => position.bottom_right
+        "Bottom Left"   => position.bottom_left
+        => position.bottom_center
+
+strToSize(s) =>
+    switch s
+        "Tiny"  => size.tiny
+        "Small" => size.small
+        "Normal"=> size.normal
+        "Large" => size.large
+        => size.huge
+
+
+// ============================================================
+//  SECTION 3  ─  HEIKIN ASHI
+// ============================================================
+
+haClose = (open + high + low + close) / 4
+var float haOpen = na
+haOpen := na(haOpen[1]) ? (open + close) / 2 : (haOpen[1] + haClose[1]) / 2
+haHigh  = math.max(high, haOpen, haClose)
+haLow   = math.min(low,  haOpen, haClose)
+
+haGreen = haClose > haOpen
+haRed   = haClose < haOpen
+
+body       = math.abs(haClose - haOpen)
+bodySafe   = body == 0 ? syminfo.mintick : body
+lowerWick  = math.min(haOpen, haClose) - haLow   // opposing wick for a long
+upperWick  = haHigh - math.max(haOpen, haClose)  // opposing wick for a short
+strongGreen = lowerWick <= i_wickThresh * bodySafe
+strongRed   = upperWick <= i_wickThresh * bodySafe
+
+
+// ============================================================
+//  SECTION 4  ─  SUPERTREND + EMA FILTER
+// ============================================================
+
+// Built-in SuperTrend: dir is -1 in an uptrend, +1 in a downtrend.
+[stLine, stDir] = ta.supertrend(i_atrMult, i_atrPeriod)
+stBull      = stDir < 0
+stBear      = stDir > 0
+flipBull    = stBull and stDir[1] > 0     // just turned up
+flipBear    = stBear and stDir[1] < 0     // just turned down
+
+emaTrend = ta.ema(close, i_emaLen)
+emaUp    = not i_useEMA or close > emaTrend
+emaDown  = not i_useEMA or close < emaTrend
+
+atrVal = ta.atr(i_atrPeriod)
+
+
+// ============================================================
+//  SECTION 5  ─  DECISION TREE  →  SIGNALS
+// ============================================================
+//  LONG  : SuperTrend flips bullish  AND HA green  AND EMA up   AND (wick ok)
+//  SHORT : SuperTrend flips bearish  AND HA red    AND EMA down AND (wick ok)
+
+wickOkLong  = not i_useWick or strongGreen
+wickOkShort = not i_useWick or strongRed
+
+longSignal  = i_allowLong  and flipBull and haGreen and emaUp   and wickOkLong
+shortSignal = i_allowShort and flipBear and haRed   and emaDown and wickOkShort
+
+
+// ============================================================
+//  SECTION 6  ─  ORDERS
+// ============================================================
+
+// Capture the ATR stop at the moment of entry and hold it for the trade.
+var float stopPrice = na
+if longSignal
+    stopPrice := close - i_atrStopMult * atrVal
+if shortSignal
+    stopPrice := close + i_atrStopMult * atrVal
+
+if longSignal
+    strategy.entry("Long", strategy.long)
+if shortSignal
+    strategy.entry("Short", strategy.short)
+
+// Exit on the opposite SuperTrend flip even when a fresh entry does not qualify.
+if strategy.position_size > 0 and flipBear and not shortSignal
+    strategy.close("Long", comment="ST flip")
+if strategy.position_size < 0 and flipBull and not longSignal
+    strategy.close("Short", comment="ST flip")
+
+// ATR hard-stop (disaster brake).
+strategy.exit("L-Stop", from_entry="Long",  stop=stopPrice)
+strategy.exit("S-Stop", from_entry="Short", stop=stopPrice)
+
+
+// ============================================================
+//  SECTION 7  ─  PLOTTING
+// ============================================================
+
+stColor = stBull ? C_BULL : C_BEAR
+plot(i_showST  ? stLine   : na, "SuperTrend", color=stColor, linewidth=2, style=plot.style_linebr)
+plot(i_showEMA ? emaTrend : na, "EMA Filter", color=color.new(#FFB74D, 0), linewidth=1)
+
+barcolor(i_colorBars ? (haGreen ? C_BULL : haRed ? C_BEAR : C_NEUTRAL) : na, title="Heikin Ashi Bars")
+
+plotshape(longSignal,  "Long Entry",  style=shape.triangleup,   location=location.belowbar, color=C_BULL, size=size.small, text="LONG")
+plotshape(shortSignal, "Short Entry", style=shape.triangledown, location=location.abovebar, color=C_BEAR, size=size.small, text="SHORT")
+
+
+// ============================================================
+//  SECTION 8  ─  ALERTS
+// ============================================================
+
+alertcondition(longSignal,  "HA+ST Long Entry",  "HA+ST: LONG signal on {{ticker}} @ {{close}}")
+alertcondition(shortSignal, "HA+ST Short Entry", "HA+ST: SHORT signal on {{ticker}} @ {{close}}")
+alertcondition(strategy.position_size > 0 and flipBear, "HA+ST Exit Long",  "HA+ST: EXIT LONG on {{ticker}} @ {{close}}")
+alertcondition(strategy.position_size < 0 and flipBull, "HA+ST Exit Short", "HA+ST: EXIT SHORT on {{ticker}} @ {{close}}")
+
+
+// ============================================================
+//  SECTION 9  ─  DECISION-TREE DASHBOARD
+// ============================================================
+//  Renders the exact node states the engine walked this bar, so the chart
+//  reads like the plan's decision tree in real time.
+
+const int DASH_ROWS = 8
+var table tbl = table.new(strToPos(i_dashPos), 2, DASH_ROWS,
+     bgcolor      = color.new(C_BG, 10),
+     frame_color  = C_FRAME,
+     frame_width  = 1,
+     border_color = color.new(C_FRAME, 65),
+     border_width = 1)
+
+f_row(row, label, valTxt, valColor) =>
+    table.cell(tbl, 0, row, label, text_color=C_TEXT, text_size=strToSize(i_dashSize),
+         text_halign=text.align_left,  text_font_family=font.family_monospace)
+    table.cell(tbl, 1, row, valTxt, text_color=valColor, text_size=strToSize(i_dashSize),
+         text_halign=text.align_right, text_font_family=font.family_monospace)
+
+if i_showTable and barstate.islast
+    // Node 1 — SuperTrend
+    stTxt = stBull ? "▲ BULLISH" : "▼ BEARISH"
+    stCol = stBull ? C_BULL : C_BEAR
+
+    // Node 2 — Heikin Ashi colour
+    haTxt = haGreen ? "● GREEN" : haRed ? "● RED" : "— DOJI"
+    haCol = haGreen ? C_BULL : haRed ? C_BEAR : C_NEUTRAL
+
+    // Node 3 — EMA filter
+    emaTxt = not i_useEMA ? "off" : close > emaTrend ? "PASS ↑" : "FAIL ↓"
+    emaCol = not i_useEMA ? C_TEXT_60 : close > emaTrend ? C_BULL : C_BEAR
+
+    // Node 4 — wick strength
+    wickTxt = not i_useWick ? "off" : (haGreen ? (strongGreen ? "PASS" : "FAIL") : haRed ? (strongRed ? "PASS" : "FAIL") : "—")
+    wickCol = not i_useWick ? C_TEXT_60 : ((haGreen and strongGreen) or (haRed and strongRed)) ? C_BULL : C_BEAR
+
+    // Leaf — decision
+    inLong  = strategy.position_size > 0
+    inShort = strategy.position_size < 0
+    decTxt  = longSignal ? "▲ ENTER LONG" :
+             shortSignal ? "▼ ENTER SHORT" :
+             inLong  and flipBear ? "✕ EXIT LONG" :
+             inShort and flipBull ? "✕ EXIT SHORT" :
+             inLong  ? "■ HOLD LONG" :
+             inShort ? "■ HOLD SHORT" :
+                       "— WAIT"
+    decCol  = (longSignal or (inLong and not flipBear)) ? C_BULL :
+             (shortSignal or (inShort and not flipBull)) ? C_BEAR :
+                       C_NEUTRAL
+
+    posTxt = inLong ? "LONG @ " + str.tostring(strategy.position_avg_price, format.mintick) :
+             inShort ? "SHORT @ " + str.tostring(strategy.position_avg_price, format.mintick) :
+                       "flat"
+    posCol = inLong ? C_BULL : inShort ? C_BEAR : C_TEXT_60
+
+    table.cell(tbl, 0, 0, "HA + SUPERTREND", text_color=C_TEXT, text_size=strToSize(i_dashSize),
+         bgcolor=color.new(C_FRAME, 75), text_halign=text.align_left, text_font_family=font.family_monospace)
+    table.cell(tbl, 1, 0, "TREE", text_color=C_TEXT, text_size=strToSize(i_dashSize),
+         bgcolor=color.new(C_FRAME, 75), text_halign=text.align_right, text_font_family=font.family_monospace)
+
+    f_row(1, "1 SuperTrend", stTxt, stCol)
+    f_row(2, "2 HA Candle",  haTxt, haCol)
+    f_row(3, "3 EMA Filter", emaTxt, emaCol)
+    f_row(4, "4 Strong Wick", wickTxt, wickCol)
+    f_row(5, "▶ Decision",   decTxt, decCol)
+    f_row(6, "  Position",   posTxt, posCol)
+    f_row(7, "  Stop",       na(stopPrice) or strategy.position_size == 0 ? "—" : str.tostring(stopPrice, format.mintick), C_TEXT_60)
