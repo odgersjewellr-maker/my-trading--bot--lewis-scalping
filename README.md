@@ -236,7 +236,8 @@ The example `rules.json` uses the van de Poppe + Tone Vays BTC strategy. To buil
 | `docs/heiken-ashi-supertrend-pro.md` | **Pro Colour variant** — long-only, colour-timed, regime-gated, risk-sized; out-of-sample validated |
 | `heiken-ashi-supertrend-pro.pine` | TradingView `strategy()` for the Pro Colour variant (risk-based sizing) |
 | `rules-heiken-ashi-supertrend-pro.json` | The Pro Colour variant as a `rules.json` strategy spec |
-| `backtest-hast-pro.js` | Node backtest for the Pro variant — sizing ladder + out-of-sample checks |
+| `backtest-hast-pro.js` | Node backtest for the Pro variant — sizing ladder + out-of-sample checks (auto-detects timeframe) |
+| `fetch-ohlc.js` | Fetch any symbol/interval from Binance for backtesting other timeframes (`node fetch-ohlc.js BTCUSDT 1h btc-1h.csv`) |
 
 ---
 

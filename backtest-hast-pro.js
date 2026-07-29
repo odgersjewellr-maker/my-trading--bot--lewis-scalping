@@ -23,6 +23,21 @@ const candles = readFileSync(resolve(csvPath), "utf8").trim().split("\n").slice(
   .filter((c) => !isNaN(c.close));
 const N = candles.length;
 
+// Detect the bar interval from the timestamps so Sharpe annualises correctly
+// on any timeframe (daily, 4H, 1H, …) — not just daily.
+const BARS_PER_YEAR = (() => {
+  const diffs = [];
+  for (let i = 1; i < Math.min(N, 60); i++) {
+    const d = new Date(candles[i].date) - new Date(candles[i - 1].date);
+    if (d > 0) diffs.push(d);
+  }
+  if (!diffs.length) return 365.25;
+  diffs.sort((a, b) => a - b);
+  return 31557600000 / diffs[Math.floor(diffs.length / 2)]; // ms per year / ms per bar
+})();
+const TF_HOURS = 31557600000 / BARS_PER_YEAR / 3600000;
+const TF_LABEL = TF_HOURS >= 24 ? `${Math.round(TF_HOURS / 24)}D` : `${Math.round(TF_HOURS)}H`;
+
 // ─── Indicators ─────────────────────────────────────────────────────────────
 
 function calcATRSeries(c, p) {
@@ -138,7 +153,7 @@ function stats(portfolio, trades, equity) {
   const rets = equity.slice(1).map((v, i) => (v - equity[i]) / equity[i]);
   const mr = rets.reduce((a, b) => a + b, 0) / rets.length;
   const sd = Math.sqrt(rets.reduce((s, r) => s + (r - mr) ** 2, 0) / rets.length);
-  const sharpe = sd > 0 ? mr / sd * Math.sqrt(365) : 0;
+  const sharpe = sd > 0 ? mr / sd * Math.sqrt(BARS_PER_YEAR) : 0;
   const ret = (portfolio - 1000) / 10;
   return { ret, trades: net.length, wr, pf, dd, sharpe, mar: dd > 0 ? ret / dd : 0 };
 }
@@ -150,7 +165,7 @@ const fmt = (r) => (r.ret.toFixed(1)+"%").padStart(9) + String(r.trades).padStar
 const head = "  " + "Config".padEnd(30) + "Return".padStart(9) + "Trades".padStart(7) + "Win%".padStart(7) + "PF".padStart(7) + "MaxDD".padStart(8) + "Sharpe".padStart(8) + "Ret/DD".padStart(8);
 
 console.log("\n═══════════════════════════════════════════════════════════════════════");
-console.log("  Heikin Ashi + SuperTrend — PRO COLOUR variant  |  Daily BTC/USD");
+console.log(`  Heikin Ashi + SuperTrend — PRO COLOUR variant  |  ${TF_LABEL} timeframe`);
 console.log("═══════════════════════════════════════════════════════════════════════");
 console.log(`  ${candles.length} bars  |  ${candles[0].date} → ${candles[N-1].date}\n`);
 
@@ -174,13 +189,15 @@ console.log("  " + "scale 50%@2R + trail".padEnd(30) + fmt(runPro({ ...PRO, colo
 
 // ─── Out-of-sample ────────────────────────────────────────────────────────────
 
-const idxAfter = (d) => { const i = candles.findIndex((c) => c.date >= d); return i < 1 ? 1 : i; };
+const idxAfter = (d) => candles.findIndex((c) => c.date >= d);
+// Calendar-era windows — kept only when the dataset actually spans them, so a
+// shorter intraday CSV (e.g. 1H from 2023) just shows the eras it covers.
 const periods = [
-  ["FULL 2018-2026", 1, N-1],
-  ["'20-'21 bull",   idxAfter("2020-01-01"), idxAfter("2022-01-01")-1],
-  ["'22-'23 bear",   idxAfter("2022-01-01"), idxAfter("2024-01-01")-1],
-  ["'24-'26 recent", idxAfter("2024-01-01"), N-1],
-];
+  ["FULL",           1, N-1],
+  ["'20-'21 bull",   idxAfter("2020-01-01"), idxAfter("2022-01-01") - 1],
+  ["'22-'23 bear",   idxAfter("2022-01-01"), idxAfter("2024-01-01") - 1],
+  ["'24-'26 recent", idxAfter("2024-01-01"), N - 1],
+].filter(([l, s, e]) => s >= 1 && e > s && e <= N - 1);
 const cell = (r) => (r.ret.toFixed(0)+"%").padStart(7) + (r.wr.toFixed(0)+"%").padStart(6) + (r.pf === Infinity ? "∞" : r.pf.toFixed(2)).padStart(6) + r.sharpe.toFixed(2).padStart(6) + ("("+r.trades+")").padStart(6);
 
 console.log("\n── OUT-OF-SAMPLE: era-by-era (fresh $1000 per window) ───────────────");
@@ -189,11 +206,14 @@ console.log("  " + "Period".padEnd(16) + "│" + "  PRO colour".padEnd(31) + "�
 console.log("  " + "─".repeat(74));
 for (const [label, s, e] of periods) console.log("  " + label.padEnd(16) + "│" + cell(runPro(PRO, s, e)) + "  │" + cell(runRef(s, e)));
 
-const split = idxAfter("2023-07-01");
-console.log("\n── TRAIN/TEST holdout (split 2023-07-01) ────────────────────────────");
+// Train/test split at 2023-07-01 when the data straddles it; otherwise the midpoint.
+let split = idxAfter("2023-07-01");
+if (split < N * 0.2 || split > N * 0.8) split = Math.floor(N / 2);
+const splitDate = candles[split].date.slice(0, 10);
+console.log(`\n── TRAIN/TEST holdout (split ${splitDate}) ─────────────────────────`);
 console.log("  " + "Window".padEnd(16) + "│" + "  PRO colour".padEnd(31) + "│" + "  REF HA+ST dual");
 console.log("  " + "─".repeat(74));
-console.log("  " + "TRAIN →2023.5".padEnd(16) + "│" + cell(runPro(PRO, 1, split-1)) + "  │" + cell(runRef(1, split-1)));
-console.log("  " + "TEST  2023.5→".padEnd(16) + "│" + cell(runPro(PRO, split, N-1)) + "  │" + cell(runRef(split, N-1)));
+console.log("  " + "TRAIN".padEnd(16) + "│" + cell(runPro(PRO, 1, split-1)) + "  │" + cell(runRef(1, split-1)));
+console.log("  " + "TEST".padEnd(16) + "│" + cell(runPro(PRO, split, N-1)) + "  │" + cell(runRef(split, N-1)));
 console.log("\n  Note: risk-% sizing sets absolute return; the edge lives in PF/Sharpe/Win%.");
 console.log("═══════════════════════════════════════════════════════════════════════\n");

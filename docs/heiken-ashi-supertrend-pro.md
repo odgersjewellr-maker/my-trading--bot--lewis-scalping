@@ -125,6 +125,19 @@ node backtest-hast-pro.js                 # full report + sizing ladder + out-of
 node backtest-hast-pro.js your-data.csv   # any Date,Open,High,Low,Close,Volume CSV
 ```
 
+**Other timeframes (e.g. 1H for prop challenges).** The validated numbers here
+are all **daily**, which trades slowly (~15–25×/yr). A lower timeframe trades far
+more often and can hit a prop profit target faster inside the drawdown limit.
+The backtest auto-detects the interval and annualises Sharpe accordingly, so just
+feed it a lower-timeframe CSV. Fetch one locally (exchange APIs are blocked in
+cloud sandboxes, so this must run on your own machine):
+```bash
+node fetch-ohlc.js BTCUSDT 1h btc-1h.csv 2023-01-01   # pull hourly candles
+node backtest-hast-pro.js btc-1h.csv                  # backtest them
+```
+Treat lower-timeframe results as **unvalidated until you run them** — more trades
+also means more whipsaw and more fee/slippage drag, which daily is largely immune to.
+
 **Automate the bot (webhook).** The Pine emits **plain-text `BUY` / `SELL`**
 signals — the exact contract `server.js` expects (it scans the alert body for
 those words; it does *not* parse JSON). Since this variant is long-only in spot,
