@@ -1074,6 +1074,41 @@
       "orderPlaced": true,
       "orderId": "PAPER-1785355058150",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-07-30T07:08:36.730Z",
+      "type": "exit",
+      "symbol": "SOLUSDT",
+      "side": "sell",
+      "quantity": 14.236529,
+      "price": 73.7,
+      "sizeUSD": 1038.9818864200001,
+      "pnlUSD": 10.250300879999985,
+      "pnlPct": 0.986571663469442,
+      "reason": "NKB reversal",
+      "orderPlaced": true,
+      "orderId": "PAPER-1785395316729",
+      "paperTrading": true
+    },
+    {
+      "timestamp": "2026-07-30T07:08:36.731Z",
+      "type": "entry",
+      "symbol": "SOLUSDT",
+      "side": "sell",
+      "quantity": 14.213861,
+      "price": 73.7,
+      "sizeUSD": 1047.5615557,
+      "portfolioValue": 1046.7235368997322,
+      "nkb": {
+        "kernelMA": 73.6725370971534,
+        "sigma": 0.25550661444234146,
+        "upperBand": 74.43905694048041,
+        "lowerBand": 72.90601725382638,
+        "state": -1
+      },
+      "orderPlaced": true,
+      "orderId": "PAPER-1785395316731",
+      "paperTrading": true
     }
   ]
 }
