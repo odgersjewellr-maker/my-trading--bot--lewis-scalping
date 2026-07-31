@@ -1,52 +1,50 @@
 /**
- * Weekly Range Breakout — "failed breakout" reversal strategy.
+ * Daily Range Band Breakout — "failed breakout" reversal strategy.
  *
  * The idea (from a prior-range trading video, ~70%+ win rate reported on
  * SOL/USDT intraday), extended per later direction:
  *
- *   1. Take the previous COMPLETED WEEK's high and low. That's the box.
- *      The midpoint of the box is just a visual reference line. (The
- *      original reference chart used the previous *day*'s range — both are
- *      supported via `periodMode: "day" | "week"`; week is now the default.)
- *   2. Wait for a candle to CLOSE outside the box (a "breakout" close beyond
- *      the box's high or low). Price can stay outside for any number of
- *      candles — there's no requirement that the very next candle is the
- *      one that reclaims it. Meant to be run on intraday candles (5m/15m)
- *      against that weekly box, so a breakout and its reclaim can be many
- *      bars apart while still being the same trading day or two.
- *   3. The first candle that CLOSES back inside the box, however many bars
- *      later that is, is the "reclaim" candle.
+ *   1. Box = the previous `bandLookback` completed days' highs and lows
+ *      (default 2). That gives an UPPER BAND spanning the two prior highs
+ *      and a LOWER BAND spanning the two prior lows, instead of a single
+ *      line on each side:
+ *        upper band = [min(H1,H2), max(H1,H2)]
+ *        lower band = [min(L1,L2), max(L1,L2)]
+ *      The CENTER — the zone both days agree was "inside the range" — is
+ *      [max(L1,L2), min(H1,H2)]. `bandLookback: 1` collapses this back to
+ *      a single previous-day line on each side (the original behavior).
+ *   2. Breakout — a candle CLOSES beyond the far edge of a band (above
+ *      max(H1,H2), or below min(L1,L2)). Price can stay outside for any
+ *      number of candles — the stop is measured off the furthest point
+ *      reached during the whole excursion, not just the first candle.
+ *   3. We don't trade while price is sitting inside a band (the ambiguous
+ *      zone between the two prior levels) — only once it closes all the
+ *      way back through to the near edge (min(H1,H2) for a short, max(L1,L2)
+ *      for a long) — i.e. back into the CENTER — does that count as a
+ *      reclaim. That's the "reclaim" candle.
  *   4. Don't enter on the reclaim candle itself — wait for `confirmBars`
  *      total candles (2 by default) each closing further in the trade's
- *      direction before pulling the trigger. This is a direction-confirmation
- *      step: if the bar right after the reclaim doesn't continue the same
- *      way, the setup is scrapped rather than chased.
+ *      direction before pulling the trigger. If the very next candle
+ *      doesn't continue that way, the setup is scrapped rather than chased.
  *   5. Stop goes just beyond the furthest point price reached during the
- *      whole breakout excursion. Exit is either a fixed reward:risk multiple
- *      (2:1 by default) or a "let it run" target at the opposite side of the
- *      box, optionally with a breakeven stop trail.
+ *      excursion, plus an ATR buffer. Exit is either a fixed reward:risk
+ *      multiple (2:1 by default) or a "let it run" target at the near edge
+ *      of the opposite band, optionally with a breakeven stop trail.
  *
  * On top of that base pattern, this file adds optional confirmation filters:
- *   - minBreakoutATR / requireDecisiveClose / useVolumeFilter — as before,
- *     filter out marginal breakouts and half-hearted reclaims.
- *   - useTwoPoleFilter — Ehlers' 2-pole Super Smoother, used as a momentum
- *     oscillator: requires the smoothed trend to be turning the trade's way.
- *   - useFisherFilter — Ehlers' Fisher Transform, purpose-built to sharpen
- *     price turning points into a near-Gaussian oscillator; requires the
- *     Fisher line to be above/below its own trigger (1-bar-lagged) line in
- *     the trade's direction.
- *   - useADXFilter — ADX regime filter. This is a counter-trend / fade
- *     strategy by nature, and fade strategies get run over when the market
- *     is strongly trending — ADX above the threshold blocks new entries.
+ *   - minBreakoutATR / requireDecisiveClose / useVolumeFilter — filter out
+ *     marginal breakouts and half-hearted reclaims.
+ *   - useRejectionWickFilter — require the candle that set the excursion's
+ *     extreme to show a real rejection wick (a long wick beyond its body),
+ *     not just a strong-bodied continuation candle. Classic price-action
+ *     "this was a liquidity grab, not real demand/supply" tell.
+ *   - useTwoPoleFilter — Ehlers' 2-pole Super Smoother momentum oscillator.
+ *   - useFisherFilter — Ehlers' Fisher Transform turning-point oscillator.
+ *   - useADXFilter — ADX regime filter (fade strategies get run over in a
+ *     strongly trending market; block entries above the ADX threshold).
  *
- * This file computes the prior-period high/low box generically from a `date`
- * field on each candle (UTC calendar day or ISO week, via `periodMode`), so
- * it works on whatever timeframe you feed it. With the bundled daily BTC CSV
- * and periodMode "week", each week contains ~7 daily bars, which at least
- * exercises the multi-bar-excursion and confirm-bars machinery properly
- * (unlike periodMode "day" against daily bars, where each period is exactly
- * one candle). It is still not a substitute for real 5m/15m data — see
- * docs/daily-range-breakout.md.
+ * periodMode controls what a "day" means for the box: "day" (default, UTC
+ * calendar day) or "week" (ISO week) if you'd rather trade a weekly box.
  *
  * Usage: node daily-range-breakout.js [csv-path] [--optimize]
  *
@@ -211,6 +209,20 @@ function calcADXSeries(candles, period = 14) {
   return adx;
 }
 
+// How much of this candle's range is a wick beyond its body, on the given
+// side ("up" = upper wick, "down" = lower wick). 0 = no wick (marubozu-ish
+// continuation candle), close to 1 = almost the whole bar was rejection.
+function wickRejectionRatio(candle, side) {
+  const range = candle.high - candle.low;
+  if (range <= 0) return 0;
+  if (side === "up") {
+    const bodyTop = Math.max(candle.open, candle.close);
+    return (candle.high - bodyTop) / range;
+  }
+  const bodyBottom = Math.min(candle.open, candle.close);
+  return (bodyBottom - candle.low) / range;
+}
+
 // UTC calendar-day key from either "YYYY-MM-DD" or a full ISO timestamp.
 function dayKey(dateStr) {
   return dateStr.slice(0, 10);
@@ -232,41 +244,55 @@ function periodKey(dateStr, mode) {
   return mode === "week" ? isoWeekKey(dateStr) : dayKey(dateStr);
 }
 
-// For each candle, the high/low/mid of the immediately preceding COMPLETED
-// period (day or ISO week), held fixed for every candle inside the current
-// period.
-function attachPrevPeriodLevels(candles, mode) {
+// For each candle: the band formed by the last `lookback` COMPLETED periods'
+// highs/lows, held fixed for every candle inside the current period.
+//   outerHigh = max of those highs   (breakout level, upside)
+//   innerHigh = min of those highs   (reclaim level, upside — near edge of the band)
+//   outerLow  = min of those lows    (breakout level, downside)
+//   innerLow  = max of those lows    (reclaim level, downside — near edge of the band)
+// With lookback=1, outerHigh===innerHigh and outerLow===innerLow — a single
+// line on each side, same as the original single-day version.
+function attachBandLevels(candles, mode, lookback) {
   const n = candles.length;
-  const prevHigh = new Array(n).fill(null);
-  const prevLow = new Array(n).fill(null);
-  const prevMid = new Array(n).fill(null);
+  const outerHigh = new Array(n).fill(null);
+  const innerHigh = new Array(n).fill(null);
+  const outerLow = new Array(n).fill(null);
+  const innerLow = new Array(n).fill(null);
 
   let curKey = null, curHigh = -Infinity, curLow = Infinity;
-  let lastCompleted = null;
+  const completed = []; // rolling buffer of the last `lookback` periods' {high, low}
 
   for (let i = 0; i < n; i++) {
     const key = periodKey(candles[i].date, mode);
     if (key !== curKey) {
-      if (curKey !== null) lastCompleted = { high: curHigh, low: curLow };
+      if (curKey !== null) {
+        completed.push({ high: curHigh, low: curLow });
+        if (completed.length > lookback) completed.shift();
+      }
       curKey = key;
       curHigh = -Infinity;
       curLow = Infinity;
     }
-    if (lastCompleted) {
-      prevHigh[i] = lastCompleted.high;
-      prevLow[i] = lastCompleted.low;
-      prevMid[i] = (lastCompleted.high + lastCompleted.low) / 2;
+    if (completed.length >= lookback) {
+      let oh = -Infinity, ih = Infinity, ol = Infinity, il = -Infinity;
+      for (const p of completed) {
+        if (p.high > oh) oh = p.high;
+        if (p.high < ih) ih = p.high;
+        if (p.low < ol) ol = p.low;
+        if (p.low > il) il = p.low;
+      }
+      outerHigh[i] = oh; innerHigh[i] = ih; outerLow[i] = ol; innerLow[i] = il;
     }
     curHigh = Math.max(curHigh, candles[i].high);
     curLow = Math.min(curLow, candles[i].low);
   }
-  return { prevHigh, prevLow, prevMid };
+  return { outerHigh, innerHigh, outerLow, innerLow };
 }
 
 // ─── Backtest engine ──────────────────────────────────────────────────────────
 
 function runBacktest(candles, cfg, verbose = false) {
-  const { prevHigh, prevLow, prevMid } = attachPrevPeriodLevels(candles, cfg.periodMode);
+  const { outerHigh, innerHigh, outerLow, innerLow } = attachBandLevels(candles, cfg.periodMode, cfg.bandLookback);
   const atrArr = calcATRSeries(candles, cfg.atrLen);
   const volSMAArr = cfg.useVolumeFilter ? calcVolumeSMASeries(candles, cfg.volumeSMA) : null;
   const twoPoleArr = cfg.useTwoPoleFilter ? calc2PoleSuperSmoother(candles.map((c) => c.close), cfg.twoPoleCutoff) : null;
@@ -276,8 +302,8 @@ function runBacktest(candles, cfg, verbose = false) {
 
   let portfolio = 1000;
   let position = null; // { side, entry, qty, stop, target, risk, entryIdx, sizeUSD, breakevenDone }
-  let breakout = null; // active excursion outside the box: { dir, boxHigh, boxLow, boxMid, extreme, boxKey, startIdx }
-  let pending = null;  // reclaimed, waiting for confirmBars direction confirmation: { side, box..., extreme, boxKey, lastClose, barsConfirmed }
+  let breakout = null; // active excursion: { dir, outerHigh, innerHigh, outerLow, innerLow, mid, extreme, extremeBar, boxKey, startIdx }
+  let pending = null;  // reclaimed, waiting for confirmBars direction confirmation (same shape + side, lastClose, barsConfirmed)
   const usedUp = {};    // one short setup per box, per direction
   const usedDown = {};
 
@@ -289,14 +315,17 @@ function runBacktest(candles, cfg, verbose = false) {
     const atr = atrArr[i];
     const dedup = side === "short" ? usedUp : usedDown;
 
-    const breakoutExt = side === "short" ? box.extreme - box.boxHigh : box.boxLow - box.extreme;
+    const breakoutExt = side === "short" ? box.extreme - box.outerHigh : box.outerLow - box.extreme;
     const minExt = cfg.minBreakoutATR && atr ? cfg.minBreakoutATR * atr : 0;
 
     const decisiveOk = !cfg.requireDecisiveClose || (side === "short"
-      ? c.close <= box.boxHigh - (box.boxHigh - box.boxMid) * cfg.decisiveFrac
-      : c.close >= box.boxLow + (box.boxMid - box.boxLow) * cfg.decisiveFrac);
+      ? c.close <= box.innerHigh - (box.innerHigh - box.mid) * cfg.decisiveFrac
+      : c.close >= box.innerLow + (box.mid - box.innerLow) * cfg.decisiveFrac);
 
     const volOk = !cfg.useVolumeFilter || (volSMAArr[i] != null && c.volume >= volSMAArr[i] * cfg.volumeMult);
+
+    const rejectionOk = !cfg.useRejectionWickFilter || (box.extremeBar &&
+      wickRejectionRatio(box.extremeBar, side === "short" ? "up" : "down") >= cfg.rejectionWickFrac);
 
     let oscOk = true;
     if (cfg.useTwoPoleFilter) {
@@ -328,16 +357,18 @@ function runBacktest(candles, cfg, verbose = false) {
       regimeOk = adxVal == null || adxVal <= cfg.adxMaxThreshold;
     }
 
-    if (breakoutExt >= minExt && decisiveOk && volOk && oscOk && fisherOk && regimeOk && !dedup[box.boxKey]) {
+    if (breakoutExt >= minExt && decisiveOk && volOk && rejectionOk && oscOk && fisherOk && regimeOk && !dedup[box.boxKey]) {
       dedup[box.boxKey] = true;
 
-      const buffer = atr ? atr * cfg.stopBufferATR : Math.abs(box.boxHigh - box.boxLow) * 0.02;
+      const buffer = atr ? atr * cfg.stopBufferATR : Math.abs(box.outerHigh - box.outerLow) * 0.02;
       const entry = c.close;
       const stop = side === "short" ? box.extreme + buffer : box.extreme - buffer;
       const risk = Math.abs(stop - entry);
 
+      // "Opposite side" target = the near edge of the opposite band (the
+      // equivalent of the single reference line in the original design).
       const target = cfg.exitMode === "rangeRun"
-        ? (side === "short" ? box.boxLow : box.boxHigh)
+        ? (side === "short" ? box.innerLow : box.innerHigh)
         : (side === "short" ? entry - risk * cfg.rrMult : entry + risk * cfg.rrMult);
 
       // Risk-based sizing: qty such that a full stop-out loses exactly
@@ -408,35 +439,40 @@ function runBacktest(candles, cfg, verbose = false) {
       }
 
       // ── Phase 2: track an active breakout excursion, or start a fresh one ──
-      // The box (boxHigh/boxLow/boxMid) is captured by value when the excursion
-      // starts and stays fixed while tracked — a calendar period rolling over
-      // mid-excursion doesn't matter, we're watching a specific price level.
+      // The band levels are captured by value when the excursion starts and
+      // stay fixed while tracked — a calendar period rolling over mid-
+      // excursion doesn't matter, we're watching specific price levels.
       if (!position && !pending) {
         if (breakout && cfg.maxExcursionBars && i - breakout.startIdx > cfg.maxExcursionBars) {
           breakout = null; // gave up — this was meant to catch a quick failure, not a trend
         }
 
         if (breakout) {
-          breakout.extreme = breakout.dir === "up" ? Math.max(breakout.extreme, c.high) : Math.min(breakout.extreme, c.low);
+          if (breakout.dir === "up" ? c.high > breakout.extreme : c.low < breakout.extreme) {
+            breakout.extreme = breakout.dir === "up" ? c.high : c.low;
+            breakout.extremeBar = c;
+          }
 
-          const reclaimed = breakout.dir === "up" ? c.close <= breakout.boxHigh : c.close >= breakout.boxLow;
+          const reclaimed = breakout.dir === "up" ? c.close <= breakout.innerHigh : c.close >= breakout.innerLow;
           if (reclaimed) {
             const side = breakout.dir === "up" ? "short" : "long";
             if (cfg.confirmBars <= 1) {
               tryEnter(i, side, breakout);
             } else {
-              pending = { side, boxHigh: breakout.boxHigh, boxLow: breakout.boxLow, boxMid: breakout.boxMid, extreme: breakout.extreme, boxKey: breakout.boxKey, lastClose: c.close, barsConfirmed: 1 };
+              pending = { ...breakout, side, lastClose: c.close, barsConfirmed: 1 };
             }
             breakout = null; // excursion resolved either way — don't re-fire on it
           }
         } else {
-          const pHigh = prevHigh[i];
-          const pLow = prevLow[i];
-          const pMid = prevMid[i];
-          if (pHigh != null) {
+          const oHigh = outerHigh[i], iHigh = innerHigh[i], oLow = outerLow[i], iLow = innerLow[i];
+          // Guard against a degenerate/inverted band (e.g. after a huge gap,
+          // where the two days' ranges don't overlap and iLow >= iHigh) —
+          // there's no valid "center" to reclaim into, so skip this bar.
+          if (oHigh != null && iLow < iHigh) {
             const boxKey = periodKey(c.date, cfg.periodMode);
-            if (c.close > pHigh) breakout = { dir: "up", boxHigh: pHigh, boxLow: pLow, boxMid: pMid, extreme: c.high, boxKey, startIdx: i };
-            else if (c.close < pLow) breakout = { dir: "down", boxHigh: pHigh, boxLow: pLow, boxMid: pMid, extreme: c.low, boxKey, startIdx: i };
+            const mid = (iHigh + iLow) / 2;
+            if (c.close > oHigh) breakout = { dir: "up", outerHigh: oHigh, innerHigh: iHigh, outerLow: oLow, innerLow: iLow, mid, extreme: c.high, extremeBar: c, boxKey, startIdx: i };
+            else if (c.close < oLow) breakout = { dir: "down", outerHigh: oHigh, innerHigh: iHigh, outerLow: oLow, innerLow: iLow, mid, extreme: c.low, extremeBar: c, boxKey, startIdx: i };
           }
         }
       }
@@ -488,7 +524,8 @@ function runBacktest(candles, cfg, verbose = false) {
 
 const BASE_CFG = {
   atrLen: 14,
-  periodMode: "week",      // "day" | "week" — box = previous ISO week's high/low
+  periodMode: "day",       // "day" (default — back to daily range) | "week"
+  bandLookback: 2,         // band = last N days' highs/lows (1 = single line, original behavior)
   confirmBars: 2,          // wait for this many bars closing further in our favor after the reclaim before entering
   rrMult: 2,               // 2:1 reward:risk (used when exitMode is "fixedRR")
   stopBufferATR: 0.1,      // stop = furthest point of the breakout excursion + 0.1 ATR buffer
@@ -498,6 +535,8 @@ const BASE_CFG = {
   useVolumeFilter: false,
   volumeSMA: 20,
   volumeMult: 1.0,
+  useRejectionWickFilter: false, // require the excursion's extreme candle to show a real rejection wick
+  rejectionWickFrac: 0.3,
   useTwoPoleFilter: false, // Ehlers 2-pole Super Smoother momentum confirmation
   twoPoleCutoff: 15,
   twoPoleFreshTurn: false, // true = require the smoother to turn exactly on the entry bar (stricter)
@@ -507,7 +546,7 @@ const BASE_CFG = {
   useADXFilter: false,     // block entries while ADX shows a strongly trending (non-range-bound) market
   adxPeriod: 14,
   adxMaxThreshold: 30,
-  exitMode: "fixedRR",     // "fixedRR" | "rangeRun" (runs to the opposite side of the box)
+  exitMode: "fixedRR",     // "fixedRR" | "rangeRun" (runs to the near edge of the opposite band)
   trailBreakevenAtR: 0,    // 0 = off; e.g. 1 = move stop to breakeven after 1R in favor
   maxHoldBars: 0,          // 0 = no time stop
   maxExcursionBars: 20,    // abandon an excursion that hasn't reclaimed within N bars (0 = never abandon)
@@ -516,35 +555,37 @@ const BASE_CFG = {
 
 if (!OPTIMIZE) {
   console.log("\n═══════════════════════════════════════════════════════════");
-  console.log("  Weekly Range Breakout (failed-breakout reversal) Backtest");
+  console.log("  Daily Range Band Breakout (failed-breakout reversal) Backtest");
   console.log("═══════════════════════════════════════════════════════════");
   console.log(`  Candles: ${candles.length} bars  |  ${candles[0].date} → ${candles[candles.length - 1].date}`);
-  console.log(`  periodMode: ${BASE_CFG.periodMode}  |  confirmBars: ${BASE_CFG.confirmBars}`);
-  console.log(`  Note: this is daily-bar data, so a weekly box gets ~5-7 bars per`);
-  console.log(`  period — enough to exercise the multi-bar logic, but far coarser`);
-  console.log(`  than the intended 5m/15m intraday use. See docs for real testing.\n`);
+  console.log(`  periodMode: ${BASE_CFG.periodMode}  |  bandLookback: ${BASE_CFG.bandLookback}  |  confirmBars: ${BASE_CFG.confirmBars}`);
+  console.log(`  Note: this is daily-bar data, so with periodMode "day" each period`);
+  console.log(`  is exactly one candle — an outside-day-fade proxy. Feed intraday`);
+  console.log(`  (5m/15m) candles for the real version. See docs for details.\n`);
 
   const rBase = runBacktest(candles, BASE_CFG);
+  const rSingleLine = runBacktest(candles, { ...BASE_CFG, bandLookback: 1 });
   const rNoConfirm = runBacktest(candles, { ...BASE_CFG, confirmBars: 1 });
+  const rWick = runBacktest(candles, { ...BASE_CFG, useRejectionWickFilter: true });
   const rADX = runBacktest(candles, { ...BASE_CFG, useADXFilter: true });
   const rFisher = runBacktest(candles, { ...BASE_CFG, useFisherFilter: true });
-  const rTwoPole = runBacktest(candles, { ...BASE_CFG, useTwoPoleFilter: true });
-  const rStacked = runBacktest(candles, { ...BASE_CFG, useADXFilter: true, useFisherFilter: true, useTwoPoleFilter: true });
-  const rStackedRangeRun = runBacktest(candles, { ...BASE_CFG, useADXFilter: true, useFisherFilter: true, useTwoPoleFilter: true, exitMode: "rangeRun", trailBreakevenAtR: 1 });
+  const rStacked = runBacktest(candles, { ...BASE_CFG, useADXFilter: true, useFisherFilter: true, useRejectionWickFilter: true });
+  const rStackedRangeRun = runBacktest(candles, { ...BASE_CFG, useADXFilter: true, useFisherFilter: true, useRejectionWickFilter: true, exitMode: "rangeRun", trailBreakevenAtR: 1 });
 
   const fmt = (r, label) => {
     const ret = ((r.portfolio - 1000) / 10).toFixed(1);
-    return `  ${label.padEnd(32)} $${r.portfolio.toFixed(0).padStart(8)}  ${(ret + "%").padStart(8)}  ${String(r.trades).padStart(6)}  ${(r.winRate + "%").padStart(7)}  ${String(r.profitFactor).padStart(5)}  ${(r.maxDD + "%").padStart(7)}  ${r.sharpe}`;
+    return `  ${label.padEnd(34)} $${r.portfolio.toFixed(0).padStart(8)}  ${(ret + "%").padStart(8)}  ${String(r.trades).padStart(6)}  ${(r.winRate + "%").padStart(7)}  ${String(r.profitFactor).padStart(5)}  ${(r.maxDD + "%").padStart(7)}  ${r.sharpe}`;
   };
 
-  console.log(`  ${"Label".padEnd(32)} ${"Portfolio".padStart(9)}  ${"Return".padStart(8)}  ${"Trades".padStart(6)}  ${"WinRate".padStart(7)}  ${"PF".padStart(5)}  ${"MaxDD".padStart(7)}  Sharpe`);
-  console.log("  " + "─".repeat(100));
-  console.log(fmt(rBase, "Base (confirmBars=2, weekly box)"));
+  console.log(`  ${"Label".padEnd(34)} ${"Portfolio".padStart(9)}  ${"Return".padStart(8)}  ${"Trades".padStart(6)}  ${"WinRate".padStart(7)}  ${"PF".padStart(5)}  ${"MaxDD".padStart(7)}  Sharpe`);
+  console.log("  " + "─".repeat(102));
+  console.log(fmt(rBase, "Base (2-day band, confirmBars=2)"));
+  console.log(fmt(rSingleLine, "bandLookback=1 (single line, old)"));
   console.log(fmt(rNoConfirm, "confirmBars=1 (no confirmation)"));
+  console.log(fmt(rWick, "+ rejection wick filter"));
   console.log(fmt(rADX, "+ ADX regime filter"));
   console.log(fmt(rFisher, "+ Fisher Transform filter"));
-  console.log(fmt(rTwoPole, "+ 2-pole oscillator filter"));
-  console.log(fmt(rStacked, "+ ADX + Fisher + 2-pole stacked"));
+  console.log(fmt(rStacked, "+ ADX + Fisher + wick stacked"));
   console.log(fmt(rStackedRangeRun, "Stacked filters, rangeRun exit"));
 
   console.log("\n── Base config — full trade log ─────────────────────────\n");
@@ -556,39 +597,39 @@ if (!OPTIMIZE) {
 
 if (OPTIMIZE) {
   console.log("\n═══════════════════════════════════════════════════════════");
-  console.log("  Weekly Range Breakout — Grid Search");
+  console.log("  Daily Range Band Breakout — Grid Search");
   console.log("═══════════════════════════════════════════════════════════\n");
 
   const results = [];
   const rrMults = [1.5, 2, 2.5, 3];
   const stopBuffers = [0, 0.1, 0.25, 0.5];
-  const minBreakoutATRs = [0, 0.25, 0.5];
+  const bandLookbacks = [1, 2, 3];
   const confirmBarsArr = [1, 2, 3];
-  const filterStacks = ["none", "adx", "fisher", "twoPole", "all"];
+  const filterStacks = ["none", "adx", "fisher", "wick", "all"];
   const exitModes = ["fixedRR", "rangeRun"];
 
   const stackCfg = (stack) => ({
     useADXFilter: stack === "adx" || stack === "all",
     useFisherFilter: stack === "fisher" || stack === "all",
-    useTwoPoleFilter: stack === "twoPole" || stack === "all",
+    useRejectionWickFilter: stack === "wick" || stack === "all",
   });
 
-  const total = rrMults.length * stopBuffers.length * minBreakoutATRs.length * confirmBarsArr.length * filterStacks.length * exitModes.length;
+  const total = rrMults.length * stopBuffers.length * bandLookbacks.length * confirmBarsArr.length * filterStacks.length * exitModes.length;
   let done = 0;
 
   for (const rrMult of rrMults) {
     for (const stopBufferATR of stopBuffers) {
-      for (const minBreakoutATR of minBreakoutATRs) {
+      for (const bandLookback of bandLookbacks) {
         for (const confirmBars of confirmBarsArr) {
           for (const stack of filterStacks) {
             for (const exitMode of exitModes) {
               const cfg = {
-                ...BASE_CFG, rrMult, stopBufferATR, minBreakoutATR, confirmBars, exitMode,
+                ...BASE_CFG, rrMult, stopBufferATR, bandLookback, confirmBars, exitMode,
                 ...stackCfg(stack),
                 trailBreakevenAtR: exitMode === "rangeRun" ? 1 : 0,
               };
               const r = runBacktest(candles, cfg);
-              results.push({ rrMult, stopBufferATR, minBreakoutATR, confirmBars, stack, exitMode, ...r });
+              results.push({ rrMult, stopBufferATR, bandLookback, confirmBars, stack, exitMode, ...r });
               done++;
               if (done % 200 === 0) process.stdout.write(`\r  Progress: ${done}/${total}`);
             }
@@ -601,12 +642,12 @@ if (OPTIMIZE) {
   results.sort((a, b) => parseFloat(b.sharpe) - parseFloat(a.sharpe));
 
   console.log("\n\n── Top 10 parameter sets (ranked by Sharpe) ─────────────\n");
-  console.log("  rrMult  stopBuf  minBrkATR  confirm  filters   exit      Return%  WinRate  PF    MaxDD%  Sharpe  Trades");
-  console.log("  " + "─".repeat(108));
+  console.log("  rrMult  stopBuf  band  confirm  filters  exit      Return%  WinRate  PF    MaxDD%  Sharpe  Trades");
+  console.log("  " + "─".repeat(103));
   for (const r of results.slice(0, 10)) {
     const ret = ((r.portfolio - 1000) / 1000 * 100).toFixed(0);
     console.log(
-      `  ${r.rrMult.toFixed(1).padEnd(7)} ${r.stopBufferATR.toFixed(2).padEnd(8)} ${r.minBreakoutATR.toFixed(2).padEnd(10)} ${String(r.confirmBars).padEnd(8)} ${r.stack.padEnd(9)} ${r.exitMode.padEnd(9)} ${ret.padStart(7)}%  ${String(r.winRate).padEnd(7)}  ${String(r.profitFactor).padEnd(6)} ${String(r.maxDD).padEnd(7)} ${String(r.sharpe).padEnd(7)} ${r.trades}`
+      `  ${r.rrMult.toFixed(1).padEnd(7)} ${r.stopBufferATR.toFixed(2).padEnd(8)} ${String(r.bandLookback).padEnd(5)} ${String(r.confirmBars).padEnd(8)} ${r.stack.padEnd(8)} ${r.exitMode.padEnd(9)} ${ret.padStart(7)}%  ${String(r.winRate).padEnd(7)}  ${String(r.profitFactor).padEnd(6)} ${String(r.maxDD).padEnd(7)} ${String(r.sharpe).padEnd(7)} ${r.trades}`
     );
   }
 
@@ -614,7 +655,7 @@ if (OPTIMIZE) {
   console.log(`\n── Best configuration ────────────────────────────────────\n`);
   console.log(`  rrMult:         ${best.rrMult}`);
   console.log(`  stopBufferATR:  ${best.stopBufferATR}`);
-  console.log(`  minBreakoutATR: ${best.minBreakoutATR}`);
+  console.log(`  bandLookback:   ${best.bandLookback}`);
   console.log(`  confirmBars:    ${best.confirmBars}`);
   console.log(`  filters:        ${best.stack}`);
   console.log(`  exitMode:       ${best.exitMode}`);
@@ -622,4 +663,4 @@ if (OPTIMIZE) {
   console.log("\n═══════════════════════════════════════════════════════════\n");
 }
 
-export { attachPrevPeriodLevels, calc2PoleSuperSmoother, calcFisherTransform, calcADXSeries, runBacktest, calcATRSeries };
+export { attachBandLevels, calc2PoleSuperSmoother, calcFisherTransform, calcADXSeries, wickRejectionRatio, runBacktest, calcATRSeries };
