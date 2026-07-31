@@ -1,35 +1,47 @@
 /**
- * Daily Range Band Breakout — "failed breakout" reversal strategy.
+ * Range Band Bounce — trade the range BETWEEN two liquidity bands, not a
+ * breakout of them.
  *
  * The idea (from a prior-range trading video, ~70%+ win rate reported on
- * SOL/USDT intraday), extended per later direction:
+ * SOL/USDT intraday), reworked per later direction — this is explicitly NOT
+ * a breakout-fade anymore. We are not betting on price clearing the range
+ * and are not trying to catch a trend continuation; the bands mark where
+ * resting liquidity sits just outside the day's normal range, and the trade
+ * is the bounce back into the range once that liquidity gets swept:
  *
  *   1. Box = the previous `bandLookback` completed days' highs and lows
  *      (default 2). That gives an UPPER BAND spanning the two prior highs
- *      and a LOWER BAND spanning the two prior lows, instead of a single
- *      line on each side:
+ *      and a LOWER BAND spanning the two prior lows:
  *        upper band = [min(H1,H2), max(H1,H2)]
  *        lower band = [min(L1,L2), max(L1,L2)]
- *      The CENTER — the zone both days agree was "inside the range" — is
- *      [max(L1,L2), min(H1,H2)]. `bandLookback: 1` collapses this back to
- *      a single previous-day line on each side (the original behavior).
- *   2. Breakout — a candle CLOSES beyond the far edge of a band (above
- *      max(H1,H2), or below min(L1,L2)). Price can stay outside for any
- *      number of candles — the stop is measured off the furthest point
- *      reached during the whole excursion, not just the first candle.
- *   3. We don't trade while price is sitting inside a band (the ambiguous
- *      zone between the two prior levels) — only once it closes all the
- *      way back through to the near edge (min(H1,H2) for a short, max(L1,L2)
- *      for a long) — i.e. back into the CENTER — does that count as a
- *      reclaim. That's the "reclaim" candle.
- *   4. Don't enter on the reclaim candle itself — wait for `confirmBars`
+ *      The RANGE we actually trade — the CENTER — is the zone both days
+ *      agree was "inside": [max(L1,L2), min(H1,H2)]. `bandLookback: 1`
+ *      collapses each band to a single previous-day line.
+ *   2. Visit — price CLOSES past the near edge of a band (above min(H1,H2),
+ *      or below max(L1,L2)) — i.e. leaves the range into liquidity
+ *      territory. That's not a trade yet. Also supported: a single candle
+ *      that WICKS into (or through) the band and closes back inside the
+ *      range in the same bar — the sharp, one-bar version of a liquidity
+ *      grab, and arguably the cleanest example of the whole idea.
+ *   3. Bail, don't fade, on a real breakout — if a subsequent candle CLOSES
+ *      past the FAR edge of the band (both prior days' extremes), that's
+ *      sustained conviction beyond the range, not a liquidity grab. Stand
+ *      aside (`invalidateOnRealBreakout`, on by default) rather than fade it.
+ *   4. Reclaim — the first candle that closes back past the near edge, into
+ *      the range, while none of the above happened, is the reclaim candle.
+ *   5. Don't enter on the reclaim candle itself — wait for `confirmBars`
  *      total candles (2 by default) each closing further in the trade's
- *      direction before pulling the trigger. If the very next candle
- *      doesn't continue that way, the setup is scrapped rather than chased.
- *   5. Stop goes just beyond the furthest point price reached during the
- *      excursion, plus an ATR buffer. Exit is either a fixed reward:risk
- *      multiple (2:1 by default) or a "let it run" target at the near edge
- *      of the opposite band, optionally with a breakeven stop trail.
+ *      direction before pulling the trigger. If the next candle doesn't
+ *      continue that way, the setup is scrapped rather than chased.
+ *   6. Stop goes just beyond the furthest point price reached while outside
+ *      the range, plus an ATR buffer. Exit is either a fixed reward:risk
+ *      multiple (2:1 by default) or a "ride the range" target at the near
+ *      edge of the OPPOSITE band — trade from one side of the range to the
+ *      other — optionally with a breakeven stop trail.
+ *
+ * There's no "one trade per box" limit — the whole premise is that price
+ * bounces between the two bands repeatedly while the range holds, so each
+ * fresh visit to a band is its own independent setup.
  *
  * On top of that base pattern, this file adds optional confirmation filters:
  *   - minBreakoutATR / requireDecisiveClose / useVolumeFilter — filter out
@@ -304,8 +316,6 @@ function runBacktest(candles, cfg, verbose = false) {
   let position = null; // { side, entry, qty, stop, target, risk, entryIdx, sizeUSD, breakevenDone }
   let breakout = null; // active excursion: { dir, outerHigh, innerHigh, outerLow, innerLow, mid, extreme, extremeBar, boxKey, startIdx }
   let pending = null;  // reclaimed, waiting for confirmBars direction confirmation (same shape + side, lastClose, barsConfirmed)
-  const usedUp = {};    // one short setup per box, per direction
-  const usedDown = {};
 
   const trades = [];
   const equity = [portfolio];
@@ -313,9 +323,11 @@ function runBacktest(candles, cfg, verbose = false) {
   const tryEnter = (i, side, box) => {
     const c = candles[i];
     const atr = atrArr[i];
-    const dedup = side === "short" ? usedUp : usedDown;
 
-    const breakoutExt = side === "short" ? box.extreme - box.outerHigh : box.outerLow - box.extreme;
+    // How far into (or through) the band this excursion reached, measured
+    // from the near edge — the boundary that actually defines "left the
+    // range." Always >= 0 by construction.
+    const breakoutExt = side === "short" ? box.extreme - box.innerHigh : box.innerLow - box.extreme;
     const minExt = cfg.minBreakoutATR && atr ? cfg.minBreakoutATR * atr : 0;
 
     const decisiveOk = !cfg.requireDecisiveClose || (side === "short"
@@ -357,9 +369,7 @@ function runBacktest(candles, cfg, verbose = false) {
       regimeOk = adxVal == null || adxVal <= cfg.adxMaxThreshold;
     }
 
-    if (breakoutExt >= minExt && decisiveOk && volOk && rejectionOk && oscOk && fisherOk && regimeOk && !dedup[box.boxKey]) {
-      dedup[box.boxKey] = true;
-
+    if (breakoutExt >= minExt && decisiveOk && volOk && rejectionOk && oscOk && fisherOk && regimeOk) {
       const buffer = atr ? atr * cfg.stopBufferATR : Math.abs(box.outerHigh - box.outerLow) * 0.02;
       const entry = c.close;
       const stop = side === "short" ? box.extreme + buffer : box.extreme - buffer;
@@ -438,13 +448,17 @@ function runBacktest(candles, cfg, verbose = false) {
         }
       }
 
-      // ── Phase 2: track an active breakout excursion, or start a fresh one ──
-      // The band levels are captured by value when the excursion starts and
-      // stay fixed while tracked — a calendar period rolling over mid-
-      // excursion doesn't matter, we're watching specific price levels.
+      // ── Phase 2: track price visiting a band (liquidity zone), or start a
+      // fresh visit. We're not betting on a real breakout — the bands are
+      // where resting liquidity sits outside the range, and price dipping
+      // into one and coming back is the trade. The far (outer) edge is only
+      // used to bail: a CLOSE beyond it means this wasn't a liquidity grab,
+      // it's an actual break of the range, and we stand aside rather than
+      // fade it. Band levels are captured by value when a visit starts and
+      // stay fixed while tracked.
       if (!position && !pending) {
         if (breakout && cfg.maxExcursionBars && i - breakout.startIdx > cfg.maxExcursionBars) {
-          breakout = null; // gave up — this was meant to catch a quick failure, not a trend
+          breakout = null; // gave up waiting for it to bounce back
         }
 
         if (breakout) {
@@ -453,15 +467,19 @@ function runBacktest(candles, cfg, verbose = false) {
             breakout.extremeBar = c;
           }
 
-          const reclaimed = breakout.dir === "up" ? c.close <= breakout.innerHigh : c.close >= breakout.innerLow;
-          if (reclaimed) {
+          const brokeRange = cfg.invalidateOnRealBreakout && (breakout.dir === "up" ? c.close > breakout.outerHigh : c.close < breakout.outerLow);
+          const reclaimed = !brokeRange && (breakout.dir === "up" ? c.close <= breakout.innerHigh : c.close >= breakout.innerLow);
+
+          if (brokeRange) {
+            breakout = null; // sustained close past both prior highs/lows — a real breakout, not a fade
+          } else if (reclaimed) {
             const side = breakout.dir === "up" ? "short" : "long";
             if (cfg.confirmBars <= 1) {
               tryEnter(i, side, breakout);
             } else {
               pending = { ...breakout, side, lastClose: c.close, barsConfirmed: 1 };
             }
-            breakout = null; // excursion resolved either way — don't re-fire on it
+            breakout = null; // visit resolved either way — don't re-fire on it
           }
         } else {
           const oHigh = outerHigh[i], iHigh = innerHigh[i], oLow = outerLow[i], iLow = innerLow[i];
@@ -471,8 +489,25 @@ function runBacktest(candles, cfg, verbose = false) {
           if (oHigh != null && iLow < iHigh) {
             const boxKey = periodKey(c.date, cfg.periodMode);
             const mid = (iHigh + iLow) / 2;
-            if (c.close > oHigh) breakout = { dir: "up", outerHigh: oHigh, innerHigh: iHigh, outerLow: oLow, innerLow: iLow, mid, extreme: c.high, extremeBar: c, boxKey, startIdx: i };
-            else if (c.close < oLow) breakout = { dir: "down", outerHigh: oHigh, innerHigh: iHigh, outerLow: oLow, innerLow: iLow, mid, extreme: c.low, extremeBar: c, boxKey, startIdx: i };
+            const baseBox = { outerHigh: oHigh, innerHigh: iHigh, outerLow: oLow, innerLow: iLow, mid, boxKey };
+
+            // Single-candle liquidity grab: wicks into (or through) the band
+            // and closes back inside the range, all in one bar — the sharp
+            // "bounce off liquidity" this is meant to catch. Checked before
+            // the slower multi-bar case since it's the more specific match.
+            if (c.high > iHigh && c.close <= iHigh) {
+              const box = { dir: "up", ...baseBox, extreme: c.high, extremeBar: c, startIdx: i };
+              if (cfg.confirmBars <= 1) tryEnter(i, "short", box);
+              else pending = { ...box, side: "short", lastClose: c.close, barsConfirmed: 1 };
+            } else if (c.low < iLow && c.close >= iLow) {
+              const box = { dir: "down", ...baseBox, extreme: c.low, extremeBar: c, startIdx: i };
+              if (cfg.confirmBars <= 1) tryEnter(i, "long", box);
+              else pending = { ...box, side: "long", lastClose: c.close, barsConfirmed: 1 };
+            } else if (c.close > iHigh) {
+              breakout = { dir: "up", ...baseBox, extreme: c.high, extremeBar: c, startIdx: i };
+            } else if (c.close < iLow) {
+              breakout = { dir: "down", ...baseBox, extreme: c.low, extremeBar: c, startIdx: i };
+            }
           }
         }
       }
@@ -546,26 +581,28 @@ const BASE_CFG = {
   useADXFilter: false,     // block entries while ADX shows a strongly trending (non-range-bound) market
   adxPeriod: 14,
   adxMaxThreshold: 30,
+  invalidateOnRealBreakout: true, // stand aside (don't fade) if price closes past the band's FAR edge
   exitMode: "fixedRR",     // "fixedRR" | "rangeRun" (runs to the near edge of the opposite band)
   trailBreakevenAtR: 0,    // 0 = off; e.g. 1 = move stop to breakeven after 1R in favor
   maxHoldBars: 0,          // 0 = no time stop
-  maxExcursionBars: 20,    // abandon an excursion that hasn't reclaimed within N bars (0 = never abandon)
+  maxExcursionBars: 20,    // abandon a visit that hasn't bounced back within N bars (0 = never abandon)
   riskPct: 0.01,           // risk 1% of portfolio per trade, sized off the actual stop distance
 };
 
 if (!OPTIMIZE) {
   console.log("\n═══════════════════════════════════════════════════════════");
-  console.log("  Daily Range Band Breakout (failed-breakout reversal) Backtest");
+  console.log("  Range Band Bounce Backtest");
   console.log("═══════════════════════════════════════════════════════════");
   console.log(`  Candles: ${candles.length} bars  |  ${candles[0].date} → ${candles[candles.length - 1].date}`);
   console.log(`  periodMode: ${BASE_CFG.periodMode}  |  bandLookback: ${BASE_CFG.bandLookback}  |  confirmBars: ${BASE_CFG.confirmBars}`);
   console.log(`  Note: this is daily-bar data, so with periodMode "day" each period`);
-  console.log(`  is exactly one candle — an outside-day-fade proxy. Feed intraday`);
-  console.log(`  (5m/15m) candles for the real version. See docs for details.\n`);
+  console.log(`  is exactly one candle — a coarse proxy. Feed intraday (5m/15m)`);
+  console.log(`  candles for the real version. See docs for details.\n`);
 
   const rBase = runBacktest(candles, BASE_CFG);
   const rSingleLine = runBacktest(candles, { ...BASE_CFG, bandLookback: 1 });
   const rNoConfirm = runBacktest(candles, { ...BASE_CFG, confirmBars: 1 });
+  const rAllowRealBreakout = runBacktest(candles, { ...BASE_CFG, invalidateOnRealBreakout: false });
   const rWick = runBacktest(candles, { ...BASE_CFG, useRejectionWickFilter: true });
   const rADX = runBacktest(candles, { ...BASE_CFG, useADXFilter: true });
   const rFisher = runBacktest(candles, { ...BASE_CFG, useFisherFilter: true });
@@ -579,9 +616,10 @@ if (!OPTIMIZE) {
 
   console.log(`  ${"Label".padEnd(34)} ${"Portfolio".padStart(9)}  ${"Return".padStart(8)}  ${"Trades".padStart(6)}  ${"WinRate".padStart(7)}  ${"PF".padStart(5)}  ${"MaxDD".padStart(7)}  Sharpe`);
   console.log("  " + "─".repeat(102));
-  console.log(fmt(rBase, "Base (2-day band, confirmBars=2)"));
-  console.log(fmt(rSingleLine, "bandLookback=1 (single line, old)"));
+  console.log(fmt(rBase, "Base (2-day band, bounce only)"));
+  console.log(fmt(rSingleLine, "bandLookback=1 (single line)"));
   console.log(fmt(rNoConfirm, "confirmBars=1 (no confirmation)"));
+  console.log(fmt(rAllowRealBreakout, "don't bail on real breakouts"));
   console.log(fmt(rWick, "+ rejection wick filter"));
   console.log(fmt(rADX, "+ ADX regime filter"));
   console.log(fmt(rFisher, "+ Fisher Transform filter"));
@@ -597,7 +635,7 @@ if (!OPTIMIZE) {
 
 if (OPTIMIZE) {
   console.log("\n═══════════════════════════════════════════════════════════");
-  console.log("  Daily Range Band Breakout — Grid Search");
+  console.log("  Range Band Bounce — Grid Search");
   console.log("═══════════════════════════════════════════════════════════\n");
 
   const results = [];

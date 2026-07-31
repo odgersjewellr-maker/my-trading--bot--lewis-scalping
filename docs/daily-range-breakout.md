@@ -1,47 +1,49 @@
-# Daily Range Band Breakout (failed-breakout reversal)
+# Range Band Bounce
 
-A prior-range strategy: instead of a single previous-day high/low line,
-the box is now a **band** built from the last two (or more) days' highs and
-lows. Trade against breakouts that fail to hold, entered with a 2-bar
-direction confirmation.
+Trade the range **between** two liquidity bands — not a breakout of them.
+The bands mark where resting liquidity sits just outside the normal daily
+range; the trade is the bounce back into the range once that liquidity gets
+swept, not a bet that the range breaks.
 
 ## Rules
 
 1. **Band** — take the last `bandLookback` completed days (default 2):
    - upper band = `[min(H1,H2), max(H1,H2)]`
    - lower band = `[min(L1,L2), max(L1,L2)]`
-   - **center** (the zone both days agree was "inside the range") =
-     `[max(L1,L2), min(H1,H2)]`
-   `bandLookback: 1` collapses this back to a single previous-day line on
-   each side (the original design, kept as a comparison row in the output).
-   `periodMode` still controls what a "period" means (`"day"` — the default
-   again — or `"week"`).
-2. **Breakout** — a candle *closes* beyond the **far edge** of a band
-   (above `max(H1,H2)`, or below `min(L1,L2)`) — i.e. it has to clear both
-   prior days' extremes, not just the nearer one. Price can stay outside for
-   any number of candles; the stop is measured off the furthest point
-   reached during the whole excursion. An excursion that never reclaims
-   within `maxExcursionBars` is abandoned.
-3. **No trading inside the band.** While price is sitting between the far
-   edge and the near edge of a band — has broken out but hasn't gotten back
-   to center — nothing happens. That ambiguous zone is exactly what a single
-   noisy line used to treat as a hard yes/no; now it's a real buffer.
-4. **Reclaim** — the first candle that *closes* back past the **near edge**
-   of the band into the center (below `min(H1,H2)` for a short, above
-   `max(L1,L2)` for a long) is the reclaim candle.
+   - **range** (the zone both days agree was "inside," and the thing we
+     actually trade) = `[max(L1,L2), min(H1,H2)]`
+   `bandLookback: 1` collapses each band to a single previous-day line.
+   `periodMode` still controls what a "period" means (`"day"` default, or
+   `"week"`).
+2. **Visit** — price closes past the **near edge** of a band (leaves the
+   range into liquidity territory). Also supported: a single candle that
+   *wicks* into (or through) the band and closes back inside the range in
+   the same bar — the sharp, one-candle version of a liquidity grab, and the
+   cleanest example of the whole idea. Checked first, before the slower
+   multi-bar case.
+3. **Bail, don't fade, on a real breakout** — if a later candle *closes*
+   past the **far edge** of the band (both prior days' extremes), that's
+   sustained conviction beyond the range, not a liquidity grab. Stand aside
+   (`invalidateOnRealBreakout`, on by default) instead of fading it. This is
+   the one-sentence summary of the whole redesign: we're not trying to
+   break out of the range, so a candle that actually confirms a breakout
+   takes us out of the setup rather than into a trade.
+4. **Reclaim** — the first candle that closes back past the near edge, into
+   the range, is the reclaim candle (unless step 3 already fired).
 5. **Direction confirmation (`confirmBars`, default 2)** — starting from the
    reclaim candle, each subsequent candle has to close further in the
-   trade's direction than the one before it. Entry fires once the count
-   reaches `confirmBars`; a candle that closes the other way scraps the
-   setup instead of getting chased. `confirmBars: 1` = enter right on the
-   reclaim candle, for comparison.
-6. **Stop** — beyond the excursion's extreme, plus an ATR buffer. **Target**
-   — a fixed reward:risk multiple (2:1 default), or `exitMode: "rangeRun"`,
-   which targets the near edge of the *opposite* band, optionally with a
-   breakeven stop trail once price has moved `trailBreakevenAtR` in favor.
+   trade's direction than the one before it. A candle that closes the other
+   way scraps the setup. `confirmBars: 1` = enter right on the reclaim.
+6. **Stop** — beyond the furthest point reached while outside the range,
+   plus an ATR buffer. **Target** — a fixed reward:risk multiple (2:1
+   default), or `exitMode: "rangeRun"`, which rides from one side of the
+   range to the near edge of the *opposite* band.
 
-One trade per band per direction. Position sizing is risk-based (`riskPct`,
-default 1% of portfolio per trade, sized off the actual stop distance).
+**No "one trade per box" limit.** The whole premise is that price bounces
+between the two bands repeatedly while the range holds — every fresh visit
+to a band is its own independent setup, which is what "we know it's gonna
+bounce between liquidity" means mechanically. Position sizing is risk-based
+(`riskPct`, default 1% of portfolio per trade).
 
 ## Files
 
@@ -53,54 +55,34 @@ default 1% of portfolio per trade, sized off the actual stop distance).
 ## Confirmation filters, in priority order
 
 1. **ADX regime filter** (`useADXFilter`, `adxMaxThreshold`, default 30) —
-   still the filter I'd lead with. This is a counter-trend fade strategy by
-   nature; it works range-bound and gets run over trending. Blocks entries
-   while ADX shows a strongly trending market.
+   still first choice. Range-bound conditions are exactly what this
+   strategy wants; ADX above the threshold blocks new entries.
 2. **Rejection wick filter** (`useRejectionWickFilter`, `rejectionWickFrac`,
-   default 0.3) — new this round. Requires the candle that set the
-   excursion's extreme to show a real wick beyond its body (a long upper
-   wick for a failed upside breakout, long lower wick for a failed downside
-   one) — not a strong-bodied continuation candle. This is straight out of
-   classic price-action "liquidity grab" reading: the bar that tagged the
-   extreme should look like rejection, not conviction.
+   default 0.3) — requires the candle that set the visit's extreme to show a
+   real wick beyond its body, not a strong-bodied continuation candle.
 3. **Fisher Transform** (`useFisherFilter`, `fisherPeriod`, default 9,
-   `fisherFreshCross`) — Ehlers' turning-point oscillator; direction = the
-   Fisher line vs. its own 1-bar-lagged trigger.
+   `fisherFreshCross`) — Ehlers' turning-point oscillator.
 4. **2-pole Super Smoother** (`useTwoPoleFilter`, `twoPoleCutoff`, default
-   15, `twoPoleFreshTurn`) — complementary lower-frequency momentum check,
-   also Ehlers.
+   15, `twoPoleFreshTurn`) — complementary momentum check, also Ehlers.
 
-All are independent toggles. The non-`--optimize` run prints each in
-isolation plus a stacked combination.
+All independent toggles; the non-`--optimize` run prints each in isolation
+plus a stacked combination, and also shows what happens if you turn OFF
+`invalidateOnRealBreakout` (worse, on the data tested — fading genuine
+breakouts loses).
 
 ## Other things worth doing (not yet implemented — pick any to prioritize)
 
-- **Higher-timeframe trend/exhaustion filter** — only fade a breakout when
-  it's stretched relative to a longer moving average (e.g. price N·ATR
-  above a 50-period EMA), rather than fading fresh continuation moves. ADX
-  covers "is the market trending" but not "is *this specific move*
-  exhausted," which is a different and complementary question.
-- **Momentum divergence** — RSI/MACD divergence between the excursion's
-  extreme and price (price makes a new extreme, the oscillator doesn't
-  confirm it). Classic exhaustion tell, cited repeatedly in the research
-  alongside ADX and wick rejection as one of the standard fakeout filters.
-- **Volatility-contraction filter** — only trade when recent ATR (or
-  Bollinger/Keltner width) is below its own longer-term average, i.e. the
-  market is actually range-bound right now, not just "not currently
-  ADX-trending." Different lens on the same regime question ADX asks.
-- **Session/time-of-day filter** — once you have real intraday data, some
-  hours (e.g. right at a session open) probably produce worse reclaim
-  quality than others. Can't usefully test this without real 5m/15m data.
-- **Confluence with a higher-timeframe level** — extra weight when the
-  band's outer edge also happens to sit near a weekly/monthly high-low or a
-  round number; multiple independent reasons for a level to hold is a
-  stronger signal than one.
-
-My priority order if you want me to keep going: higher-timeframe exhaustion
-filter first (it's the one piece of "why did THIS breakout fail" reasoning
-that's still missing), then divergence, then the volatility filter — the
-session filter and confluence filter both need real intraday data to be
-worth building.
+- **Higher-timeframe exhaustion filter** — only take a bounce when the visit
+  is stretched relative to a longer moving average, rather than any visit.
+- **Momentum divergence** — RSI/MACD divergence between the visit's extreme
+  and price.
+- **Volatility-contraction filter** — trade only when recent ATR/Bollinger
+  width is below its own average, i.e. the market is actually range-bound
+  right now (a different lens on the same question ADX asks).
+- **Session/time-of-day filter** — needs real intraday data to be worth
+  building.
+- **Confluence with a higher-timeframe level** — extra weight when a band's
+  far edge also sits near a weekly/monthly level or a round number.
 
 ## Data granularity matters
 
@@ -109,15 +91,18 @@ runs on whatever timeframe you feed it, but what you feed it changes what
 the backtest is really testing:
 
 - **Intraday (5m/15m) against a daily band** — the intended real version.
-  The band stays fixed all day, a breakout and its eventual reclaim can be
-  many bars apart, and `confirmBars` has real resolution (two 15-minute
-  closes, not two full days).
+  The band stays fixed all day, a visit and its bounce can be many bars
+  apart, and `confirmBars` has real resolution.
 - **Daily bars against a daily band (`btc-daily-binance.csv`, bundled
-  here)** — each period is exactly one candle, so this degenerates into
-  something like a "two-day outside-bar fade." It's useful for validating
-  the engine and comparing filters directionally (best found so far: ~58%
-  win rate / PF ~2.0 with a 3-day band + ADX filter), not for trusting an
-  absolute win rate.
+  here)** — each period is exactly one candle, a coarse proxy. Useful for
+  validating the engine and comparing filters directionally. Best found so
+  far on this proxy: the grid optimizer's top Sharpe config lands around
+  59% return / Sharpe 1.10 / PF 1.83 on 80 trades (2-day band, 3:1 R:R, all
+  filters stacked); a separate high-frequency config (single-line band +
+  wick filter, no direction confirmation) hits **80% win rate over 303
+  trades** with PF 1.30 — worth noting since it's the closest thing to your
+  accuracy target seen yet, though a lower PF per trade than the
+  higher-R:R configs. None of this is a substitute for real 15m/5m data.
 
 To test the real version: `node fetch-binance-intraday.js SOLUSDT 15m 180
 sol-15m-binance.csv` then `node daily-range-breakout.js
@@ -127,14 +112,15 @@ internet access — your own machine or a VPS.
 
 ### A note on the 90% accuracy target
 
-Still worth being direct about this: the best combination found so far
-(3-day band + ADX filter, on the daily-bar proxy) is ~58% win rate with a
-2.0 profit factor — genuinely good, but not 90%. Every filter added this
-round narrows trade count in exchange for quality, which is the right trade
-to be making, but there's a floor under how selective you can get before
-you're just not trading. Real 15m/5m data will move these numbers, possibly
-a lot, in either direction — but "55-65% win rate, PF > 1.5-2" remains the
-realistic target I'd hold, not 90%.
+The 80%-win-rate / 303-trade result above is the closest this has come to
+your target, and it's worth understanding why: confirmBars=1 (no
+confirmation delay) with a single-line band and a wick filter takes far
+more, far smaller-edge trades — profit factor is only 1.30, versus 1.6-1.9
+for the more selective configs at a third the trade count. High win rate
+and high quality-per-trade are usually in tension, not both maximizable at
+once. I'd rather hand you both numbers and let you pick the tradeoff than
+just chase the win-rate figure — a 90% win rate quoted without its profit
+factor and trade count isn't information.
 
 ## Live trading
 
