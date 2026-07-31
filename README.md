@@ -229,6 +229,8 @@ The example `rules.json` uses the van de Poppe + Tone Vays BTC strategy. To buil
 | `trades.csv` | Tax-ready trade record — auto-written on every execution |
 | `docs/setup-windows.md` | Windows-specific MCP setup |
 | `docs/setup-linux.md` | Linux-specific MCP setup |
+| `daily-range-breakout.js` | Backtestable prior-day-range failed-breakout strategy — see [docs/daily-range-breakout.md](docs/daily-range-breakout.md) |
+| `fetch-binance-intraday.js` | Pulls intraday candles for backtesting `daily-range-breakout.js` |
 
 ---
 
