@@ -1,21 +1,24 @@
 /**
  * Generic intraday candle fetcher for Binance — needed to properly backtest
- * daily-range-breakout.js, since the real strategy (fixed prior-day box,
- * checked against every intraday candle) needs 1H (or similar) data, not
- * daily candles.
+ * daily-range-breakout.js, since the real strategy (fixed prior-week box,
+ * checked against every intraday candle, entered on 2-bar confirmation)
+ * needs fine intraday data — 5m or 15m — not daily or even 1H candles.
  *
  * Usage: node fetch-binance-intraday.js [symbol] [interval] [days] [outFile]
- *   node fetch-binance-intraday.js SOLUSDT 1h 365 sol-1h-binance.csv
+ *   node fetch-binance-intraday.js SOLUSDT 15m 180 sol-15m-binance.csv
+ *   node fetch-binance-intraday.js SOLUSDT 5m 90 sol-5m-binance.csv
  *
- * Defaults: SOLUSDT, 1h, 365 days, sol-1h-binance.csv
+ * Defaults: SOLUSDT, 15m, 180 days, sol-15m-binance.csv
+ * (5m over a long window is a LOT of candles — 90 days of 5m is already
+ * ~26,000 bars — so its default day count is shorter than 15m's.)
  */
 
 import { writeFileSync } from "fs";
 import https from "https";
 
 const SYMBOL   = process.argv[2] || "SOLUSDT";
-const INTERVAL = process.argv[3] || "1h";
-const DAYS     = parseInt(process.argv[4] || "365", 10);
+const INTERVAL = process.argv[3] || "15m";
+const DAYS     = parseInt(process.argv[4] || "180", 10);
 const OUT_FILE = process.argv[5] || `${SYMBOL.toLowerCase()}-${INTERVAL}-binance.csv`;
 const LIMIT    = 1000; // max per request
 
