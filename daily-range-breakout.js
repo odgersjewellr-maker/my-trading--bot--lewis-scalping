@@ -54,6 +54,14 @@
  *   - useFisherFilter — Ehlers' Fisher Transform turning-point oscillator.
  *   - useADXFilter — ADX regime filter (fade strategies get run over in a
  *     strongly trending market; block entries above the ADX threshold).
+ *   - useSessionFilter — only ENTER during the London/New York session-open
+ *     windows (on by default; `sessions`/`sessionWindowHours` configure UTC
+ *     start hours and how many hours from each open to trade — default 8h
+ *     and 13h UTC, 3-hour windows, i.e. London and NY opens for good early
+ *     volatility). Visit-tracking and confirmation still run at all hours —
+ *     only the final entry is session-gated, so structure that started
+ *     overnight can still be traded the moment a session opens. This is a
+ *     no-op on data with no time-of-day component (plain daily bars).
  *
  * periodMode controls what a "day" means for the box: "day" (default, UTC
  * calendar day) or "week" (ISO week) if you'd rather trade a weekly box.
@@ -240,6 +248,28 @@ function dayKey(dateStr) {
   return dateStr.slice(0, 10);
 }
 
+// UTC hour-of-day from a full ISO timestamp ("YYYY-MM-DDTHH:mm:ss"), read by
+// string slicing rather than `new Date(...)` — a timestamp without a "Z" or
+// offset suffix (which is exactly what fetch-binance-intraday.js writes) is
+// parsed as LOCAL time by the Date constructor, which would silently shift
+// every hour by whatever timezone this happens to run in. Returns null for
+// plain "YYYY-MM-DD" dates with no time component (can't session-filter those).
+function utcHour(dateStr) {
+  return dateStr.length >= 13 ? parseInt(dateStr.slice(11, 13), 10) : null;
+}
+
+// True if this timestamp's UTC hour falls inside any of the given session
+// windows (each { startHourUTC, windowHours }). No time component (daily
+// bars) always passes — there's nothing to filter.
+function inSessionWindow(dateStr, sessions, windowHours) {
+  const hour = utcHour(dateStr);
+  if (hour == null) return true;
+  return sessions.some((start) => {
+    const end = start + windowHours;
+    return end <= 24 ? hour >= start && hour < end : hour >= start || hour < end - 24;
+  });
+}
+
 // ISO-8601 week key ("2024-W17"), Monday-start weeks.
 function isoWeekKey(dateStr) {
   const base = dateStr.length > 10 ? dateStr : `${dateStr}T00:00:00Z`;
@@ -369,7 +399,9 @@ function runBacktest(candles, cfg, verbose = false) {
       regimeOk = adxVal == null || adxVal <= cfg.adxMaxThreshold;
     }
 
-    if (breakoutExt >= minExt && decisiveOk && volOk && rejectionOk && oscOk && fisherOk && regimeOk) {
+    const sessionOk = !cfg.useSessionFilter || inSessionWindow(c.date, cfg.sessions, cfg.sessionWindowHours);
+
+    if (breakoutExt >= minExt && decisiveOk && volOk && rejectionOk && oscOk && fisherOk && regimeOk && sessionOk) {
       const buffer = atr ? atr * cfg.stopBufferATR : Math.abs(box.outerHigh - box.outerLow) * 0.02;
       const entry = c.close;
       const stop = side === "short" ? box.extreme + buffer : box.extreme - buffer;
@@ -582,6 +614,9 @@ const BASE_CFG = {
   adxPeriod: 14,
   adxMaxThreshold: 30,
   invalidateOnRealBreakout: true, // stand aside (don't fade) if price closes past the band's FAR edge
+  useSessionFilter: true,  // only ENTER during session windows below (visits/confirmation still track at all hours)
+  sessions: [8, 13],       // UTC hours: London open (~8 UTC / 8am GMT), New York open (~13 UTC / 8am EST)
+  sessionWindowHours: 3,   // trade for this many hours from each session open — a no-op on daily-bar data (no hour info)
   exitMode: "fixedRR",     // "fixedRR" | "rangeRun" (runs to the near edge of the opposite band)
   trailBreakevenAtR: 0,    // 0 = off; e.g. 1 = move stop to breakeven after 1R in favor
   maxHoldBars: 0,          // 0 = no time stop
@@ -600,6 +635,7 @@ if (!OPTIMIZE) {
   console.log(`  candles for the real version. See docs for details.\n`);
 
   const rBase = runBacktest(candles, BASE_CFG);
+  const rNoSession = runBacktest(candles, { ...BASE_CFG, useSessionFilter: false });
   const rSingleLine = runBacktest(candles, { ...BASE_CFG, bandLookback: 1 });
   const rNoConfirm = runBacktest(candles, { ...BASE_CFG, confirmBars: 1 });
   const rAllowRealBreakout = runBacktest(candles, { ...BASE_CFG, invalidateOnRealBreakout: false });
@@ -616,7 +652,8 @@ if (!OPTIMIZE) {
 
   console.log(`  ${"Label".padEnd(34)} ${"Portfolio".padStart(9)}  ${"Return".padStart(8)}  ${"Trades".padStart(6)}  ${"WinRate".padStart(7)}  ${"PF".padStart(5)}  ${"MaxDD".padStart(7)}  Sharpe`);
   console.log("  " + "─".repeat(102));
-  console.log(fmt(rBase, "Base (2-day band, bounce only)"));
+  console.log(fmt(rBase, "Base (2-day band, London+NY session)"));
+  console.log(fmt(rNoSession, "useSessionFilter=false (no-op here)"));
   console.log(fmt(rSingleLine, "bandLookback=1 (single line)"));
   console.log(fmt(rNoConfirm, "confirmBars=1 (no confirmation)"));
   console.log(fmt(rAllowRealBreakout, "don't bail on real breakouts"));
@@ -701,4 +738,4 @@ if (OPTIMIZE) {
   console.log("\n═══════════════════════════════════════════════════════════\n");
 }
 
-export { attachBandLevels, calc2PoleSuperSmoother, calcFisherTransform, calcADXSeries, wickRejectionRatio, runBacktest, calcATRSeries };
+export { attachBandLevels, calc2PoleSuperSmoother, calcFisherTransform, calcADXSeries, wickRejectionRatio, inSessionWindow, runBacktest, calcATRSeries };
