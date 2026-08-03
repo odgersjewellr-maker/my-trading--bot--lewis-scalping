@@ -1,11 +1,11 @@
 {
   "side": "short",
-  "entryPrice": 73.61,
-  "quantity": 13.493889,
-  "sizeUSD": 993.28516929,
-  "stopLossPrice": 73.865,
-  "openedAt": "2026-08-03T14:30:34.968Z",
-  "orderId": "PAPER-1785767434968",
+  "entryPrice": 74.13,
+  "quantity": 13.33134,
+  "sizeUSD": 988.2522342,
+  "stopLossPrice": 74.38214285714285,
+  "openedAt": "2026-08-03T18:15:37.061Z",
+  "orderId": "PAPER-1785780937061",
   "stopOrderId": null,
   "pyramided": 0
 }
