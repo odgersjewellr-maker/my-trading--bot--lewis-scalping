@@ -6,3 +6,5 @@ velotrade/.env
 hyrotrader/.env
 bybit/.env
 hyro-trial.log
+research/causal-fusion/cache/
+research/causal-fusion/out/
