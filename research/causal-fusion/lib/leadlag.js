@@ -45,7 +45,10 @@ function clip(v, lo, hi) {
 export function computeLeadLagSeries(bars) {
   const out = new Array(bars.length).fill(null);
 
-  for (let i = WINDOW + 1; i < bars.length - 1; i++) {
+  // Bound is bars.length (not bars.length - 1): computing bar i's signal
+  // only needs bars up to i itself (windowed pairs use j+1 <= i), so the
+  // most recent bar always gets a real signal — important for live-preview.
+  for (let i = WINDOW + 1; i < bars.length; i++) {
     const windowStart = i - WINDOW;
     const corrByStream = {};
 

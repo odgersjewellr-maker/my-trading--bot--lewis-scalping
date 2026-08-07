@@ -9,7 +9,9 @@
     "dev": "node bot.js",
     "dashboard": "node dashboard.js",
     "research:backtest": "node research/causal-fusion/backtest.js",
-    "research:preview": "node research/causal-fusion/live-preview.js"
+    "research:preview": "node research/causal-fusion/live-preview.js",
+    "research:mintflow-backtest": "node research/stablecoin-flow/backtest.js",
+    "research:mintflow-preview": "node research/stablecoin-flow/live-preview.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
