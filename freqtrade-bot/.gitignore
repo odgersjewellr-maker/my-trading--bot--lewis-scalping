@@ -12,6 +12,7 @@ user_data/data/*
 user_data/data/binance/*
 !user_data/data/binance/BTC_USDT-1h.feather
 !user_data/data/binance/BTC_USDT-4h.feather
+!user_data/data/binance/BTC_USDT-1d.feather
 user_data/logs/
 user_data/backtest_results/
 user_data/hyperopt_results/
