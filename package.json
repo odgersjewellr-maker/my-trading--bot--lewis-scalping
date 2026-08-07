@@ -11,7 +11,9 @@
     "research:backtest": "node research/causal-fusion/backtest.js",
     "research:preview": "node research/causal-fusion/live-preview.js",
     "research:mintflow-backtest": "node research/stablecoin-flow/backtest.js",
-    "research:mintflow-preview": "node research/stablecoin-flow/live-preview.js"
+    "research:mintflow-preview": "node research/stablecoin-flow/live-preview.js",
+    "research:llm-predict": "node research/llm-forecast/predict.js",
+    "research:llm-score": "node research/llm-forecast/score.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
