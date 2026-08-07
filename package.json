@@ -15,7 +15,10 @@
     "research:llm-predict": "node research/llm-forecast/predict.js",
     "research:llm-batch": "node research/llm-forecast/predict-batch.js",
     "research:llm-score": "node research/llm-forecast/score.js",
-    "research:llm-reflect": "node research/llm-forecast/reflect.js"
+    "research:llm-reflect": "node research/llm-forecast/reflect.js",
+    "research:netflow-backtest": "node research/exchange-netflow/backtest.js",
+    "research:netflow-preview": "node research/exchange-netflow/live-preview.js",
+    "research:portfolio": "node research/combiner/report.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
