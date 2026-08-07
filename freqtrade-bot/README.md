@@ -15,7 +15,8 @@ produces as a hypothesis to falsify, not a result to trust.
 | File | Purpose |
 |---|---|
 | `user_data/config.json` | BTC/USDT on Binance spot, `dry_run: true`, 1h timeframe |
-| `user_data/strategies/TrendPullbackStarter.py` | Starter strategy — see below |
+| `user_data/strategies/TrendPullbackStarter.py` | Mean-reversion starter strategy — see below |
+| `user_data/strategies/TrendFollowingStarter.py` | Trend-following starter strategy — see below |
 | `user_data/data/binance/BTC_USDT-{1h,4h}.feather` | Real BTC/USDT history, 2017-08-17 → 2024-04-22 — see [Data source](#data-source) |
 | `user_data/config-offline-backtest.json` | Overlay config for backtesting without live exchange access — see [tools/](#tools) |
 | `requirements.txt` | Pinned `freqtrade` + `TA-Lib` versions |
@@ -80,6 +81,53 @@ any active strategy has to clear to justify its own risk and effort. This is exa
 result the earlier warning about "no bot is highly profitable out of the box" was about: now
 you have real numbers instead of a hope. Next step is iterating on the entry logic (or the whole
 strategy family) against this real data — not tuning parameters further.
+
+## The trend-following strategy — `TrendFollowingStarter`
+
+Built after `TrendPullbackStarter`'s real backtest showed a mean-reversion edge doesn't hold on
+BTC/USDT: the asset spent 2017-2024 mostly trending up hard (+1409%), and fading dips in a market
+that mostly just keeps climbing gets you out right before the real move continues. This one buys
+strength instead:
+
+- **Regime filter (4h):** same EMA50/EMA200 filter as the pullback strategy — already-proven
+  useful, kept as-is.
+- **Entry (1h):** a Donchian-channel breakout — price closes above its highest high of the last
+  20 candles (a genuine new local high), with 1h trend structure confirming (EMA20 > EMA50) and
+  volume above its 20-period average so the breakout has real participation.
+- **Exit:** a *narrower* Donchian channel (10-candle low) — the classic wide-entry/narrow-exit
+  trend-system structure — plus a hard exit if 1h trend structure breaks or the 4h regime flips
+  bearish. Deliberately **no profit-capping ROI table** (set to an effectively-unreachable 50%):
+  trend systems make their money from a few large winners riding a trailing stop, and capping
+  profit early is exactly what limited the pullback strategy's upside on its rare winners too.
+- **Risk:** wider ATR-based trailing stop (~3x ATR, trend trades need room to breathe) with a
+  hard -12% fallback.
+
+**Real backtest results (same data, same offline pipeline as the pullback strategy):**
+
+| Period | Trades | Win% | Total profit | Max drawdown | Sharpe | Profit factor | BTC buy-and-hold |
+|---|---|---|---|---|---|---|---|
+| 2017-08-17 → 2024-04-22 (full history) | 402 | 37.8% | **-9.85%** | 46.76% | -0.02 | 0.98 | +1409% |
+| 2023-01-01 → 2024-04-22 (recent) | 96 | 34.4% | **+14.94%** | 22.68% | 0.55 | 1.14 | +292.88% |
+
+**Reading this honestly:** the pivot from mean-reversion to trend-following clearly helped — full
+history moved from -31% to -10%, and the recent window is genuinely positive with a positive
+Sharpe and profit factor above 1. But two things keep this from being a real win: full-history
+performance is still roughly breakeven (Sharpe ≈ 0, profit factor 0.98 — noise, not edge), and
+even the positive recent window captured only a small fraction of BTC's own +293% run over the
+same stretch, because the strategy is only in a position ~part of the time by design (avg trade
+duration ~20h). Exit-reason breakdown makes the mechanism visible: trades that got out via the
+trailing stop were net profitable (+39.5% aggregate, 42% win rate) — the winners running as
+intended — while trades cut by the exit-signal (failed breakouts, trend structure breaking early)
+lost money in aggregate (-49.4%, 28.5% win rate). That's the normal shape of a breakout system —
+most breakouts fail — but it means the edge here, if any, is thin and depends on getting exactly
+the balance right between "let winners run" and "cut failed breakouts fast," which a 40-epoch
+hyperopt pass (same method as the pullback strategy) did not meaningfully improve: best in-sample
+result was +3.31% over the full history with a **worse** drawdown (60.4%) than the untuned
+version — again not committed, for the same overfitting reasons as before.
+
+**Bottom line:** directionally the right pivot, not yet a strategy to trust with money. Better
+than mean-reversion, still not clearing its own bar (beating simple buy-and-hold on a risk-adjusted
+basis, consistently, out of sample).
 
 ## Data source
 
@@ -147,19 +195,29 @@ docker compose logs -f
 
 ## Next steps
 
-`TrendPullbackStarter` as currently built loses money on real 2017-2024 data (see results
-above) — it validated the pipeline, not an edge. From here:
+Two strategy families tried on real 2017-2024 BTC/USDT data, neither yet a strategy to trust
+with money:
 
-- **Iterate on the entry logic itself**, not just its parameters — hyperopt within the existing
-  buy/sell space already showed there's no meaningful edge hiding in this parameterization.
-  Candidates worth trying: a genuine trend-following entry (buy strength, not dips) given BTC's
-  strong upward drift over this period; a longer regime timeframe (1d instead of 4h); or
-  dropping mean-reversion on BTC entirely in favor of a different pair/style.
+| Strategy | Full-history profit | Recent (2023-24) profit | Verdict |
+|---|---|---|---|
+| `TrendPullbackStarter` (mean-reversion) | -31.37% | -6.46% | Clear loser — wrong edge for this asset/period |
+| `TrendFollowingStarter` (breakout) | -9.85% (~breakeven) | +14.94% (Sharpe 0.55) | Directionally right, not yet proven |
+
+From here:
+
+- **Push on the trend-following family**, not back to mean-reversion — it's the one with a
+  positive recent-period Sharpe and profit factor above 1. Candidates: widen the regime filter
+  to daily instead of 4h (fewer, higher-conviction trend flips); size positions or trail more
+  aggressively once a trade is profitable, since the data shows winners-that-run are the entire
+  source of edge here; or test on an altcoin/pair with sharper, more sustained trends than BTC's
+  choppier profile.
 - **Extend the data** past April 2024 (via `freqtrade download-data` on a machine with real
-  access) before drawing any final conclusions — 2024-2026 price action isn't in this backtest.
+  access) before drawing any final conclusions — 2024-2026 price action, including whatever BTC
+  has done in 2026, isn't in either backtest above.
 - **Use walk-forward validation**, not a single in-sample hyperopt run, before trusting any
-  parameter set — the 11-trade "best" epoch found here is a textbook overfitting warning, not a
-  result.
+  parameter set — both hyperopt passes here found their "best" result from either too few trades
+  (11) or a worse drawdown than the untuned baseline (60% vs 47%), textbook overfitting
+  warnings, not results to act on.
 - Once a strategy actually clears its own backtest with a real edge, this Freqtrade setup is
   also the foundation for running a fleet: Freqtrade supports multiple isolated instances
   (separate config/DB per strategy or pair) out of the box — the next piece is a shared risk
