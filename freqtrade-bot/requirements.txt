@@ -1,0 +1,2 @@
+freqtrade==2026.7
+TA-Lib==0.7.1

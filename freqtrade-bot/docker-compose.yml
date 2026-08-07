@@ -1,0 +1,16 @@
+services:
+  freqtrade:
+    image: freqtradeorg/freqtrade:stable
+    restart: unless-stopped
+    container_name: freqtrade-btc-starter
+    volumes:
+      - "./user_data:/freqtrade/user_data"
+    # Dry-run by default (config.json has "dry_run": true). Do not remove
+    # --dry-run below, flip dry_run in config.json instead, once you've
+    # actually validated this on paper for a meaningful stretch of time.
+    command: >
+      trade
+      --logfile /freqtrade/user_data/logs/freqtrade.log
+      --db-url sqlite:////freqtrade/user_data/tradesv3.sqlite
+      --config /freqtrade/user_data/config.json
+      --strategy TrendPullbackStarter
