@@ -4,7 +4,14 @@ __pycache__/
 
 .env
 
-user_data/data/
+# Ignore all downloaded data except the real BTC/USDT history checked in below
+# (git won't re-include files under a fully-excluded parent dir, so exclude
+# with `/*` at each level instead of a trailing-slash directory match).
+user_data/data/*
+!user_data/data/binance/
+user_data/data/binance/*
+!user_data/data/binance/BTC_USDT-1h.feather
+!user_data/data/binance/BTC_USDT-4h.feather
 user_data/logs/
 user_data/backtest_results/
 user_data/hyperopt_results/
