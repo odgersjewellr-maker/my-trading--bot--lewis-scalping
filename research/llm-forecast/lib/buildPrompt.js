@@ -4,7 +4,7 @@ import { ema, rsi, rollingVwap, takerDelta } from "./indicators.js";
  * Builds the structured snapshot text handed to the model. Pure function
  * (no network) so it's testable in isolation from the API calls.
  */
-export function buildSnapshot({ symbol, klines, orderBook, funding, openInterest, horizonHours }) {
+export function buildSnapshot({ symbol, klines, orderBook, funding, openInterest, horizonHours, playbook = null }) {
   const closes = klines.map((k) => k.close);
   const ema8 = ema(closes, 8);
   const ema21 = ema(closes, 21);
@@ -24,8 +24,18 @@ export function buildSnapshot({ symbol, klines, orderBook, funding, openInterest
 
   const flowPersistence = klines.slice(-12).reduce((s, k) => s + takerDelta(k), 0) / 12;
 
+  const playbookSection = playbook
+    ? `=== Accumulated self-critique from your own past predictions ===
+${playbook}
+Read the above, but weigh it against the live data below — it's your own
+best guess at your own patterns from a limited sample, not ground truth.
+=== End self-critique ===
+
+`
+    : "";
+
   return {
-    text: `Symbol: ${symbol}
+    text: `${playbookSection}Symbol: ${symbol}
 As of: ${new Date(last.openTime).toISOString()}
 Forecast horizon: next ${horizonHours}h
 

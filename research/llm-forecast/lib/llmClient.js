@@ -1,10 +1,44 @@
 /**
- * Calls the Claude API directly (not Claude Code) so predictions can be
- * logged unattended on a schedule. Costs real, small amounts of money per
- * call — see README before running this on a tight loop.
+ * Calls the Claude API directly (not Claude Code) so predictions and
+ * reflections can run unattended on a schedule. Costs real, small amounts
+ * of money per call — see README before running this on a tight loop.
  */
 const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
 const DEFAULT_MODEL = process.env.LLM_FORECAST_MODEL || "claude-sonnet-5";
+
+async function callTool(promptText, tool, maxTokens) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error("ANTHROPIC_API_KEY not set. Get one at https://console.anthropic.com/ and add it to .env");
+  }
+
+  const res = await fetch(ANTHROPIC_API, {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model: DEFAULT_MODEL,
+      max_tokens: maxTokens,
+      tools: [tool],
+      tool_choice: { type: "tool", name: tool.name },
+      messages: [{ role: "user", content: promptText }],
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Claude API request failed: ${res.status} ${res.statusText} — ${body}`);
+  }
+
+  const json = await res.json();
+  const toolUse = json.content?.find((b) => b.type === "tool_use" && b.name === tool.name);
+  if (!toolUse) throw new Error(`No ${tool.name} tool call in response: ${JSON.stringify(json)}`);
+
+  return { ...toolUse.input, model: json.model, usage: json.usage };
+}
 
 const PREDICTION_TOOL = {
   name: "record_prediction",
@@ -30,35 +64,36 @@ const PREDICTION_TOOL = {
 };
 
 export async function getPrediction(promptText) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error("ANTHROPIC_API_KEY not set. Get one at https://console.anthropic.com/ and add it to .env");
-  }
+  return callTool(promptText, PREDICTION_TOOL, 500);
+}
 
-  const res = await fetch(ANTHROPIC_API, {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
+const REFLECTION_TOOL = {
+  name: "record_playbook",
+  description: "Record a structured, skeptical self-critique of past prediction performance.",
+  input_schema: {
+    type: "object",
+    properties: {
+      whatWorked: {
+        type: "string",
+        description: "Specific, concrete patterns that correlated with correct calls. Say 'none clearly identifiable' if that's the honest answer.",
+      },
+      whatFailed: {
+        type: "string",
+        description: "Specific, concrete patterns that correlated with incorrect calls.",
+      },
+      calibrationNote: {
+        type: "string",
+        description: "Does stated confidence actually track accuracy? Any systematic over- or under-confidence, or directional bias (e.g. always calling long)?",
+      },
+      guidanceForFuturePredictions: {
+        type: "string",
+        description: "Concrete, actionable guidance — not vague encouragement. If the honest answer is 'sample too small, no reliable pattern yet, stay cautious', say exactly that.",
+      },
     },
-    body: JSON.stringify({
-      model: DEFAULT_MODEL,
-      max_tokens: 500,
-      tools: [PREDICTION_TOOL],
-      tool_choice: { type: "tool", name: "record_prediction" },
-      messages: [{ role: "user", content: promptText }],
-    }),
-  });
+    required: ["whatWorked", "whatFailed", "calibrationNote", "guidanceForFuturePredictions"],
+  },
+};
 
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Claude API request failed: ${res.status} ${res.statusText} — ${body}`);
-  }
-
-  const json = await res.json();
-  const toolUse = json.content?.find((b) => b.type === "tool_use" && b.name === "record_prediction");
-  if (!toolUse) throw new Error(`No prediction tool call in response: ${JSON.stringify(json)}`);
-
-  return { ...toolUse.input, model: json.model, usage: json.usage };
+export async function getReflection(promptText) {
+  return callTool(promptText, REFLECTION_TOOL, 1500);
 }

@@ -13,7 +13,9 @@
     "research:mintflow-backtest": "node research/stablecoin-flow/backtest.js",
     "research:mintflow-preview": "node research/stablecoin-flow/live-preview.js",
     "research:llm-predict": "node research/llm-forecast/predict.js",
-    "research:llm-score": "node research/llm-forecast/score.js"
+    "research:llm-batch": "node research/llm-forecast/predict-batch.js",
+    "research:llm-score": "node research/llm-forecast/score.js",
+    "research:llm-reflect": "node research/llm-forecast/reflect.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

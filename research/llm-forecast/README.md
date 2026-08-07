@@ -8,10 +8,25 @@ So this module only ever logs predictions about the future, before the outcome e
 
 ## How it works
 
-1. `predict.js` builds a snapshot of current market state and asks Claude (via the real Claude API, not Claude Code) for a direction, a calibrated confidence, and a rationale — returned as structured tool output, not free text.
+1. `predict.js` (single symbol) or `predict-batch.js` (a whole watchlist) builds a snapshot of current market state and asks Claude (via the real Claude API, not Claude Code) for a direction, a calibrated confidence, and a rationale — returned as structured tool output, not free text.
 2. The prediction is appended to `log/predictions.jsonl` with a timestamp and a resolution time (`now + horizon`).
 3. Later, once that time has passed, `score.js` fetches what actually happened and marks the prediction correct/incorrect.
 4. Run `score.js` again any time to see the running scorecard.
+5. Once there are 30+ resolved predictions, `reflect.js` reviews them and writes `log/playbook.md` — a self-critique that gets fed back into every future prediction's prompt (step 1) as extra context.
+
+## "Self-learning" — what this actually is and isn't
+
+**Claude's weights never change.** There's no fine-tuning loop here, and none is available for this use case. What `reflect.js` does is genuinely different from that: it has Claude review its own resolved predictions (what it called, how confident it was, what actually happened) and write itself a short critique, which gets prepended to future prompts. That's in-context self-critique, not learning — closer to a trader re-reading their own trade journal before the next session than to a model being retrained.
+
+It's gated behind **30 minimum resolved predictions** on purpose. Below that, "patterns" found in the data are much more likely to be coincidence than signal, and a confidently-written playbook based on noise is worse than no playbook — it launders randomness into something that reads like earned wisdom. `reflect.js` refuses to run below the threshold rather than produce that.
+
+Run `reflect.js` occasionally (weekly is plenty) — it reviews everything resolved so far each time, so running it more often just re-spends money re-deriving the same conclusions from a barely-larger sample.
+
+## Running on multiple tickers
+
+`predict-batch.js` loops a watchlist in one invocation — the intended cron entry point instead of scheduling `predict.js` separately per symbol. Default watchlist is `BTCUSDT,ETHUSDT,SOLUSDT`, overridable via a CLI arg or the `WATCHLIST` env var.
+
+Worth knowing before widening it further: crypto assets are highly correlated (BTC-beta) — adding another 10 altcoins doesn't give you 10x independent evidence, it mostly gives correlated repeats of the same market move, while cost scales exactly linearly with watchlist size (each symbol is a separate billed call). A small, deliberately-composed watchlist beats a wide one here.
 
 ## What data goes into each snapshot
 
@@ -41,12 +56,18 @@ Needs a **paid** Anthropic API key (this is the one module in this repo that cos
 
 ```bash
 npm install
-node research/llm-forecast/predict.js BTCUSDT 4     # log one prediction, 4h horizon
-node research/llm-forecast/predict.js SOLUSDT 4
-node research/llm-forecast/score.js                 # resolve due predictions + print scorecard
+node research/llm-forecast/predict-batch.js         # log a prediction for BTCUSDT, ETHUSDT, SOLUSDT
+node research/llm-forecast/predict.js SOLUSDT 4      # or just one symbol
+node research/llm-forecast/score.js                  # resolve due predictions + print scorecard
+node research/llm-forecast/reflect.js                # once 30+ resolved — writes the self-critique playbook
 ```
 
-**Run `predict.js` on a schedule (every 4-6h), not every bar.** Each call is billed. It's also the only sane cadence anyway — running it hourly against a 4h horizon just produces heavily overlapping, correlated predictions that inflate your sample count without adding real independent evidence.
+**Run `predict.js`/`predict-batch.js` on a schedule (every 4-6h), not every bar.** Each call is billed. It's also the only sane cadence anyway — running it hourly against a 4h horizon just produces heavily overlapping, correlated predictions that inflate your sample count without adding real independent evidence. A crontab line matching the main bot's pattern:
+
+```
+0 */4 * * * cd /root/bot && /usr/bin/node research/llm-forecast/predict-batch.js >> llm-forecast.log 2>&1
+0 5 * * 0   cd /root/bot && /usr/bin/node research/llm-forecast/reflect.js >> llm-forecast.log 2>&1   # weekly
+```
 
 `score.js` is free to run as often as you like — it only reads price data.
 
@@ -66,13 +87,17 @@ node research/llm-forecast/score.js                 # resolve due predictions + 
 | `lib/buildPrompt.js` | Pure function assembling the snapshot text (no network — testable in isolation) |
 | `lib/llmClient.js` | Calls the Claude API with forced structured tool output |
 | `lib/logStore.js` | Append/read/rewrite for the JSONL prediction log |
-| `predict.js` | CLI — logs one new forward prediction |
+| `lib/runPrediction.js` | Shared "predict one symbol" pipeline used by both `predict.js` and `predict-batch.js` — also where the playbook gets loaded and injected |
+| `predict.js` | CLI — logs one new forward prediction for a single symbol |
+| `predict-batch.js` | CLI — logs a forward prediction for a whole watchlist in one run |
 | `score.js` | CLI — resolves due predictions, prints the scorecard |
+| `reflect.js` | CLI — once 30+ resolved predictions exist, writes `log/playbook.md` |
 | `log/predictions.jsonl` | The actual research artifact — **not gitignored, meant to be committed** as evidence accumulates |
+| `log/playbook.md` | Generated by `reflect.js`; fed into future prompts. Also not gitignored — it's a record of what the self-critique loop concluded and when. |
 
 ## Note on this sandbox
 
-`api.anthropic.com`, `fapi.binance.com`, and general Binance endpoints are proxy-blocked here, so this could only be validated offline: `indicators.js` was checked against the repo's real historical BTC price CSV, `buildPrompt.js` was checked for correct structure and bounds with synthetic klines, and `logStore.js`'s append/read/resolve/rewrite cycle was round-tripped end to end. The `ANTHROPIC_API_KEY`-missing guard in `llmClient.js` was confirmed to fail cleanly rather than attempt a call. None of that touched a real Claude API call or real live Binance data — that first real run happens on your machine.
+`api.anthropic.com`, `fapi.binance.com`, and general Binance endpoints are proxy-blocked here, so this could only be validated offline: `indicators.js` was checked against the repo's real historical BTC price CSV, `buildPrompt.js` was checked for correct structure/bounds and correct playbook-section injection (present vs absent, correct ordering) with synthetic klines, and `logStore.js`'s append/read/resolve/rewrite cycle was round-tripped end to end. `reflect.js`'s minimum-sample gate was run for real against the empty log (0 resolved predictions) and correctly refused to call the API rather than reflect on nothing. `predict-batch.js` was run for real too — it correctly isolated the per-symbol failure (Binance blocked here) across all three watchlist symbols without one failure stopping the others. None of that touched a real Claude API call or real live Binance data — that first real run happens on your machine.
 
 ## Honest expectation-setting
 
