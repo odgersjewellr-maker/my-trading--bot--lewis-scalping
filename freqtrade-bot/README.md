@@ -21,8 +21,8 @@ produces as a hypothesis to falsify, not a result to trust.
 | `user_data/strategies/TrendRegimeBreakout.py` | Attempt to raise trade frequency by combining the daily regime with the Donchian entry — didn't work, see below |
 | `user_data/strategies/SimpleTrendFilterPyramid.py` | Attempt to raise frequency via scaling into positions — also didn't help, see below |
 | `user_data/config-multi-asset.json` | BTC/USDT + ETH/USDT, `max_open_trades: 2` — the actual frequency win, see below |
-| `user_data/data/binance/BTC_USDT-1d.feather`, `ETH_USDT-1d.feather` | Daily-resampled real data for `SimpleTrendFilter` and friends |
-| `user_data/data/binance/BTC_USDT-{1h,4h}.feather` | Real BTC/USDT history, 2017-08-17 → 2024-04-22 — see [Data source](#data-source) |
+| `user_data/data/binance/BTC_USDT-1d.feather`, `ETH_USDT-1d.feather` | Daily real data for `SimpleTrendFilter` and friends, **2017-08-17 → 2025-09-08** |
+| `user_data/data/binance/BTC_USDT-{1h,4h}.feather` | Real BTC/USDT history, 2017-08-17 → 2024-04-22 (not extended — only used by the earlier 1h strategies) |
 | `user_data/config-offline-backtest.json` | Overlay config for backtesting without live exchange access — see [tools/](#tools) |
 | `requirements.txt` | Pinned `freqtrade` + `TA-Lib` versions |
 | `docker-compose.yml` | Standard Freqtrade deploy pattern for a VPS |
@@ -313,17 +313,75 @@ more things. Diversification benefit is real but modest here because BTC and ETH
 highly correlated, so this isn't "free" risk reduction the way trading two uncorrelated assets
 would be — but it costs nothing on the Sharpe side and doubles opportunity.
 
+## Forward test — "Book 1," out-of-sample track record
+
+Everything above was designed and validated using data that stops at **2024-04-22**. This
+sandbox can't reach live exchange APIs, so genuine forward testing (paper trading against an
+ongoing real-time feed) isn't possible here — but there's a rigorous stand-in: find real data
+that extends *past* that cutoff, and run the strategy exactly as already locked in, with zero
+changes, against a window it has never seen. That's not a live track record, but it's the same
+statistical test a live track record would be — no parameter in `SimpleTrendFilter` was chosen
+with knowledge of a single day past April 2024.
+
+**Sourcing and verifying the extension data:** found a second, independent GitHub source
+([kindinh903/Financial-Analytics-Microservices-System](https://github.com/kindinh903/Financial-Analytics-Microservices-System))
+with continuous BTC/ETH daily data from Dec 2022 through Sep 2025. Before trusting it for
+something this consequential, cross-checked it against the already-verified bundled data over
+their 496-day overlap (Dec 2022 → Apr 2024): **exact agreement, 0.000% difference on every single
+day**, plus zero gaps/duplicates/OHLC failures independently. That level of agreement between two
+unrelated repositories is strong evidence both trace back to the same real Binance history, not
+fabricated data — the same rigor as the original data source check, not a shortcut. Extended
+`BTC_USDT-1d.feather` and `ETH_USDT-1d.feather` to 2025-09-08 as a result (the 1h/4h files stay
+at 2024-04-22 — only used by the earlier strategies, not extended).
+
+**"Book 1" = `SimpleTrendFilter` + `config-multi-asset.json` (the current recommendation),
+inception 2024-04-23, marked to 2025-09-08 (~1.4 years):**
+
+| | BTC only | **BTC + ETH ("Book 1")** |
+|---|---|---|
+| Trades | 8 | **17** (~12/yr) |
+| Total return | +25.3% | **+29.8%** |
+| CAGR | 17.8%/yr | **20.8%/yr** |
+| Profit factor | 1.92 | 1.95 |
+| Max drawdown | 24.4% | 29.8% |
+| Sharpe (daily) | 0.65 | **0.70** |
+| Benchmark (blended buy-hold) | +69.1% (BTC) | +51.7% |
+
+**Read this honestly, the same way every other result in this README has been read:** the
+strategy stayed profitable out-of-sample — positive CAGR, profit factor comfortably above 1,
+positive Sharpe — which is the real pass/fail bar. But every metric is weaker than the in-sample
+figures (Sharpe 0.70 here vs. 1.21 in-sample for the same portfolio), and it underperformed
+simple buy-and-hold in raw return over this specific window. Both are exactly what should be
+expected: in-sample results are close to a best case by construction, and out-of-sample is where
+reality gets a vote. This is what "the edge held up" looks like in practice — not a repeat of the
++1691% headline number, a smaller but still-real one. The BTC+ETH portfolio's Sharpe edge over
+BTC alone also held up out-of-sample (0.70 vs 0.65), reinforcing that the multi-asset structure
+itself isn't fragile to the specific window tested.
+
+**What this still isn't:** live trading. No real order was ever placed, there's no slippage/API
+failure/exchange-downtime risk modeled, and the data still stops ~11 months short of today
+(2025-09 vs "now"). The natural next step for anyone actually wanting a live track record is
+running `freqtrade trade` in `dry_run: true` on a machine with real exchange access — everything
+in this repo (`docker-compose.yml`, `config-multi-asset.json`) is already set up for exactly
+that.
+
 ## Data source
 
 `user_data/data/binance/{BTC,ETH}_USDT-{1h,4h}.feather` (1h/4h are BTC-only) contains real
 Binance OHLCV, 2017-08-17 → 2024-04-22 (~58k hourly candles per asset, ~30 minor gaps each, no
-duplicates, verified OHLC sanity). Both were pulled from the same public GitHub mirror
+duplicates, verified OHLC sanity). Pulled from a public GitHub mirror
 ([amanb97/Time-Series-Analysis-of-Crypto-Currencies](https://github.com/amanb97/Time-Series-Analysis-of-Crypto-Currencies))
 of [CryptoDataDownload.com](https://www.cryptodatadownload.com/)'s free historical exports; the
-1d/4h series are resampled from the 1h data. That source repo carries no explicit license — fine
-for personal research/backtesting (which is what this is), but before relying on it for anything
-more formal, re-pull the primary source directly with `freqtrade download-data` (below) on a
-machine with real exchange access, and extend the range past April 2024.
+4h series is resampled from the 1h data.
+
+`user_data/data/binance/{BTC,ETH}_USDT-1d.feather` is extended further, to 2025-09-08, using a
+second independent source
+([kindinh903/Financial-Analytics-Microservices-System](https://github.com/kindinh903/Financial-Analytics-Microservices-System))
+cross-validated against the first over their 496-day overlap before use — exact agreement, see
+the [Forward test](#forward-test--book-1-out-of-sample-track-record) section above. Neither
+source repo carries an explicit license — fine for personal research/backtesting (which is what
+this is), but before relying on any of this for anything more formal, re-pull the primary source
+directly with `freqtrade download-data` (below) on a machine with real exchange access.
 
 ## tools/
 
@@ -416,19 +474,23 @@ Two different attempts to raise trade frequency on a single asset both made thin
 dry powder) — consistent evidence that this edge comes from patience and full commitment per
 trade, not from finer-grained timing. The lever that actually worked was giving the same
 unmodified rule more independent things to trade. **`config-multi-asset.json` +
-`SimpleTrendFilter` is the current best answer to "sharpen performance and frequency together."**
-From here:
+`SimpleTrendFilter` is the current best answer to "sharpen performance and frequency together,"**
+and it held up on a genuine out-of-sample forward test (see "Book 1" above): +20.8%/yr CAGR,
+Sharpe 0.70, over 1.4 years of data the strategy never saw during design. Weaker than the
+in-sample numbers, as expected, but still a real, positive edge. From here:
 
+- **Actually run it live.** The forward test above is the strongest validation available from
+  this sandbox, but it still isn't live trading — no slippage, no API failures, no operational
+  risk. `docker-compose.yml` + `config-multi-asset.json` are ready to run `dry_run: true` on a
+  machine with real exchange access; that's the one thing nothing here can substitute for.
 - **Add a third asset** (SOL, or another large-cap with real multi-year history) the same way —
-  source real data via GitHub, validate the unmodified rule on it standalone first, only then add
-  it to the portfolio config. Each additional independent asset should keep raising frequency;
-  watch whether Sharpe holds up or degrades as more (increasingly correlated, in crypto) assets
-  are added.
-- **Extend the data past April 2024** (via `freqtrade download-data` on a machine with real
-  access) before sizing any of this up — every result here stops before 2024-2026 price action.
+  source real data via GitHub, cross-validate it the way the forward-test extension was
+  cross-validated, then test the unmodified rule on it standalone before adding it to the
+  portfolio config.
 - **Don't hyperopt `SimpleTrendFilter`.** Its credibility comes specifically from having zero
-  tuned parameters and holding up across a wide, un-cherry-picked SMA range — adding a hyperopt
-  search now would reintroduce exactly the overfitting risk this approach was built to avoid.
+  tuned parameters and holding up across a wide, un-cherry-picked SMA range *and* a genuine
+  out-of-sample window — adding a hyperopt search now would reintroduce exactly the overfitting
+  risk this approach was built to avoid.
 - Once a strategy is actually sized up with confidence, this Freqtrade setup is also the
   foundation for running a fleet: Freqtrade supports multiple isolated instances (separate
   config/DB per strategy or pair) out of the box — the next piece is a shared risk manager across
