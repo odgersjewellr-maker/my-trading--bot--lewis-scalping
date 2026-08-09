@@ -335,6 +335,15 @@ machine with real exchange access, and extend the range past April 2024.
 - **`user_data/config-offline-backtest.json`** — overlay config wiring `ccxt` to the mock above.
   Use it alongside the real `config.json` via multiple `--config` flags (merged in order), as
   shown below.
+- **`entry_screener.py`** — reports which bundled tickers are currently in `SimpleTrendFilter`'s
+  one entry condition (close above its 150-day SMA), and flags fresh crossovers vs. long-
+  established trends vs. tickers approaching the line. `python3 tools/entry_screener.py`. It only
+  reads whatever `*-1d.feather` files exist in `user_data/data/binance/` — right now that's BTC
+  and ETH as of **2024-04-22**, not live. Screening more tickers raises trade frequency the way
+  BTC+ETH did over BTC alone; it does not raise the edge per trade — see the "actual frequency
+  win" section above for why that distinction matters before treating a longer scan list as a
+  bigger edge. To screen a new ticker or get current results, pull real data on a machine with
+  exchange access first: `freqtrade download-data --userdir user_data -p SOL/USDT -t 1d --timerange 20170101-`.
 
 ## Getting started
 
