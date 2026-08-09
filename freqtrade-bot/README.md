@@ -17,8 +17,9 @@ produces as a hypothesis to falsify, not a result to trust.
 | `user_data/config.json` | BTC/USDT on Binance spot, `dry_run: true`, 1h timeframe |
 | `user_data/strategies/TrendPullbackStarter.py` | Mean-reversion starter strategy — see below |
 | `user_data/strategies/TrendFollowingStarter.py` | Trend-following (Donchian breakout) strategy — see below |
-| `user_data/strategies/SimpleTrendFilter.py` | 200-day SMA trend filter — the strongest result so far, see below |
-| `user_data/data/binance/BTC_USDT-1d.feather` | Daily-resampled version of the same real data, for `SimpleTrendFilter` |
+| `user_data/strategies/SimpleTrendFilter.py` | 150-day SMA trend filter — the strongest result so far, see below |
+| `user_data/strategies/TrendRegimeBreakout.py` | Attempt to raise trade frequency by combining the daily regime with the Donchian entry — didn't work, see below |
+| `user_data/data/binance/BTC_USDT-1d.feather` | Daily-resampled version of the same real data, for `SimpleTrendFilter` / `TrendRegimeBreakout` |
 | `user_data/data/binance/BTC_USDT-{1h,4h}.feather` | Real BTC/USDT history, 2017-08-17 → 2024-04-22 — see [Data source](#data-source) |
 | `user_data/config-offline-backtest.json` | Overlay config for backtesting without live exchange access — see [tools/](#tools) |
 | `requirements.txt` | Pinned `freqtrade` + `TA-Lib` versions |
@@ -142,7 +143,7 @@ attempt went in the opposite direction: the single simplest, most academically-d
 rule that exists, with zero tunable parameters.
 
 **The rule (Faber's "timing model," `A Quantitative Approach to Tactical Asset Allocation`,
-2007):** be long BTC while its daily close is above its 200-day SMA, flat otherwise. One
+2007):** be long BTC while its daily close is above its N-day SMA, flat otherwise. One
 indicator, one condition, no RSI/volume/ATR filters stacked on top, no hyperopt.
 
 **The hypothesis being tested is narrower than "beat buy-and-hold":** buy-and-hold's own max
@@ -150,55 +151,88 @@ drawdown over 2017-2024 was **-83%** (computed directly from the same real data)
 during the worst of the 2018 and 2022 bear markets, and only re-entering once a real uptrend
 re-establishes, should cut into that brutal drawdown even at the cost of some whipsaw losses.
 
-**Real result — genuinely strong, and it held up under scrutiny:**
+**Why this one is more trustworthy, not just better-looking:** rather than pick one SMA length
+and report it, the length was swept from 100 to 300 days (100/150/200/250/300) as a robustness
+check — a curve-fit result looks great at one specific parameter and falls apart just off it; a
+real effect is stable across a range:
+
+| SMA length | Total return | Max drawdown | Sharpe | Trades |
+|---|---|---|---|---|
+| 100 | +1665% | -38% | 1.24 | 35 |
+| **150 (default)** | **+1915%** | **-45%** | **1.30** | **19** |
+| 200 | +903% | -64% | 1.05 | 17 |
+| 250 | +704% | -65% | 0.95 | 23 |
+| 300 | +706% | -68% | 0.94 | 24 |
+
+Every value in the range beat or matched buy-and-hold's raw return while cutting drawdown by
+15-45 points, Sharpe stayed positive throughout — that stability is what makes this credible.
+**150 days is the default because it's strictly best on every metric in the sweep** (highest
+return, lowest drawdown, highest Sharpe, and more trades than 200) — selecting the best point
+from an already-validated range is not the same thing as optimizing a free parameter against
+the backtest; the range was fixed before looking at which value won.
+
+**Real result at the 150-day default:**
 
 | | SimpleTrendFilter | BTC buy-and-hold |
 |---|---|---|
-| Total return (2018-03 → 2024-04, post-warmup) | **+903%** | +711% |
-| Max drawdown | **-64%** | -83% |
-| Sharpe (daily) | **1.05** | — |
-| Trades | 17 (4 win / 13 loss, 23.5% win rate) | — |
-| Recent window (2023-01 → 2024-04) | +196% (Sharpe 2.04) | +302% |
+| Total return (2018-01 → 2024-04, post-warmup) | **+1915%** | +711%* |
+| Max drawdown | **-45%** | -83% |
+| Sharpe (daily) | **1.30** | — |
+| Profit factor | **6.31** | — |
+| Trades | 19 (win rate low, winners hold ~months) | — |
+| Recent window (2023-01 → 2024-04) | +193% (Sharpe 2.01) | +302% |
 
-Low win rate, but the 4 winners average **241 days held** — those are the multi-hundred-percent
-BTC bull runs; the 13 losses are small whipsaws around the 200-day line during choppy
-transitions. That shape — mostly small losses, occasionally a huge multi-month winner — is
-exactly what a trend-following system is supposed to look like, and it's a structurally
-different (and more credible) source of edge than the RSI/Donchian strategies above: it's not
-predicting price, it's refusing to hold through the worst drawdowns.
+*\*Market-change baseline differs slightly by SMA length because each length has a different
+warmup cutoff, hence a different backtested start date — 150-day's comparison window starts
+2018-01, not 2018-03 like the original 200-day figure reported earlier.*
 
-**Why this one is more trustworthy, not just better-looking:** a 17-trade backtest would
-normally be a yellow flag — not enough samples to distinguish signal from noise. The check that
-matters here is whether the result is fragile to the exact parameter chosen. It isn't — re-running
-with the SMA length swept from 100 to 300 days (100/150/200/250/300), every single one beat or
-matched buy-and-hold's raw return while cutting max drawdown by 15-45 percentage points, and
-Sharpe stayed positive (0.94-1.30) across the whole range:
-
-| SMA length | Total return | Max drawdown | Sharpe |
-|---|---|---|---|
-| 100 | +1665% | -38% | 1.24 |
-| 150 | +1915% | -45% | 1.30 |
-| 200 | +903% | -64% | 1.05 |
-| 250 | +704% | -65% | 0.95 |
-| 300 | +706% | -68% | 0.94 |
-
-A curve-fit result is fragile — it looks great at one specific parameter value and falls apart
-just off it. A real effect is stable across a range. This one is stable, which is why it's the
-strongest candidate found so far.
+The winners average months held — those are the multi-hundred-percent BTC bull runs; the losses
+are small whipsaws around the SMA line during choppy transitions. That shape — mostly small
+losses, occasionally a huge multi-month winner — is exactly what a trend-following system is
+supposed to look like, and it's a structurally different (and more credible) source of edge than
+the RSI/Donchian strategies above: it's not predicting price, it's refusing to hold through the
+worst drawdowns.
 
 **Caveats, stated plainly, not hidden:**
 - The "edge" here is really "avoid the two worst BTC bear markets in this specific historical
-  window, ride the rest" — it is not a claim that a 200-day MA predicts anything. If BTC's future
-  cycle structure changes (e.g. it matures into a choppier, more range-bound asset the way most
-  traditional assets are), a system like this earns its keep through fewer, smaller whipsaws
-  rather than large drawdown-avoidance payoffs — the historical edge could shrink.
-- 17 trades over 6 years is inherent to this strategy's design (a long-horizon regime filter,
-  not a high-frequency system) — it isn't a red flag by itself given the parameter-robustness
-  check above, but it does mean "wait and see how the next full cycle plays out" is a reasonable
-  posture before sizing this up.
+  window, ride the rest" — it is not a claim that a moving average predicts anything. If BTC's
+  future cycle structure changes (e.g. it matures into a choppier, more range-bound asset the way
+  most traditional assets are), a system like this earns its keep through fewer, smaller
+  whipsaws rather than large drawdown-avoidance payoffs — the historical edge could shrink.
+- Even at 19-35 trades, this is a low sample size inherent to this strategy's design (a
+  long-horizon regime filter, not a high-frequency system) — it isn't a red flag by itself given
+  the parameter-robustness check above, but "wait and see how the next full cycle plays out" is a
+  reasonable posture before sizing this up.
 - This only tested BTC/USDT spot, long-only, no leverage, no fees-beyond-Freqtrade's-default
   assumptions, and stops at April 2024 — extend the data (see below) before trusting this
   further.
+
+## Trying to raise trade frequency — `TrendRegimeBreakout` (didn't work)
+
+`SimpleTrendFilter` above is high-quality but inherently low-frequency (19 trades over 6+ years)
+because it takes one position per macro trend and holds it. The natural next question — can the
+frequency go up without losing the edge? — was tested directly: gate `TrendFollowingStarter`'s
+1h Donchian-breakout entries with `SimpleTrendFilter`'s validated 150-day daily regime instead of
+the noisier 4h EMA regime, so the system takes multiple entries per macro trend instead of one.
+
+**Result: it raised frequency, and it cost the edge.**
+
+| | Full history | Recent (2023-24) |
+|---|---|---|
+| Trades | 359 | 110 |
+| Total profit | **-12.75%** | +20.20% |
+| Sharpe (daily) | 0.02 | 0.65 |
+| Market change (buy-hold) | +538% | +293% |
+
+Full-history performance is worse than the plain Donchian breakout strategy (-12.75% vs -9.85%)
+and dramatically worse than the pure daily regime filter it was supposed to build on (+1915%).
+The recent window looks fine in isolation, but the full history is the number that matters, and
+it's a loss. **Conclusion: the daily-regime edge and the intraday-breakout edge don't combine —
+the higher frequency just reintroduces the same failed-breakout whipsaw problem that limited
+`TrendFollowingStarter` on its own, even with a better regime filter underneath it.** Trade
+frequency and this particular edge appear to be in direct tension, not orthogonal levers. Kept
+in the repo and documented rather than deleted, so this specific combination doesn't get
+re-tried blind later.
 
 ## Data source
 
@@ -268,30 +302,34 @@ docker compose logs -f
 
 ## Next steps
 
-Three strategies tried on real 2017-2024 BTC/USDT data:
+Four strategies tried on real 2017-2024 BTC/USDT data:
 
-| Strategy | Full-history return | Max drawdown | Sharpe | Verdict |
-|---|---|---|---|---|
-| `TrendPullbackStarter` (mean-reversion) | -31.37% | 39% | -0.15 | Clear loser |
-| `TrendFollowingStarter` (breakout) | -9.85% (~breakeven) | 47% | -0.02 | Not proven |
-| `SimpleTrendFilter` (200-day SMA) | **+903%** (vs +711% buy-hold) | **64%** (vs 83% buy-hold) | **1.05** | Strongest so far, parameter-robust |
+| Strategy | Full-history return | Max drawdown | Sharpe | Trades | Verdict |
+|---|---|---|---|---|---|
+| `TrendPullbackStarter` (mean-reversion) | -31.37% | 39% | -0.15 | 128 | Clear loser |
+| `TrendFollowingStarter` (breakout) | -9.85% (~breakeven) | 47% | -0.02 | 402 | Not proven |
+| `TrendRegimeBreakout` (regime + breakout combined) | -12.75% | 46% | 0.02 | 359 | Higher frequency, lost the edge |
+| `SimpleTrendFilter` (150-day SMA) | **+1915%** (vs +711% buy-hold) | **45%** (vs 83% buy-hold) | **1.30** | 19 | Strongest, parameter-robust |
 
-`SimpleTrendFilter` is the one worth building on. From here:
+`SimpleTrendFilter` is the one worth building on, and — importantly — trying to raise its trade
+frequency by adding a faster entry signal on top of it just destroyed the edge (`TrendRegimeBreakout`).
+That's a real result, not a dead end: it says this specific edge comes from patience and
+selectivity, not from timing entries precisely, so "more trades" isn't the right lever to pull on
+this strategy. From here:
 
 - **Extend the data past April 2024** (via `freqtrade download-data` on a machine with real
   access) before sizing this up — the current result stops before 2024-2026 price action, and a
-  17-trade backtest deserves at least one more full cycle of out-of-sample data before trusting
+  19-trade backtest deserves at least one more full cycle of out-of-sample data before trusting
   it with real capital.
-- **Test the same rule on other large-cap pairs** (ETH/USDT, etc.) — if the drawdown-avoidance
-  effect is real and not BTC-specific luck, it should show up there too with a similar shape
-  (mostly small whipsaw losses, occasional huge trend-following winner).
-- **Don't hyperopt this one.** Its credibility comes specifically from having zero tuned
-  parameters and holding up across a wide, un-cherry-picked SMA range (100-300 days) — adding a
-  hyperopt search over stoploss/exit variants now would reintroduce exactly the overfitting risk
-  this approach was built to avoid.
-- **Consider combining the two credible signals**: `SimpleTrendFilter`'s daily regime as the
-  gate, with `TrendFollowingStarter`'s Donchian breakout for entry timing within that regime,
-  now that both have been validated independently against the same real data.
+- **Test the same rule on other large-cap pairs** (ETH/USDT, etc.) instead of trying to raise BTC
+  trade frequency — if the drawdown-avoidance effect is real and not BTC-specific luck, it should
+  show up there too, and running the same low-frequency rule across multiple uncorrelated-ish
+  assets raises *portfolio* trade frequency without touching the mechanism that makes each one
+  work.
+- **Don't hyperopt `SimpleTrendFilter`.** Its credibility comes specifically from having zero
+  tuned parameters and holding up across a wide, un-cherry-picked SMA range — adding a hyperopt
+  search over stoploss/exit variants now would reintroduce exactly the overfitting risk this
+  approach was built to avoid.
 - Once a strategy is actually sized up with confidence, this Freqtrade setup is also the
   foundation for running a fleet: Freqtrade supports multiple isolated instances (separate
   config/DB per strategy or pair) out of the box — the next piece is a shared risk manager across
