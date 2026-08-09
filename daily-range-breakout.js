@@ -413,9 +413,18 @@ function runBacktest(candles, cfg, verbose = false) {
         ? (side === "short" ? box.innerLow : box.innerHigh)
         : (side === "short" ? entry - risk * cfg.rrMult : entry + risk * cfg.rrMult);
 
-      // Risk-based sizing: qty such that a full stop-out loses exactly
-      // riskPct of the portfolio, regardless of how wide this stop distance is.
-      const qty = (portfolio * cfg.riskPct) / risk;
+      // Two sizing modes:
+      //   "risk"     (default) — qty such that a full stop-out loses exactly
+      //              riskPct of the portfolio, regardless of stop distance.
+      //   "notional" — qty such that the POSITION VALUE is notionalPct of the
+      //              portfolio; the actual $ risked on a stop-out then varies
+      //              trade to trade with how wide that trade's stop distance
+      //              happens to be (stopDistance/entry fraction of notionalPct).
+      //              This is a materially different, much less predictable
+      //              risk model than "risk" — see docs before using it.
+      const qty = cfg.sizingMode === "notional"
+        ? (portfolio * cfg.notionalPct) / entry
+        : (portfolio * cfg.riskPct) / risk;
       const sizeUSD = qty * entry;
       position = { side, entry, qty, stop, target, risk, entryIdx: i, sizeUSD, breakevenDone: false };
       if (verbose) console.log(`  OPEN       ${c.date}  ${side.toUpperCase()} $${entry.toFixed(2)}  stop $${stop.toFixed(2)}  target $${target.toFixed(2)}  size $${sizeUSD.toFixed(0)}`);
@@ -621,7 +630,9 @@ const BASE_CFG = {
   trailBreakevenAtR: 0,    // 0 = off; e.g. 1 = move stop to breakeven after 1R in favor
   maxHoldBars: 0,          // 0 = no time stop
   maxExcursionBars: 20,    // abandon a visit that hasn't bounced back within N bars (0 = never abandon)
-  riskPct: 0.01,           // risk 1% of portfolio per trade, sized off the actual stop distance
+  sizingMode: "risk",      // "risk" (default) | "notional" — see the note above tryEnter's qty calc
+  riskPct: 0.01,           // risk 1% of portfolio per trade, sized off the actual stop distance ("risk" mode)
+  notionalPct: 0.25,       // position value = this fraction of portfolio ("notional" mode) — actual $ risk varies per trade
 };
 
 if (!OPTIMIZE) {
