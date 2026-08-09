@@ -19,7 +19,9 @@ produces as a hypothesis to falsify, not a result to trust.
 | `user_data/strategies/TrendFollowingStarter.py` | Trend-following (Donchian breakout) strategy — see below |
 | `user_data/strategies/SimpleTrendFilter.py` | 150-day SMA trend filter — the strongest result so far, see below |
 | `user_data/strategies/TrendRegimeBreakout.py` | Attempt to raise trade frequency by combining the daily regime with the Donchian entry — didn't work, see below |
-| `user_data/data/binance/BTC_USDT-1d.feather` | Daily-resampled version of the same real data, for `SimpleTrendFilter` / `TrendRegimeBreakout` |
+| `user_data/strategies/SimpleTrendFilterPyramid.py` | Attempt to raise frequency via scaling into positions — also didn't help, see below |
+| `user_data/config-multi-asset.json` | BTC/USDT + ETH/USDT, `max_open_trades: 2` — the actual frequency win, see below |
+| `user_data/data/binance/BTC_USDT-1d.feather`, `ETH_USDT-1d.feather` | Daily-resampled real data for `SimpleTrendFilter` and friends |
 | `user_data/data/binance/BTC_USDT-{1h,4h}.feather` | Real BTC/USDT history, 2017-08-17 → 2024-04-22 — see [Data source](#data-source) |
 | `user_data/config-offline-backtest.json` | Overlay config for backtesting without live exchange access — see [tools/](#tools) |
 | `requirements.txt` | Pinned `freqtrade` + `TA-Lib` versions |
@@ -234,15 +236,92 @@ frequency and this particular edge appear to be in direct tension, not orthogona
 in the repo and documented rather than deleted, so this specific combination doesn't get
 re-tried blind later.
 
+## A second frequency attempt — `SimpleTrendFilterPyramid` (also didn't work)
+
+`TrendRegimeBreakout` failed by adding a faster *exit*, which cut winners short. A structurally
+different idea: keep `SimpleTrendFilter`'s exit exactly as-is (only exit on regime flip), and
+instead add capital to an *already-open* winning trade when it pulls back and bounces within the
+still-bullish regime — a sizing decision, not a new trade. `SimpleTrendFilterPyramid`
+implements this: after entry, an 8%+ pullback from the post-entry high followed by a close
+higher than the prior candle triggers an add, capped at 3 adds per trade and 20 days apart.
+
+**First attempt was a silent no-op, not a real test.** With `stake_amount: "unlimited"` and
+`max_open_trades: 1`, Freqtrade commits the *entire* account balance to the initial entry —
+confirmed by instrumenting the strategy directly: available capital for an add was ~$0.01 by the
+time a real pullback showed up. Freqtrade also swallows exceptions from this callback by default
+(`supress_error=True`), so a broken version of this would have silently reported the identical
+baseline numbers and looked like "no effect" instead of "never actually ran." Fixed by sizing the
+initial entry at 1/(1+max adds) via `custom_stake_amount`, reserving real room for adds up front.
+
+**Once it actually worked, it made performance worse, not better — tested twice:**
+
+| | Total return | Sharpe (daily) | Trades | Win rate |
+|---|---|---|---|---|
+| `SimpleTrendFilter` baseline (BTC only) | +1915% | 1.30 | 19 | — |
+| `SimpleTrendFilterPyramid` (BTC only) | **+683%** | 1.10 | 19 | 26.3% |
+| `SimpleTrendFilter` baseline (BTC+ETH) | +1691% | 1.21 | 47 | — |
+| `SimpleTrendFilterPyramid` (BTC+ETH) | **+585%** | 1.02 | 48 | 18.8% |
+
+Same trade *count* both times (adds don't create new round-trip trades in Freqtrade's counting),
+so this didn't even deliver on the frequency goal — and return dropped by more than half in both
+configurations. **The mechanism:** reserving capital for adds that don't always materialize means
+a meaningful chunk of the account sits uninvested for the entire life of any trade that never
+pulls back 8%, which mechanically drags down compounding versus committing full size immediately.
+This isn't a bug to fix — it's the actual cost of holding dry powder, and here that cost outweighs
+the benefit of buying dips within a trend. Kept in the repo as a documented negative result.
+
+## The actual frequency win — trading BTC and ETH together
+
+Both frequency attempts above tried to make *one asset* trade more often, and both hurt the edge.
+The lever that hasn't been tried yet: run the exact same, unmodified 150-day rule on a *second*
+independent asset. This was also the outstanding validation question from the single-asset
+result — is the drawdown-avoidance effect a real, general trend-following phenomenon, or
+BTC-specific luck?
+
+**Step 1 — does the unmodified rule even work on ETH/USDT?** Sourced real ETH/USDT hourly data
+the same way as BTC (same GitHub source, same repo, same quality checks — see
+[Data source](#data-source)), resampled to daily, and ran `SimpleTrendFilter` completely
+unchanged:
+
+| | ETH/USDT | ETH buy-and-hold |
+|---|---|---|
+| Total return | **+1117%** | +426% |
+| Max drawdown | **-68%** | -94% |
+| Sharpe (daily) | 0.97 | — |
+| Trades | 28 | — |
+
+Yes — beats its own buy-and-hold on both return and drawdown, same shape as BTC (few trades, big
+winners). The effect generalizes; it isn't a BTC fluke.
+
+**Step 2 — trade both together.** `user_data/config-multi-asset.json` runs the identical strategy
+on BTC/USDT and ETH/USDT simultaneously (`max_open_trades: 2`, each asset gets its own
+independent regime signal and position):
+
+| | BTC only | ETH only | **BTC + ETH portfolio** |
+|---|---|---|---|
+| Trades | 19 | 28 | **47** (~7.7/yr, vs 3.1/yr for BTC alone) |
+| Total return | +1915% | +1117% | +1691% |
+| CAGR | 63.5%/yr | 50.5%/yr | 60.4%/yr |
+| Max drawdown (wallet) | -45% | -68% | -47% |
+| Sharpe (daily) | 1.30 | 0.97 | **1.21** |
+
+**This is the real answer to "more frequency, still sharp."** Trade frequency more than doubled
+(3.1 → 7.7/year) while Sharpe stayed close to BTC-alone's (1.21 vs 1.30, not a big give-up) and
+CAGR landed between the two individual assets, as expected from blending. No new indicators, no
+new entry/exit logic, no capital-utilization tradeoff — just the same validated rule applied to
+more things. Diversification benefit is real but modest here because BTC and ETH are historically
+highly correlated, so this isn't "free" risk reduction the way trading two uncorrelated assets
+would be — but it costs nothing on the Sharpe side and doubles opportunity.
+
 ## Data source
 
-`user_data/data/binance/BTC_USDT-{1h,4h}.feather` contains real Binance BTC/USDT OHLCV,
-2017-08-17 → 2024-04-22 (~58k hourly candles, 30 minor gaps, no duplicates, verified OHLC
-sanity). The 1h data was pulled from a public GitHub mirror
+`user_data/data/binance/{BTC,ETH}_USDT-{1h,4h}.feather` (1h/4h are BTC-only) contains real
+Binance OHLCV, 2017-08-17 → 2024-04-22 (~58k hourly candles per asset, ~30 minor gaps each, no
+duplicates, verified OHLC sanity). Both were pulled from the same public GitHub mirror
 ([amanb97/Time-Series-Analysis-of-Crypto-Currencies](https://github.com/amanb97/Time-Series-Analysis-of-Crypto-Currencies))
-of [CryptoDataDownload.com](https://www.cryptodatadownload.com/)'s free historical exports, and
-the 4h series is resampled from it. That source repo carries no explicit license — fine for
-personal research/backtesting (which is what this is), but before relying on it for anything
+of [CryptoDataDownload.com](https://www.cryptodatadownload.com/)'s free historical exports; the
+1d/4h series are resampled from the 1h data. That source repo carries no explicit license — fine
+for personal research/backtesting (which is what this is), but before relying on it for anything
 more formal, re-pull the primary source directly with `freqtrade download-data` (below) on a
 machine with real exchange access, and extend the range past April 2024.
 
@@ -251,7 +330,8 @@ machine with real exchange access, and extend the range past April 2024.
 - **`offline_exchange_mock.py`** — a local stub answering only Binance's exchange-metadata
   endpoint (`exchangeInfo`), which Freqtrade calls even for fully local backtests. Lets
   `freqtrade backtesting`/`hyperopt` run in network-restricted environments using the bundled
-  data. Never point live/dry-run `trade` mode at it — it doesn't serve real prices or orders.
+  data, now for both BTCUSDT and ETHUSDT. Never point live/dry-run `trade` mode at it — it
+  doesn't serve real prices or orders.
 - **`user_data/config-offline-backtest.json`** — overlay config wiring `ccxt` to the mock above.
   Use it alongside the real `config.json` via multiple `--config` flags (merged in order), as
   shown below.
@@ -279,17 +359,23 @@ freqtrade trade --userdir user_data -s TrendPullbackStarter
 ```
 
 **Without exchange access** (CI, this sandbox, offline dev), using the bundled real data. Note
-`SimpleTrendFilter` runs on the `1d` timeframe — pass `--timeframe 1d` (or set it in your config)
-when backtesting it, unlike the other two strategies which use `1h`:
+`SimpleTrendFilter` and friends run on the `1d` timeframe — pass `--timeframe 1d` (or set it in
+your config) when backtesting them, unlike `TrendPullbackStarter`/`TrendFollowingStarter` which
+use `1h`:
 
 ```bash
 python3 tools/offline_exchange_mock.py &
 
+# Single-asset (BTC only)
 freqtrade backtesting --config user_data/config.json --config user_data/config-offline-backtest.json \
+  --userdir user_data -s SimpleTrendFilter --timerange 20170817-20240422 --timeframe 1d
+
+# The recommended path: BTC + ETH together
+freqtrade backtesting --config user_data/config-multi-asset.json --config user_data/config-offline-backtest.json \
   --userdir user_data -s SimpleTrendFilter --timerange 20170817-20240422 --timeframe 1d
 ```
 
-Only flip `dry_run` to `false` in `user_data/config.json` — and add real API keys — after you've
+Only flip `dry_run` to `false` in whichever config you use — and add real API keys — after you've
 watched it paper trade through more than one market regime, on a strategy that's actually beaten
 the backtest above.
 
@@ -302,34 +388,35 @@ docker compose logs -f
 
 ## Next steps
 
-Four strategies tried on real 2017-2024 BTC/USDT data:
+Six strategies/configurations tried on real 2017-2024 data:
 
 | Strategy | Full-history return | Max drawdown | Sharpe | Trades | Verdict |
 |---|---|---|---|---|---|
 | `TrendPullbackStarter` (mean-reversion) | -31.37% | 39% | -0.15 | 128 | Clear loser |
 | `TrendFollowingStarter` (breakout) | -9.85% (~breakeven) | 47% | -0.02 | 402 | Not proven |
 | `TrendRegimeBreakout` (regime + breakout combined) | -12.75% | 46% | 0.02 | 359 | Higher frequency, lost the edge |
-| `SimpleTrendFilter` (150-day SMA) | **+1915%** (vs +711% buy-hold) | **45%** (vs 83% buy-hold) | **1.30** | 19 | Strongest, parameter-robust |
+| `SimpleTrendFilter`, BTC only (150-day SMA) | +1915% (vs +711% buy-hold) | 45% (vs 83% buy-hold) | 1.30 | 19 | Strongest single-asset result |
+| `SimpleTrendFilterPyramid`, BTC only | +683% | 42% | 1.10 | 19 | Worse than baseline, no frequency gain |
+| `SimpleTrendFilter`, **BTC + ETH** | **+1691%** | **47%** | **1.21** | **47 (~7.7/yr)** | **Best balance of frequency and edge** |
 
-`SimpleTrendFilter` is the one worth building on, and — importantly — trying to raise its trade
-frequency by adding a faster entry signal on top of it just destroyed the edge (`TrendRegimeBreakout`).
-That's a real result, not a dead end: it says this specific edge comes from patience and
-selectivity, not from timing entries precisely, so "more trades" isn't the right lever to pull on
-this strategy. From here:
+Two different attempts to raise trade frequency on a single asset both made things worse
+(`TrendRegimeBreakout` by adding a faster exit, `SimpleTrendFilterPyramid` by tying up capital as
+dry powder) — consistent evidence that this edge comes from patience and full commitment per
+trade, not from finer-grained timing. The lever that actually worked was giving the same
+unmodified rule more independent things to trade. **`config-multi-asset.json` +
+`SimpleTrendFilter` is the current best answer to "sharpen performance and frequency together."**
+From here:
 
+- **Add a third asset** (SOL, or another large-cap with real multi-year history) the same way —
+  source real data via GitHub, validate the unmodified rule on it standalone first, only then add
+  it to the portfolio config. Each additional independent asset should keep raising frequency;
+  watch whether Sharpe holds up or degrades as more (increasingly correlated, in crypto) assets
+  are added.
 - **Extend the data past April 2024** (via `freqtrade download-data` on a machine with real
-  access) before sizing this up — the current result stops before 2024-2026 price action, and a
-  19-trade backtest deserves at least one more full cycle of out-of-sample data before trusting
-  it with real capital.
-- **Test the same rule on other large-cap pairs** (ETH/USDT, etc.) instead of trying to raise BTC
-  trade frequency — if the drawdown-avoidance effect is real and not BTC-specific luck, it should
-  show up there too, and running the same low-frequency rule across multiple uncorrelated-ish
-  assets raises *portfolio* trade frequency without touching the mechanism that makes each one
-  work.
+  access) before sizing any of this up — every result here stops before 2024-2026 price action.
 - **Don't hyperopt `SimpleTrendFilter`.** Its credibility comes specifically from having zero
   tuned parameters and holding up across a wide, un-cherry-picked SMA range — adding a hyperopt
-  search over stoploss/exit variants now would reintroduce exactly the overfitting risk this
-  approach was built to avoid.
+  search now would reintroduce exactly the overfitting risk this approach was built to avoid.
 - Once a strategy is actually sized up with confidence, this Freqtrade setup is also the
   foundation for running a fleet: Freqtrade supports multiple isolated instances (separate
   config/DB per strategy or pair) out of the box — the next piece is a shared risk manager across
