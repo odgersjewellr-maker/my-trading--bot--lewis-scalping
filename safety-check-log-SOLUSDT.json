@@ -2109,6 +2109,26 @@
       "pnlUSD": -1.9429457657143594,
       "reason": "trailing stop hit",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-08-14T18:12:18.987Z",
+      "type": "entry",
+      "symbol": "SOLUSDT",
+      "side": "buy",
+      "quantity": 13.235231,
+      "price": 75.16,
+      "sizeUSD": 994.75996196,
+      "portfolioValue": 993.9641691184385,
+      "nkb": {
+        "kernelMA": 75.46676581128926,
+        "sigma": 0.14209611781197856,
+        "upperBand": 75.8930541647252,
+        "lowerBand": 75.04047745785333,
+        "state": 1
+      },
+      "orderPlaced": true,
+      "orderId": "PAPER-1786731138987",
+      "paperTrading": true
     }
   ]
 }
