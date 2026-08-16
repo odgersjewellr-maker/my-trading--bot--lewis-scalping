@@ -772,6 +772,70 @@ function generateTaxSummary() {
   console.log("─────────────────────────────────────────────────────────\n");
 }
 
+// ─── Entry Decision Tree ─────────────────────────────────────────────────────
+// Every fresh-entry decision walks this same ordered tree, top to bottom, one
+// node at a time. Each node either passes (fall through to the next node) or
+// blocks (short-circuit with a specific, loggable reason) — so it's always
+// visible exactly how far a signal got and what stopped it, instead of an
+// implicit chain of booleans. Order matches what's actually enforced live:
+// tradability (can we even take this side) -> regime -> ADX -> RSI -> ATR.
+// Gates that are off (CONFIG.regimeGate === "off", adxEntryMin <= 0, etc.) are
+// skipped as nodes entirely rather than auto-passed, so the tree only ever
+// shows checks that are actually in force for this run.
+function buildEntryDecisionTree({ buySignal, sellSignal, canShort, regimeAllows, regimeNote, adxValue, rsiValue, atrExpanding }) {
+  const side = buySignal ? "buy" : sellSignal ? "sell" : null;
+  const positionSide = buySignal ? "long" : sellSignal ? "short" : null;
+  const nodes = [];
+  const node = (id, label, passed, detail) => { nodes.push({ id, label, passed, detail }); return passed; };
+
+  if (!node("signal", "NKB confirmed band flip (2 bars, volume, 4H MTF)", !!side,
+      side ? `${side.toUpperCase()} confirmed` : "no confirmed flip")) {
+    return { verdict: "none", side: null, positionSide: null, nodes };
+  }
+
+  if (side === "sell" && !node("shortable", "Shorting available", canShort,
+      canShort ? "futures mode" : "spot mode — set TRADE_MODE=futures")) {
+    return { verdict: "unshortable", side, positionSide, nodes };
+  }
+
+  if (CONFIG.regimeGate !== "off" && !node("regime", `Regime gate [${CONFIG.regimeGate}]`, regimeAllows, regimeNote)) {
+    return { verdict: "blocked", side, positionSide, blockedAt: "regime", note: regimeNote, nodes };
+  }
+
+  if (CONFIG.adxEntryMin > 0) {
+    const pass = adxValue != null && adxValue >= CONFIG.adxEntryMin;
+    const note = `ADX(14) ${adxValue != null ? adxValue.toFixed(1) : "N/A"} ${pass ? "≥" : "<"} ${CONFIG.adxEntryMin}`;
+    if (!node("adx", "ADX entry gate", pass, note)) {
+      return { verdict: "blocked", side, positionSide, blockedAt: "adx", note, nodes };
+    }
+  }
+
+  if (CONFIG.rsiEntryGate) {
+    const pass = rsiValue != null && (side === "buy" ? rsiValue > 50 : rsiValue < 50);
+    const note = `RSI(14) ${rsiValue != null ? rsiValue.toFixed(1) : "N/A"} ${pass ? "confirms" : "doesn't confirm"} ${positionSide} momentum (need ${side === "buy" ? ">50" : "<50"})`;
+    if (!node("rsi", "RSI momentum gate", pass, note)) {
+      return { verdict: "blocked", side, positionSide, blockedAt: "rsi", note, nodes };
+    }
+  }
+
+  if (CONFIG.atrExpansionGate) {
+    const pass = atrExpanding === true;
+    const note = `ATR(${CONFIG.atrPeriod}) vs its 20-bar average: ${atrExpanding == null ? "N/A" : atrExpanding ? "expanding" : "contracting"}`;
+    if (!node("atr", "ATR expansion gate", pass, note)) {
+      return { verdict: "blocked", side, positionSide, blockedAt: "atr", note, nodes };
+    }
+  }
+
+  return { verdict: "enter", side, positionSide, nodes };
+}
+
+function printDecisionTree(nodes) {
+  console.log("\n── Entry Decision Tree ──────────────────────────────────\n");
+  for (const n of nodes) {
+    console.log(`  ${n.passed ? "✅" : "🚫"} ${n.label}${n.detail ? ` — ${n.detail}` : ""}`);
+  }
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 async function run() {
@@ -1305,7 +1369,7 @@ async function run() {
 
   const canShort = CONFIG.tradeMode === "futures";
 
-  async function openPosition(side, positionSide, signalNote, sizeMult = 1.0) {
+  async function openPosition(side, positionSide, signalNote, sizeMult = 1.0, decisionTree = null) {
     // Fixed % risk sizing: risk riskPct of portfolio on this trade
     // Position size = riskAmount / stopDist — so a stop hit loses exactly riskPct
     const stopDist = atrStopDist ?? (price * (CONFIG.stopLossPct / 100));
@@ -1343,49 +1407,33 @@ async function run() {
     savePosition({ side: positionSide, entryPrice: price, quantity, sizeUSD: tradeSize, stopLossPrice, riskDist: stopDist, partialTaken: false, realizedPnl: 0, openedAt: new Date().toISOString(), orderId: order.orderId, stopOrderId: order.stopOrderId ?? null, pyramided: 0 });
     paperFee(tradeSize);
     savePortfolio(portfolioValue);
-    log.trades.push({ timestamp: new Date().toISOString(), type: "entry", symbol: CONFIG.symbol, side, quantity, price, sizeUSD: tradeSize, portfolioValue, nkb, orderPlaced: true, orderId: order.orderId, paperTrading: CONFIG.paperTrading });
+    log.trades.push({ timestamp: new Date().toISOString(), type: "entry", symbol: CONFIG.symbol, side, quantity, price, sizeUSD: tradeSize, portfolioValue, nkb, decisionTree, orderPlaced: true, orderId: order.orderId, paperTrading: CONFIG.paperTrading });
     saveLog(log);
     writeCsvRow({ side: side.toUpperCase(), quantity, price, totalUSD: tradeSize, orderId: order.orderId, mode: CONFIG.paperTrading ? "PAPER" : "LIVE", notes: `NKB ${signalNote} | Portfolio: $${portfolioValue.toFixed(2)}` });
     console.log(`✅ ${positionSide} opened — exits on next NKB reversal signal only`);
   }
 
-  if ((buySignal || sellSignal) && !regimeAllows) {
-    console.log(`🚦 REGIME GATE (${CONFIG.regimeGate}) — ${buySignal ? "BUY" : "SELL"} signal blocked (${regimeNote})`);
-    log.gateBlocks = log.gateBlocks || [];
-    log.gateBlocks.push({ timestamp: new Date().toISOString(), signal: buySignal ? "BUY" : "SELL", note: regimeNote });
-    saveLog(log);
-  } else if ((buySignal || (sellSignal && canShort)) && !(CONFIG.adxEntryMin <= 0 || (adxValue != null && adxValue >= CONFIG.adxEntryMin))) {
-    // ADX entry gate — only take a fresh breakout when a real trend exists (PR #1).
-    const note = `ADX ${adxValue != null ? adxValue.toFixed(1) : "N/A"} < ${CONFIG.adxEntryMin} — trend too weak for a fresh entry`;
-    console.log(`🚦 ADX ENTRY GATE — ${buySignal ? "BUY" : "SELL"} signal blocked (${note})`);
-    log.gateBlocks = log.gateBlocks || [];
-    log.gateBlocks.push({ timestamp: new Date().toISOString(), signal: buySignal ? "BUY" : "SELL", note });
-    saveLog(log);
-  } else if ((buySignal || (sellSignal && canShort)) && CONFIG.rsiEntryGate && !(rsiValue != null && (buySignal ? rsiValue > 50 : rsiValue < 50))) {
-    // RSI momentum gate — require momentum already agrees with the direction of
-    // the breakout (backtest-confluence.mjs), not just a band poke.
-    const note = `RSI(14) ${rsiValue != null ? rsiValue.toFixed(1) : "N/A"} doesn't confirm ${buySignal ? "long" : "short"} momentum (need ${buySignal ? ">50" : "<50"})`;
-    console.log(`🚦 RSI ENTRY GATE — ${buySignal ? "BUY" : "SELL"} signal blocked (${note})`);
-    log.gateBlocks = log.gateBlocks || [];
-    log.gateBlocks.push({ timestamp: new Date().toISOString(), signal: buySignal ? "BUY" : "SELL", note });
-    saveLog(log);
-  } else if ((buySignal || (sellSignal && canShort)) && CONFIG.atrExpansionGate && atrExpanding !== true) {
-    // ATR expansion gate — only enter when volatility is picking up, not flat/chop.
-    const note = `ATR(${CONFIG.atrPeriod}) not expanding vs its 20-bar average — likely chop`;
-    console.log(`🚦 ATR EXPANSION GATE — ${buySignal ? "BUY" : "SELL"} signal blocked (${note})`);
-    log.gateBlocks = log.gateBlocks || [];
-    log.gateBlocks.push({ timestamp: new Date().toISOString(), signal: buySignal ? "BUY" : "SELL", note });
-    saveLog(log);
-  } else if (buySignal) {
-    await openPosition("buy", "long", "NKB Buy — bands flipped bullish");
-  } else if (sellSignal && canShort) {
-    await openPosition("sell", "short", "NKB Sell — bands flipped bearish");
-  } else if (sellSignal && !canShort) {
-    console.log("🚫 SELL SIGNAL — spot mode can't short. Set TRADE_MODE=futures in .env to enable.");
-    writeCsvRow({ price, orderId: "BLOCKED", mode: "BLOCKED", notes: "NKB Sell — shorting unavailable in spot mode" });
-  } else {
+  const decision = buildEntryDecisionTree({ buySignal, sellSignal, canShort, regimeAllows, regimeNote, adxValue, rsiValue, atrExpanding });
+  printDecisionTree(decision.nodes);
+
+  if (decision.verdict === "none") {
     console.log(`  No signal — ${stateLabel.toLowerCase()}, waiting for band flip`);
     // No CSV row written — would flood the file every 5 minutes with no-signal noise
+  } else if (decision.verdict === "unshortable") {
+    console.log("🚫 SELL SIGNAL — spot mode can't short. Set TRADE_MODE=futures in .env to enable.");
+    writeCsvRow({ price, orderId: "BLOCKED", mode: "BLOCKED", notes: "NKB Sell — shorting unavailable in spot mode" });
+  } else if (decision.verdict === "blocked") {
+    console.log(`🚦 ENTRY BLOCKED at "${decision.blockedAt}" — ${decision.side.toUpperCase()} signal (${decision.note})`);
+    log.gateBlocks = log.gateBlocks || [];
+    log.gateBlocks.push({ timestamp: new Date().toISOString(), signal: decision.side.toUpperCase(), gate: decision.blockedAt, note: decision.note });
+    saveLog(log);
+  } else if (decision.verdict === "enter") {
+    // ── Final confirmation — every node in the tree above already passed;
+    // this is the explicit checkpoint between "all conditions align" and
+    // "an order actually fires," so it's never implicit in a chain of ifs.
+    console.log(`\n✅ ENTRY CONFIRMED — all ${decision.nodes.length} checks passed. Opening ${decision.positionSide.toUpperCase()}.`);
+    const signalNote = decision.side === "buy" ? "NKB Buy — bands flipped bullish" : "NKB Sell — bands flipped bearish";
+    await openPosition(decision.side, decision.positionSide, signalNote, 1.0, decision.nodes);
   }
 
   console.log("═══════════════════════════════════════════════════════════\n");
