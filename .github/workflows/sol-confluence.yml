@@ -1,16 +1,18 @@
-name: BTC confluence book
+name: SOL confluence book
 
 # Book 5 — full confluence stack + scale-out exit, run as a FIFTH paper book
-# alongside the other 4, not replacing them. Same NKB signal, same BTCUSDT/15m
-# cadence as book 1, but requires ADX + regime + RSI + ATR to ALL agree before
+# alongside the other 4, not replacing them. Same NKB signal, same SOLUSDT/15m
+# cadence as book 2, but requires ADX + regime + RSI + ATR to ALL agree before
 # entry (not just ADX+regime like BTCUSDT-DAILY), and banks 70% of the
 # position at 1R instead of riding pure trail to the end.
 #
 # Backtested on 8y of real BTC daily data (see backtest-confluence.mjs and
 # backtest-scaleout.mjs): win rate 59.2%->63.5%, PF 1.24->1.38, max drawdown
 # 43.7%->29.7%, recent-2-year return 4.4%->22.0% vs the ADX+regime-only
-# config. Validated live via manual dispatch against real market data before
-# promotion to a scheduled book — see BTCUSDT-TEST5 runs in git history.
+# config. The backtest itself is BTC-only (SOL history isn't in this repo),
+# so run this book with that in mind — it's testing whether the same edge
+# transfers to SOL, not confirming it already has. Originally ran as
+# BTCUSDT-CONFLUENCE (see git history) before being switched to SOL.
 
 on:
   schedule:
@@ -21,10 +23,10 @@ permissions:
   contents: write
 
 jobs:
-  run-btc-confluence:
+  run-sol-confluence:
     runs-on: ubuntu-latest
     concurrency:
-      group: run-bot-BTCUSDT-CONFLUENCE
+      group: run-bot-SOLUSDT-CONFLUENCE
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
@@ -47,8 +49,8 @@ jobs:
           TRADE_SIZE_PCT=80
           PORTFOLIO_VALUE_USD=1000
           MAX_TRADES_PER_DAY=0
-          SYMBOL=BTCUSDT
-          INSTANCE_ID=BTCUSDT-CONFLUENCE
+          SYMBOL=SOLUSDT
+          INSTANCE_ID=SOLUSDT-CONFLUENCE
           TIMEFRAME=15m
           NKB_KERNEL=gaussian
           NKB_BAND_MULT=3.0
@@ -74,13 +76,13 @@ jobs:
           rm -f .env
           git config user.name "trading-bot"
           git config user.email "actions@users.noreply.github.com"
-          for f in position-BTCUSDT-CONFLUENCE.json trades-BTCUSDT-CONFLUENCE.csv safety-check-log-BTCUSDT-CONFLUENCE.json nkb-state-BTCUSDT-CONFLUENCE.json portfolio-BTCUSDT-CONFLUENCE.json; do
+          for f in position-SOLUSDT-CONFLUENCE.json trades-SOLUSDT-CONFLUENCE.csv safety-check-log-SOLUSDT-CONFLUENCE.json nkb-state-SOLUSDT-CONFLUENCE.json portfolio-SOLUSDT-CONFLUENCE.json; do
             [ -f "$f" ] && git add "$f"
           done
           if git diff --cached --quiet; then
             exit 0
           fi
-          git commit -m "BTC-CONFLUENCE run $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git commit -m "SOL-CONFLUENCE run $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           for i in 1 2 3 4 5; do
             if git push; then
               exit 0
