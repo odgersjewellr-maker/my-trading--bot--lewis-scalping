@@ -126,6 +126,17 @@ export const CONFIG = {
   // computeStopLossPrice) — enforced by the exchange on real trades, not by us.
   stopLossPct: parseFloat(process.env.STOP_LOSS_PCT || "0.3"),
   atrPeriod: parseInt(process.env.ATR_PERIOD || "14"),
+  // Scale-out (opt-in, default off — existing books are unaffected unless set).
+  // Banks scaleOutBankFrac of the position once unrealised profit reaches
+  // scaleOutTPMult × the trade's initial risk distance (R), then locks the
+  // runner's stop to breakeven. Backtested on 8y of BTC daily data: raises the
+  // combined-book win rate from ~30% to ~55-60% and cuts recent-regime drawdown
+  // roughly in half, at the cost of some upside in strongly trending years —
+  // see backtest-scaleout.mjs. True 80-90% hit rate was also tested and is NOT
+  // viable here — profit factor drops below 1 (net losing) past ~65-70%.
+  scaleOutEnabled:   process.env.SCALE_OUT_ENABLED === "true",
+  scaleOutBankFrac:  parseFloat(process.env.SCALE_OUT_BANK_FRAC || "0.7"),
+  scaleOutTPMult:    parseFloat(process.env.SCALE_OUT_TP_MULT || "1.0"),
   // Futures only. Left unset, BitGet falls back to whatever leverage is
   // already configured on the account for this symbol — explicit here so
   // it's never a surprise.
@@ -852,10 +863,13 @@ async function run() {
         const stillOpen = await PROP_EXEC.hasOpenPosition();
         if (!stillOpen) {
           const exitPrice = position.stopLossPrice ?? price;
-          const pnl = position.side === "long"
+          const legPnl = position.side === "long"
             ? (exitPrice - position.entryPrice) * position.quantity
             : (position.entryPrice - exitPrice) * position.quantity;
-          console.log(`  ⛔ Velotrade: position closed exchange-side (stop filled) — est. P&L $${pnl.toFixed(2)}`);
+          // Includes any scale-out leg banked on an earlier run (real balance/equity
+          // for sizing still comes from the exchange via accountMetrics() below).
+          const pnl = (position.realizedPnl ?? 0) + legPnl;
+          console.log(`  ⛔ Velotrade: position closed exchange-side (stop filled) — est. P&L $${pnl.toFixed(2)} total`);
           log.trades.push({ timestamp: new Date().toISOString(), type: "stop", symbol: CONFIG.symbol, side: position.side, price: exitPrice, pnlUSD: pnl, reason: "protective stop filled exchange-side", paperTrading: false });
           saveLog(log);
           writeCsvRow({ side: (position.side === "long" ? "sell" : "buy").toUpperCase(), quantity: position.quantity, price: exitPrice, totalUSD: position.sizeUSD, orderId: position.stopOrderId ?? "VT-STOP", mode: "LIVE", notes: `Protective stop filled exchange-side — est. P&L $${pnl.toFixed(2)}` });
@@ -928,10 +942,13 @@ async function run() {
         saveLog(log);
         return false;
       }
-      const pnl = position.side === "long"
+      const legPnl = position.side === "long"
         ? (price - position.entryPrice) * position.quantity
         : (position.entryPrice - price) * position.quantity;
-      portfolioValue += pnl;
+      // Includes any scale-out leg banked (and already added to portfolioValue) on
+      // an earlier run — position.realizedPnl persists across runs via position-*.json.
+      const pnl = (position.realizedPnl ?? 0) + legPnl;
+      portfolioValue += legPnl;
       paperFee(price * position.quantity);
       savePortfolio(portfolioValue);
       log.trades.push({ timestamp: new Date().toISOString(), type: "exit", symbol: CONFIG.symbol, side: closeSide, quantity: position.quantity, price, sizeUSD: position.sizeUSD, pnlUSD: pnl, reason: `prop: ${reason}`, orderPlaced: true, orderId: order.orderId, paperTrading: CONFIG.paperTrading });
@@ -1015,6 +1032,45 @@ async function run() {
     const pnlPct = (pnlUSD / position.sizeUSD) * 100;
     console.log(`  Unrealized P&L: $${pnlUSD.toFixed(2)} (${pnlPct.toFixed(2)}%)`);
 
+    // Scale-out — bank most of the position once it reaches scaleOutTPMult × initial
+    // risk (R), lock the runner's stop to breakeven so the banked win can't be given back.
+    if (CONFIG.scaleOutEnabled && !position.partialTaken && position.riskDist) {
+      const tpPrice = position.side === "long"
+        ? position.entryPrice + CONFIG.scaleOutTPMult * position.riskDist
+        : position.entryPrice - CONFIG.scaleOutTPMult * position.riskDist;
+      const tpHit = position.side === "long" ? price >= tpPrice : price <= tpPrice;
+      if (tpHit) {
+        const bankQty = position.quantity * CONFIG.scaleOutBankFrac;
+        console.log(`\n💰 SCALE-OUT — banking ${(CONFIG.scaleOutBankFrac * 100).toFixed(0)}% at $${price.toFixed(2)} (${CONFIG.scaleOutTPMult}R target hit)`);
+        let bankOrder;
+        try {
+          bankOrder = await executeOrder(position.side === "long" ? "sell" : "buy", bankQty.toFixed(6));
+        } catch (err) {
+          console.log(`  ❌ Scale-out order failed — ${err.message} (will retry next run)`);
+          bankOrder = null;
+        }
+        if (bankOrder) {
+          const bankPnl = position.side === "long"
+            ? (price - position.entryPrice) * bankQty
+            : (position.entryPrice - price) * bankQty;
+          portfolioValue += bankPnl;
+          paperFee(price * bankQty);
+          position.quantity -= bankQty;
+          position.sizeUSD = position.quantity * position.entryPrice;
+          position.realizedPnl = (position.realizedPnl ?? 0) + bankPnl;
+          position.partialTaken = true;
+          position.stopLossPrice = position.side === "long"
+            ? Math.max(position.stopLossPrice ?? -Infinity, position.entryPrice)
+            : Math.min(position.stopLossPrice ?? Infinity, position.entryPrice);
+          savePortfolio(portfolioValue);
+          log.trades.push({ timestamp: new Date().toISOString(), type: "partial", symbol: CONFIG.symbol, side: position.side, quantity: bankQty, price, pnlUSD: bankPnl, reason: `scale-out ${CONFIG.scaleOutTPMult}R`, orderId: bankOrder.orderId, paperTrading: CONFIG.paperTrading });
+          saveLog(log);
+          writeCsvRow({ side: (position.side === "long" ? "sell" : "buy").toUpperCase(), quantity: bankQty, price, totalUSD: bankQty * price, orderId: bankOrder.orderId, mode: CONFIG.paperTrading ? "PAPER" : "LIVE", notes: `Scale-out ${(CONFIG.scaleOutBankFrac * 100).toFixed(0)}% @ ${CONFIG.scaleOutTPMult}R — P&L $${bankPnl.toFixed(2)} | Portfolio: $${portfolioValue.toFixed(2)}` });
+          console.log(`  Runner: ${position.quantity.toFixed(6)} ${CONFIG.symbol} remains, stop locked to breakeven $${position.stopLossPrice.toFixed(2)}`);
+        }
+      }
+    }
+
     // Trailing stop — ratchet 3×ATR each run to lock in profits
     const TRAIL_MULT = 3.0;
     let stopMoved = false;
@@ -1065,10 +1121,14 @@ async function run() {
         portfolioValue += stopPnl;
         paperFee(position.stopLossPrice * position.quantity);
         savePortfolio(portfolioValue);
-        console.log(`  ⛔ STOP HIT at $${position.stopLossPrice.toFixed(2)} — P&L $${stopPnl.toFixed(2)} | Portfolio: $${portfolioValue.toFixed(2)}`);
-        log.trades.push({ timestamp: new Date().toISOString(), type: "stop", symbol: CONFIG.symbol, side: position.side, price: position.stopLossPrice, pnlUSD: stopPnl, reason: "trailing stop hit", paperTrading: true });
+        // Total trade P&L includes any scale-out leg already banked (and added to
+        // portfolioValue) earlier in this trade's life — this leg's pnl alone would
+        // understate a winning trade whose runner gave back gains before stopping.
+        const totalPnl = (position.realizedPnl ?? 0) + stopPnl;
+        console.log(`  ⛔ STOP HIT at $${position.stopLossPrice.toFixed(2)} — P&L $${stopPnl.toFixed(2)} this leg (P&L $${totalPnl.toFixed(2)} total incl. scale-out) | Portfolio: $${portfolioValue.toFixed(2)}`);
+        log.trades.push({ timestamp: new Date().toISOString(), type: "stop", symbol: CONFIG.symbol, side: position.side, price: position.stopLossPrice, pnlUSD: totalPnl, reason: "trailing stop hit", paperTrading: true });
         saveLog(log);
-        writeCsvRow({ side: (position.side === "long" ? "sell" : "buy").toUpperCase(), quantity: position.quantity, price: position.stopLossPrice, totalUSD: position.sizeUSD, orderId: "PAPER-STOP", mode: "PAPER", notes: `Trailing stop hit — P&L $${stopPnl.toFixed(2)} (${((stopPnl / position.sizeUSD) * 100).toFixed(2)}%) | Portfolio: $${portfolioValue.toFixed(2)}` });
+        writeCsvRow({ side: (position.side === "long" ? "sell" : "buy").toUpperCase(), quantity: position.quantity, price: position.stopLossPrice, totalUSD: position.sizeUSD, orderId: "PAPER-STOP", mode: "PAPER", notes: `Trailing stop hit — P&L $${totalPnl.toFixed(2)} total (${((totalPnl / position.sizeUSD) * 100).toFixed(2)}%) | Portfolio: $${portfolioValue.toFixed(2)}` });
         savePosition(null);
         position = null;
 
@@ -1158,14 +1218,21 @@ async function run() {
         return;
       }
 
-      portfolioValue = portfolioValue + pnlUSD;
+      // Recompute fresh off current position.quantity — scale-out may have shrunk it
+      // earlier in this same run, which would make the pnlUSD captured above stale.
+      const finalLegPnl = position.side === "long"
+        ? (price - position.entryPrice) * position.quantity
+        : (position.entryPrice - price) * position.quantity;
+      const totalPnl = (position.realizedPnl ?? 0) + finalLegPnl;
+      const totalPnlPct = (totalPnl / position.sizeUSD) * 100;
+      portfolioValue = portfolioValue + finalLegPnl;
       paperFee(price * position.quantity);
       savePortfolio(portfolioValue);
-      console.log(`  Portfolio updated: $${portfolioValue.toFixed(2)} (${pnlUSD >= 0 ? "+" : ""}$${pnlUSD.toFixed(2)})`);
+      console.log(`  Portfolio updated: $${portfolioValue.toFixed(2)} (${totalPnl >= 0 ? "+" : ""}$${totalPnl.toFixed(2)} total)`);
 
-      log.trades.push({ timestamp: new Date().toISOString(), type: "exit", symbol: CONFIG.symbol, side: closeSide, quantity: position.quantity, price, sizeUSD: position.sizeUSD, pnlUSD, pnlPct, reason: "NKB reversal", orderPlaced: true, orderId: order.orderId, paperTrading: CONFIG.paperTrading });
+      log.trades.push({ timestamp: new Date().toISOString(), type: "exit", symbol: CONFIG.symbol, side: closeSide, quantity: position.quantity, price, sizeUSD: position.sizeUSD, pnlUSD: totalPnl, pnlPct: totalPnlPct, reason: "NKB reversal", orderPlaced: true, orderId: order.orderId, paperTrading: CONFIG.paperTrading });
       saveLog(log);
-      writeCsvRow({ side: closeSide.toUpperCase(), quantity: position.quantity, price, totalUSD: position.sizeUSD, orderId: order.orderId, mode: CONFIG.paperTrading ? "PAPER" : "LIVE", notes: `NKB reversal exit — P&L $${pnlUSD.toFixed(2)} (${pnlPct.toFixed(2)}%) | Portfolio: $${portfolioValue.toFixed(2)}` });
+      writeCsvRow({ side: closeSide.toUpperCase(), quantity: position.quantity, price, totalUSD: position.sizeUSD, orderId: order.orderId, mode: CONFIG.paperTrading ? "PAPER" : "LIVE", notes: `NKB reversal exit — P&L $${totalPnl.toFixed(2)} total (${totalPnlPct.toFixed(2)}%) | Portfolio: $${portfolioValue.toFixed(2)}` });
       if (IS_PROP_BROKER && !CONFIG.paperTrading) await PROP_EXEC.safeCancelStop(position.stopOrderId);
       savePosition(null);
       position = null;
@@ -1226,7 +1293,7 @@ async function run() {
       return;
     }
 
-    savePosition({ side: positionSide, entryPrice: price, quantity, sizeUSD: tradeSize, stopLossPrice, openedAt: new Date().toISOString(), orderId: order.orderId, stopOrderId: order.stopOrderId ?? null, pyramided: 0 });
+    savePosition({ side: positionSide, entryPrice: price, quantity, sizeUSD: tradeSize, stopLossPrice, riskDist: stopDist, partialTaken: false, realizedPnl: 0, openedAt: new Date().toISOString(), orderId: order.orderId, stopOrderId: order.stopOrderId ?? null, pyramided: 0 });
     paperFee(tradeSize);
     savePortfolio(portfolioValue);
     log.trades.push({ timestamp: new Date().toISOString(), type: "entry", symbol: CONFIG.symbol, side, quantity, price, sizeUSD: tradeSize, portfolioValue, nkb, orderPlaced: true, orderId: order.orderId, paperTrading: CONFIG.paperTrading });
