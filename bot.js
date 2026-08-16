@@ -96,6 +96,16 @@ export const CONFIG = {
   // books are unaffected). Harvested from PR #1; validated with 2% risk in
   // strategy-lab walk-forward: MAR 1.83 vs 1.43 risk-only (BTC daily OOS).
   adxEntryMin: parseFloat(process.env.ADX_ENTRY_MIN || "0"),
+  // RSI momentum + ATR-expansion entry gates (opt-in, both default off).
+  // Backtested together with ADX+regime on 8y of BTC daily data (see
+  // backtest-confluence.mjs): stacking all four as a hard AND — not a scored
+  // "N of 4" — took win rate from 59% to 63.5%, PF 1.24->1.38, max drawdown
+  // 43.7%->29.7%, and roughly 5x'd the recent-2-year return (4.4%->22.0%).
+  // A scored/partial-confluence gate was tested too and was worse than either
+  // extreme (no gates, or all of them) — loosening the AND into an OR-ish
+  // score let bad combinations through just as easily as good ones.
+  rsiEntryGate: process.env.RSI_ENTRY_GATE === "true",  // require RSI(14) agree with trade direction (>50 long, <50 short)
+  atrExpansionGate: process.env.ATR_EXPANSION_GATE === "true", // require ATR(14) > its own 20-bar average
   maxTradeSizeUSD: parseFloat(process.env.MAX_TRADE_SIZE_USD || "5000"),
   maxTradesPerDay: parseInt(process.env.MAX_TRADES_PER_DAY || "3"),
   paperTrading: process.env.PAPER_TRADING !== "false",
@@ -389,6 +399,40 @@ function calcADX(candles, period = 14) {
   let adx = dx.slice(0, period).reduce((a, b) => a + b, 0) / period;
   for (let i = period; i < dx.length; i++) adx = (adx * (period - 1) + dx[i]) / period;
   return adx;
+}
+
+// RSI (Wilder smoothing) — returns final RSI value for the last candle. Used
+// as a momentum-strength confluence (is the move already pushing in this
+// direction, not just poking through the band) — not the fast RSI(3) pullback
+// timing idea from the old rules.json template, which bot.js doesn't use.
+function calcRSI(candles, period = 14) {
+  const n = candles.length;
+  if (n < period + 1) return null;
+  const closes = candles.map((c) => c.close);
+  let avgGain = 0, avgLoss = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = closes[i] - closes[i - 1];
+    if (d > 0) avgGain += d; else avgLoss -= d;
+  }
+  avgGain /= period; avgLoss /= period;
+  for (let i = period + 1; i < n; i++) {
+    const d = closes[i] - closes[i - 1];
+    avgGain = (avgGain * (period - 1) + (d > 0 ? d : 0)) / period;
+    avgLoss = (avgLoss * (period - 1) + (d < 0 ? -d : 0)) / period;
+  }
+  return avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+}
+
+// ATR-expansion state — true when current-run volatility is picking up
+// relative to its own recent average (a real move brewing), false when it's
+// flat/contracting (chop). Cheap to compute since atrSeries is already built.
+function calcATRExpanding(candles, period = 14, smaPeriod = 20) {
+  const atrArr = calcATRSeries(candles, period);
+  const window = atrArr.slice(-smaPeriod).filter((v) => v != null);
+  if (window.length < smaPeriod) return null;
+  const sma = window.reduce((a, b) => a + b, 0) / smaPeriod;
+  const current = atrArr[atrArr.length - 1];
+  return current != null && sma > 0 ? current > sma : null;
 }
 
 // Faithful port of the Neural Kernel Bands [JOAT] Pine script. Replays the
@@ -759,13 +803,16 @@ async function run() {
   const nkb = calcNKB(candles);
   const adxValue = calcADX(candles, 14);
   const adxStrong = adxValue != null && adxValue >= 25;
+  const rsiValue = calcRSI(candles, 14);
+  const atrExpanding = calcATRExpanding(candles, CONFIG.atrPeriod, 20);
   console.log(`  Kernel MA:    $${nkb.kernelMA.toFixed(2)}`);
   console.log(`  Upper Band:   $${nkb.upperBand.toFixed(2)}`);
   console.log(`  Lower Band:   $${nkb.lowerBand.toFixed(2)}`);
   console.log(`  Band σ:       $${nkb.sigma.toFixed(2)}`);
   console.log(`  State:        ${nkb.state === 1 ? "BULLISH" : nkb.state === -1 ? "BEARISH" : "NEUTRAL"}`);
   console.log(`  ADX(14):      ${adxValue != null ? adxValue.toFixed(1) : "N/A"}${adxStrong ? " 💪 STRONG TREND" : " (weak)"}`);
-  console.log(`  ATR(${CONFIG.atrPeriod}):      ${atr ? "$" + atr.toFixed(2) : "N/A"}`);
+  console.log(`  RSI(14):      ${rsiValue != null ? rsiValue.toFixed(1) : "N/A"}`);
+  console.log(`  ATR(${CONFIG.atrPeriod}):      ${atr ? "$" + atr.toFixed(2) : "N/A"}${atrExpanding != null ? (atrExpanding ? " 📈 expanding" : " 📉 contracting") : ""}`);
   console.log(`  4H State:     ${nkb4h.state === 1 ? "🟢 BULLISH" : nkb4h.state === -1 ? "🔴 BEARISH" : "⚪ NEUTRAL"} (MTF filter)`);
 
   // ── Volume filter ──────────────────────────────────────────────────────────
@@ -1311,6 +1358,21 @@ async function run() {
     // ADX entry gate — only take a fresh breakout when a real trend exists (PR #1).
     const note = `ADX ${adxValue != null ? adxValue.toFixed(1) : "N/A"} < ${CONFIG.adxEntryMin} — trend too weak for a fresh entry`;
     console.log(`🚦 ADX ENTRY GATE — ${buySignal ? "BUY" : "SELL"} signal blocked (${note})`);
+    log.gateBlocks = log.gateBlocks || [];
+    log.gateBlocks.push({ timestamp: new Date().toISOString(), signal: buySignal ? "BUY" : "SELL", note });
+    saveLog(log);
+  } else if ((buySignal || (sellSignal && canShort)) && CONFIG.rsiEntryGate && !(rsiValue != null && (buySignal ? rsiValue > 50 : rsiValue < 50))) {
+    // RSI momentum gate — require momentum already agrees with the direction of
+    // the breakout (backtest-confluence.mjs), not just a band poke.
+    const note = `RSI(14) ${rsiValue != null ? rsiValue.toFixed(1) : "N/A"} doesn't confirm ${buySignal ? "long" : "short"} momentum (need ${buySignal ? ">50" : "<50"})`;
+    console.log(`🚦 RSI ENTRY GATE — ${buySignal ? "BUY" : "SELL"} signal blocked (${note})`);
+    log.gateBlocks = log.gateBlocks || [];
+    log.gateBlocks.push({ timestamp: new Date().toISOString(), signal: buySignal ? "BUY" : "SELL", note });
+    saveLog(log);
+  } else if ((buySignal || (sellSignal && canShort)) && CONFIG.atrExpansionGate && atrExpanding !== true) {
+    // ATR expansion gate — only enter when volatility is picking up, not flat/chop.
+    const note = `ATR(${CONFIG.atrPeriod}) not expanding vs its 20-bar average — likely chop`;
+    console.log(`🚦 ATR EXPANSION GATE — ${buySignal ? "BUY" : "SELL"} signal blocked (${note})`);
     log.gateBlocks = log.gateBlocks || [];
     log.gateBlocks.push({ timestamp: new Date().toISOString(), signal: buySignal ? "BUY" : "SELL", note });
     saveLog(log);
