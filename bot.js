@@ -96,6 +96,16 @@ export const CONFIG = {
   // books are unaffected). Harvested from PR #1; validated with 2% risk in
   // strategy-lab walk-forward: MAR 1.83 vs 1.43 risk-only (BTC daily OOS).
   adxEntryMin: parseFloat(process.env.ADX_ENTRY_MIN || "0"),
+  // RSI momentum + ATR-expansion entry gates (opt-in, both default off).
+  // Backtested together with ADX+regime on 8y of BTC daily data (see
+  // backtest-confluence.mjs): stacking all four as a hard AND — not a scored
+  // "N of 4" — took win rate from 59% to 63.5%, PF 1.24->1.38, max drawdown
+  // 43.7%->29.7%, and roughly 5x'd the recent-2-year return (4.4%->22.0%).
+  // A scored/partial-confluence gate was tested too and was worse than either
+  // extreme (no gates, or all of them) — loosening the AND into an OR-ish
+  // score let bad combinations through just as easily as good ones.
+  rsiEntryGate: process.env.RSI_ENTRY_GATE === "true",  // require RSI(14) agree with trade direction (>50 long, <50 short)
+  atrExpansionGate: process.env.ATR_EXPANSION_GATE === "true", // require ATR(14) > its own 20-bar average
   maxTradeSizeUSD: parseFloat(process.env.MAX_TRADE_SIZE_USD || "5000"),
   maxTradesPerDay: parseInt(process.env.MAX_TRADES_PER_DAY || "3"),
   paperTrading: process.env.PAPER_TRADING !== "false",
@@ -126,6 +136,17 @@ export const CONFIG = {
   // computeStopLossPrice) — enforced by the exchange on real trades, not by us.
   stopLossPct: parseFloat(process.env.STOP_LOSS_PCT || "0.3"),
   atrPeriod: parseInt(process.env.ATR_PERIOD || "14"),
+  // Scale-out (opt-in, default off — existing books are unaffected unless set).
+  // Banks scaleOutBankFrac of the position once unrealised profit reaches
+  // scaleOutTPMult × the trade's initial risk distance (R), then locks the
+  // runner's stop to breakeven. Backtested on 8y of BTC daily data: raises the
+  // combined-book win rate from ~30% to ~55-60% and cuts recent-regime drawdown
+  // roughly in half, at the cost of some upside in strongly trending years —
+  // see backtest-scaleout.mjs. True 80-90% hit rate was also tested and is NOT
+  // viable here — profit factor drops below 1 (net losing) past ~65-70%.
+  scaleOutEnabled:   process.env.SCALE_OUT_ENABLED === "true",
+  scaleOutBankFrac:  parseFloat(process.env.SCALE_OUT_BANK_FRAC || "0.7"),
+  scaleOutTPMult:    parseFloat(process.env.SCALE_OUT_TP_MULT || "1.0"),
   // Futures only. Left unset, BitGet falls back to whatever leverage is
   // already configured on the account for this symbol — explicit here so
   // it's never a surprise.
@@ -378,6 +399,40 @@ function calcADX(candles, period = 14) {
   let adx = dx.slice(0, period).reduce((a, b) => a + b, 0) / period;
   for (let i = period; i < dx.length; i++) adx = (adx * (period - 1) + dx[i]) / period;
   return adx;
+}
+
+// RSI (Wilder smoothing) — returns final RSI value for the last candle. Used
+// as a momentum-strength confluence (is the move already pushing in this
+// direction, not just poking through the band) — not the fast RSI(3) pullback
+// timing idea from the old rules.json template, which bot.js doesn't use.
+function calcRSI(candles, period = 14) {
+  const n = candles.length;
+  if (n < period + 1) return null;
+  const closes = candles.map((c) => c.close);
+  let avgGain = 0, avgLoss = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = closes[i] - closes[i - 1];
+    if (d > 0) avgGain += d; else avgLoss -= d;
+  }
+  avgGain /= period; avgLoss /= period;
+  for (let i = period + 1; i < n; i++) {
+    const d = closes[i] - closes[i - 1];
+    avgGain = (avgGain * (period - 1) + (d > 0 ? d : 0)) / period;
+    avgLoss = (avgLoss * (period - 1) + (d < 0 ? -d : 0)) / period;
+  }
+  return avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+}
+
+// ATR-expansion state — true when current-run volatility is picking up
+// relative to its own recent average (a real move brewing), false when it's
+// flat/contracting (chop). Cheap to compute since atrSeries is already built.
+function calcATRExpanding(candles, period = 14, smaPeriod = 20) {
+  const atrArr = calcATRSeries(candles, period);
+  const window = atrArr.slice(-smaPeriod).filter((v) => v != null);
+  if (window.length < smaPeriod) return null;
+  const sma = window.reduce((a, b) => a + b, 0) / smaPeriod;
+  const current = atrArr[atrArr.length - 1];
+  return current != null && sma > 0 ? current > sma : null;
 }
 
 // Faithful port of the Neural Kernel Bands [JOAT] Pine script. Replays the
@@ -717,6 +772,70 @@ function generateTaxSummary() {
   console.log("─────────────────────────────────────────────────────────\n");
 }
 
+// ─── Entry Decision Tree ─────────────────────────────────────────────────────
+// Every fresh-entry decision walks this same ordered tree, top to bottom, one
+// node at a time. Each node either passes (fall through to the next node) or
+// blocks (short-circuit with a specific, loggable reason) — so it's always
+// visible exactly how far a signal got and what stopped it, instead of an
+// implicit chain of booleans. Order matches what's actually enforced live:
+// tradability (can we even take this side) -> regime -> ADX -> RSI -> ATR.
+// Gates that are off (CONFIG.regimeGate === "off", adxEntryMin <= 0, etc.) are
+// skipped as nodes entirely rather than auto-passed, so the tree only ever
+// shows checks that are actually in force for this run.
+function buildEntryDecisionTree({ buySignal, sellSignal, canShort, regimeAllows, regimeNote, adxValue, rsiValue, atrExpanding }) {
+  const side = buySignal ? "buy" : sellSignal ? "sell" : null;
+  const positionSide = buySignal ? "long" : sellSignal ? "short" : null;
+  const nodes = [];
+  const node = (id, label, passed, detail) => { nodes.push({ id, label, passed, detail }); return passed; };
+
+  if (!node("signal", "NKB confirmed band flip (2 bars, volume, 4H MTF)", !!side,
+      side ? `${side.toUpperCase()} confirmed` : "no confirmed flip")) {
+    return { verdict: "none", side: null, positionSide: null, nodes };
+  }
+
+  if (side === "sell" && !node("shortable", "Shorting available", canShort,
+      canShort ? "futures mode" : "spot mode — set TRADE_MODE=futures")) {
+    return { verdict: "unshortable", side, positionSide, nodes };
+  }
+
+  if (CONFIG.regimeGate !== "off" && !node("regime", `Regime gate [${CONFIG.regimeGate}]`, regimeAllows, regimeNote)) {
+    return { verdict: "blocked", side, positionSide, blockedAt: "regime", note: regimeNote, nodes };
+  }
+
+  if (CONFIG.adxEntryMin > 0) {
+    const pass = adxValue != null && adxValue >= CONFIG.adxEntryMin;
+    const note = `ADX(14) ${adxValue != null ? adxValue.toFixed(1) : "N/A"} ${pass ? "≥" : "<"} ${CONFIG.adxEntryMin}`;
+    if (!node("adx", "ADX entry gate", pass, note)) {
+      return { verdict: "blocked", side, positionSide, blockedAt: "adx", note, nodes };
+    }
+  }
+
+  if (CONFIG.rsiEntryGate) {
+    const pass = rsiValue != null && (side === "buy" ? rsiValue > 50 : rsiValue < 50);
+    const note = `RSI(14) ${rsiValue != null ? rsiValue.toFixed(1) : "N/A"} ${pass ? "confirms" : "doesn't confirm"} ${positionSide} momentum (need ${side === "buy" ? ">50" : "<50"})`;
+    if (!node("rsi", "RSI momentum gate", pass, note)) {
+      return { verdict: "blocked", side, positionSide, blockedAt: "rsi", note, nodes };
+    }
+  }
+
+  if (CONFIG.atrExpansionGate) {
+    const pass = atrExpanding === true;
+    const note = `ATR(${CONFIG.atrPeriod}) vs its 20-bar average: ${atrExpanding == null ? "N/A" : atrExpanding ? "expanding" : "contracting"}`;
+    if (!node("atr", "ATR expansion gate", pass, note)) {
+      return { verdict: "blocked", side, positionSide, blockedAt: "atr", note, nodes };
+    }
+  }
+
+  return { verdict: "enter", side, positionSide, nodes };
+}
+
+function printDecisionTree(nodes) {
+  console.log("\n── Entry Decision Tree ──────────────────────────────────\n");
+  for (const n of nodes) {
+    console.log(`  ${n.passed ? "✅" : "🚫"} ${n.label}${n.detail ? ` — ${n.detail}` : ""}`);
+  }
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 async function run() {
@@ -748,13 +867,16 @@ async function run() {
   const nkb = calcNKB(candles);
   const adxValue = calcADX(candles, 14);
   const adxStrong = adxValue != null && adxValue >= 25;
+  const rsiValue = calcRSI(candles, 14);
+  const atrExpanding = calcATRExpanding(candles, CONFIG.atrPeriod, 20);
   console.log(`  Kernel MA:    $${nkb.kernelMA.toFixed(2)}`);
   console.log(`  Upper Band:   $${nkb.upperBand.toFixed(2)}`);
   console.log(`  Lower Band:   $${nkb.lowerBand.toFixed(2)}`);
   console.log(`  Band σ:       $${nkb.sigma.toFixed(2)}`);
   console.log(`  State:        ${nkb.state === 1 ? "BULLISH" : nkb.state === -1 ? "BEARISH" : "NEUTRAL"}`);
   console.log(`  ADX(14):      ${adxValue != null ? adxValue.toFixed(1) : "N/A"}${adxStrong ? " 💪 STRONG TREND" : " (weak)"}`);
-  console.log(`  ATR(${CONFIG.atrPeriod}):      ${atr ? "$" + atr.toFixed(2) : "N/A"}`);
+  console.log(`  RSI(14):      ${rsiValue != null ? rsiValue.toFixed(1) : "N/A"}`);
+  console.log(`  ATR(${CONFIG.atrPeriod}):      ${atr ? "$" + atr.toFixed(2) : "N/A"}${atrExpanding != null ? (atrExpanding ? " 📈 expanding" : " 📉 contracting") : ""}`);
   console.log(`  4H State:     ${nkb4h.state === 1 ? "🟢 BULLISH" : nkb4h.state === -1 ? "🔴 BEARISH" : "⚪ NEUTRAL"} (MTF filter)`);
 
   // ── Volume filter ──────────────────────────────────────────────────────────
@@ -852,10 +974,13 @@ async function run() {
         const stillOpen = await PROP_EXEC.hasOpenPosition();
         if (!stillOpen) {
           const exitPrice = position.stopLossPrice ?? price;
-          const pnl = position.side === "long"
+          const legPnl = position.side === "long"
             ? (exitPrice - position.entryPrice) * position.quantity
             : (position.entryPrice - exitPrice) * position.quantity;
-          console.log(`  ⛔ Velotrade: position closed exchange-side (stop filled) — est. P&L $${pnl.toFixed(2)}`);
+          // Includes any scale-out leg banked on an earlier run (real balance/equity
+          // for sizing still comes from the exchange via accountMetrics() below).
+          const pnl = (position.realizedPnl ?? 0) + legPnl;
+          console.log(`  ⛔ Velotrade: position closed exchange-side (stop filled) — est. P&L $${pnl.toFixed(2)} total`);
           log.trades.push({ timestamp: new Date().toISOString(), type: "stop", symbol: CONFIG.symbol, side: position.side, price: exitPrice, pnlUSD: pnl, reason: "protective stop filled exchange-side", paperTrading: false });
           saveLog(log);
           writeCsvRow({ side: (position.side === "long" ? "sell" : "buy").toUpperCase(), quantity: position.quantity, price: exitPrice, totalUSD: position.sizeUSD, orderId: position.stopOrderId ?? "VT-STOP", mode: "LIVE", notes: `Protective stop filled exchange-side — est. P&L $${pnl.toFixed(2)}` });
@@ -928,10 +1053,13 @@ async function run() {
         saveLog(log);
         return false;
       }
-      const pnl = position.side === "long"
+      const legPnl = position.side === "long"
         ? (price - position.entryPrice) * position.quantity
         : (position.entryPrice - price) * position.quantity;
-      portfolioValue += pnl;
+      // Includes any scale-out leg banked (and already added to portfolioValue) on
+      // an earlier run — position.realizedPnl persists across runs via position-*.json.
+      const pnl = (position.realizedPnl ?? 0) + legPnl;
+      portfolioValue += legPnl;
       paperFee(price * position.quantity);
       savePortfolio(portfolioValue);
       log.trades.push({ timestamp: new Date().toISOString(), type: "exit", symbol: CONFIG.symbol, side: closeSide, quantity: position.quantity, price, sizeUSD: position.sizeUSD, pnlUSD: pnl, reason: `prop: ${reason}`, orderPlaced: true, orderId: order.orderId, paperTrading: CONFIG.paperTrading });
@@ -1015,6 +1143,45 @@ async function run() {
     const pnlPct = (pnlUSD / position.sizeUSD) * 100;
     console.log(`  Unrealized P&L: $${pnlUSD.toFixed(2)} (${pnlPct.toFixed(2)}%)`);
 
+    // Scale-out — bank most of the position once it reaches scaleOutTPMult × initial
+    // risk (R), lock the runner's stop to breakeven so the banked win can't be given back.
+    if (CONFIG.scaleOutEnabled && !position.partialTaken && position.riskDist) {
+      const tpPrice = position.side === "long"
+        ? position.entryPrice + CONFIG.scaleOutTPMult * position.riskDist
+        : position.entryPrice - CONFIG.scaleOutTPMult * position.riskDist;
+      const tpHit = position.side === "long" ? price >= tpPrice : price <= tpPrice;
+      if (tpHit) {
+        const bankQty = position.quantity * CONFIG.scaleOutBankFrac;
+        console.log(`\n💰 SCALE-OUT — banking ${(CONFIG.scaleOutBankFrac * 100).toFixed(0)}% at $${price.toFixed(2)} (${CONFIG.scaleOutTPMult}R target hit)`);
+        let bankOrder;
+        try {
+          bankOrder = await executeOrder(position.side === "long" ? "sell" : "buy", bankQty.toFixed(6));
+        } catch (err) {
+          console.log(`  ❌ Scale-out order failed — ${err.message} (will retry next run)`);
+          bankOrder = null;
+        }
+        if (bankOrder) {
+          const bankPnl = position.side === "long"
+            ? (price - position.entryPrice) * bankQty
+            : (position.entryPrice - price) * bankQty;
+          portfolioValue += bankPnl;
+          paperFee(price * bankQty);
+          position.quantity -= bankQty;
+          position.sizeUSD = position.quantity * position.entryPrice;
+          position.realizedPnl = (position.realizedPnl ?? 0) + bankPnl;
+          position.partialTaken = true;
+          position.stopLossPrice = position.side === "long"
+            ? Math.max(position.stopLossPrice ?? -Infinity, position.entryPrice)
+            : Math.min(position.stopLossPrice ?? Infinity, position.entryPrice);
+          savePortfolio(portfolioValue);
+          log.trades.push({ timestamp: new Date().toISOString(), type: "partial", symbol: CONFIG.symbol, side: position.side, quantity: bankQty, price, pnlUSD: bankPnl, reason: `scale-out ${CONFIG.scaleOutTPMult}R`, orderId: bankOrder.orderId, paperTrading: CONFIG.paperTrading });
+          saveLog(log);
+          writeCsvRow({ side: (position.side === "long" ? "sell" : "buy").toUpperCase(), quantity: bankQty, price, totalUSD: bankQty * price, orderId: bankOrder.orderId, mode: CONFIG.paperTrading ? "PAPER" : "LIVE", notes: `Scale-out ${(CONFIG.scaleOutBankFrac * 100).toFixed(0)}% @ ${CONFIG.scaleOutTPMult}R — P&L $${bankPnl.toFixed(2)} | Portfolio: $${portfolioValue.toFixed(2)}` });
+          console.log(`  Runner: ${position.quantity.toFixed(6)} ${CONFIG.symbol} remains, stop locked to breakeven $${position.stopLossPrice.toFixed(2)}`);
+        }
+      }
+    }
+
     // Trailing stop — ratchet 3×ATR each run to lock in profits
     const TRAIL_MULT = 3.0;
     let stopMoved = false;
@@ -1065,10 +1232,14 @@ async function run() {
         portfolioValue += stopPnl;
         paperFee(position.stopLossPrice * position.quantity);
         savePortfolio(portfolioValue);
-        console.log(`  ⛔ STOP HIT at $${position.stopLossPrice.toFixed(2)} — P&L $${stopPnl.toFixed(2)} | Portfolio: $${portfolioValue.toFixed(2)}`);
-        log.trades.push({ timestamp: new Date().toISOString(), type: "stop", symbol: CONFIG.symbol, side: position.side, price: position.stopLossPrice, pnlUSD: stopPnl, reason: "trailing stop hit", paperTrading: true });
+        // Total trade P&L includes any scale-out leg already banked (and added to
+        // portfolioValue) earlier in this trade's life — this leg's pnl alone would
+        // understate a winning trade whose runner gave back gains before stopping.
+        const totalPnl = (position.realizedPnl ?? 0) + stopPnl;
+        console.log(`  ⛔ STOP HIT at $${position.stopLossPrice.toFixed(2)} — P&L $${stopPnl.toFixed(2)} this leg (P&L $${totalPnl.toFixed(2)} total incl. scale-out) | Portfolio: $${portfolioValue.toFixed(2)}`);
+        log.trades.push({ timestamp: new Date().toISOString(), type: "stop", symbol: CONFIG.symbol, side: position.side, price: position.stopLossPrice, pnlUSD: totalPnl, reason: "trailing stop hit", paperTrading: true });
         saveLog(log);
-        writeCsvRow({ side: (position.side === "long" ? "sell" : "buy").toUpperCase(), quantity: position.quantity, price: position.stopLossPrice, totalUSD: position.sizeUSD, orderId: "PAPER-STOP", mode: "PAPER", notes: `Trailing stop hit — P&L $${stopPnl.toFixed(2)} (${((stopPnl / position.sizeUSD) * 100).toFixed(2)}%) | Portfolio: $${portfolioValue.toFixed(2)}` });
+        writeCsvRow({ side: (position.side === "long" ? "sell" : "buy").toUpperCase(), quantity: position.quantity, price: position.stopLossPrice, totalUSD: position.sizeUSD, orderId: "PAPER-STOP", mode: "PAPER", notes: `Trailing stop hit — P&L $${totalPnl.toFixed(2)} total (${((totalPnl / position.sizeUSD) * 100).toFixed(2)}%) | Portfolio: $${portfolioValue.toFixed(2)}` });
         savePosition(null);
         position = null;
 
@@ -1158,14 +1329,21 @@ async function run() {
         return;
       }
 
-      portfolioValue = portfolioValue + pnlUSD;
+      // Recompute fresh off current position.quantity — scale-out may have shrunk it
+      // earlier in this same run, which would make the pnlUSD captured above stale.
+      const finalLegPnl = position.side === "long"
+        ? (price - position.entryPrice) * position.quantity
+        : (position.entryPrice - price) * position.quantity;
+      const totalPnl = (position.realizedPnl ?? 0) + finalLegPnl;
+      const totalPnlPct = (totalPnl / position.sizeUSD) * 100;
+      portfolioValue = portfolioValue + finalLegPnl;
       paperFee(price * position.quantity);
       savePortfolio(portfolioValue);
-      console.log(`  Portfolio updated: $${portfolioValue.toFixed(2)} (${pnlUSD >= 0 ? "+" : ""}$${pnlUSD.toFixed(2)})`);
+      console.log(`  Portfolio updated: $${portfolioValue.toFixed(2)} (${totalPnl >= 0 ? "+" : ""}$${totalPnl.toFixed(2)} total)`);
 
-      log.trades.push({ timestamp: new Date().toISOString(), type: "exit", symbol: CONFIG.symbol, side: closeSide, quantity: position.quantity, price, sizeUSD: position.sizeUSD, pnlUSD, pnlPct, reason: "NKB reversal", orderPlaced: true, orderId: order.orderId, paperTrading: CONFIG.paperTrading });
+      log.trades.push({ timestamp: new Date().toISOString(), type: "exit", symbol: CONFIG.symbol, side: closeSide, quantity: position.quantity, price, sizeUSD: position.sizeUSD, pnlUSD: totalPnl, pnlPct: totalPnlPct, reason: "NKB reversal", orderPlaced: true, orderId: order.orderId, paperTrading: CONFIG.paperTrading });
       saveLog(log);
-      writeCsvRow({ side: closeSide.toUpperCase(), quantity: position.quantity, price, totalUSD: position.sizeUSD, orderId: order.orderId, mode: CONFIG.paperTrading ? "PAPER" : "LIVE", notes: `NKB reversal exit — P&L $${pnlUSD.toFixed(2)} (${pnlPct.toFixed(2)}%) | Portfolio: $${portfolioValue.toFixed(2)}` });
+      writeCsvRow({ side: closeSide.toUpperCase(), quantity: position.quantity, price, totalUSD: position.sizeUSD, orderId: order.orderId, mode: CONFIG.paperTrading ? "PAPER" : "LIVE", notes: `NKB reversal exit — P&L $${totalPnl.toFixed(2)} total (${totalPnlPct.toFixed(2)}%) | Portfolio: $${portfolioValue.toFixed(2)}` });
       if (IS_PROP_BROKER && !CONFIG.paperTrading) await PROP_EXEC.safeCancelStop(position.stopOrderId);
       savePosition(null);
       position = null;
@@ -1191,7 +1369,7 @@ async function run() {
 
   const canShort = CONFIG.tradeMode === "futures";
 
-  async function openPosition(side, positionSide, signalNote, sizeMult = 1.0) {
+  async function openPosition(side, positionSide, signalNote, sizeMult = 1.0, decisionTree = null) {
     // Fixed % risk sizing: risk riskPct of portfolio on this trade
     // Position size = riskAmount / stopDist — so a stop hit loses exactly riskPct
     const stopDist = atrStopDist ?? (price * (CONFIG.stopLossPct / 100));
@@ -1226,37 +1404,36 @@ async function run() {
       return;
     }
 
-    savePosition({ side: positionSide, entryPrice: price, quantity, sizeUSD: tradeSize, stopLossPrice, openedAt: new Date().toISOString(), orderId: order.orderId, stopOrderId: order.stopOrderId ?? null, pyramided: 0 });
+    savePosition({ side: positionSide, entryPrice: price, quantity, sizeUSD: tradeSize, stopLossPrice, riskDist: stopDist, partialTaken: false, realizedPnl: 0, openedAt: new Date().toISOString(), orderId: order.orderId, stopOrderId: order.stopOrderId ?? null, pyramided: 0 });
     paperFee(tradeSize);
     savePortfolio(portfolioValue);
-    log.trades.push({ timestamp: new Date().toISOString(), type: "entry", symbol: CONFIG.symbol, side, quantity, price, sizeUSD: tradeSize, portfolioValue, nkb, orderPlaced: true, orderId: order.orderId, paperTrading: CONFIG.paperTrading });
+    log.trades.push({ timestamp: new Date().toISOString(), type: "entry", symbol: CONFIG.symbol, side, quantity, price, sizeUSD: tradeSize, portfolioValue, nkb, decisionTree, orderPlaced: true, orderId: order.orderId, paperTrading: CONFIG.paperTrading });
     saveLog(log);
     writeCsvRow({ side: side.toUpperCase(), quantity, price, totalUSD: tradeSize, orderId: order.orderId, mode: CONFIG.paperTrading ? "PAPER" : "LIVE", notes: `NKB ${signalNote} | Portfolio: $${portfolioValue.toFixed(2)}` });
     console.log(`✅ ${positionSide} opened — exits on next NKB reversal signal only`);
   }
 
-  if ((buySignal || sellSignal) && !regimeAllows) {
-    console.log(`🚦 REGIME GATE (${CONFIG.regimeGate}) — ${buySignal ? "BUY" : "SELL"} signal blocked (${regimeNote})`);
-    log.gateBlocks = log.gateBlocks || [];
-    log.gateBlocks.push({ timestamp: new Date().toISOString(), signal: buySignal ? "BUY" : "SELL", note: regimeNote });
-    saveLog(log);
-  } else if ((buySignal || (sellSignal && canShort)) && !(CONFIG.adxEntryMin <= 0 || (adxValue != null && adxValue >= CONFIG.adxEntryMin))) {
-    // ADX entry gate — only take a fresh breakout when a real trend exists (PR #1).
-    const note = `ADX ${adxValue != null ? adxValue.toFixed(1) : "N/A"} < ${CONFIG.adxEntryMin} — trend too weak for a fresh entry`;
-    console.log(`🚦 ADX ENTRY GATE — ${buySignal ? "BUY" : "SELL"} signal blocked (${note})`);
-    log.gateBlocks = log.gateBlocks || [];
-    log.gateBlocks.push({ timestamp: new Date().toISOString(), signal: buySignal ? "BUY" : "SELL", note });
-    saveLog(log);
-  } else if (buySignal) {
-    await openPosition("buy", "long", "NKB Buy — bands flipped bullish");
-  } else if (sellSignal && canShort) {
-    await openPosition("sell", "short", "NKB Sell — bands flipped bearish");
-  } else if (sellSignal && !canShort) {
-    console.log("🚫 SELL SIGNAL — spot mode can't short. Set TRADE_MODE=futures in .env to enable.");
-    writeCsvRow({ price, orderId: "BLOCKED", mode: "BLOCKED", notes: "NKB Sell — shorting unavailable in spot mode" });
-  } else {
+  const decision = buildEntryDecisionTree({ buySignal, sellSignal, canShort, regimeAllows, regimeNote, adxValue, rsiValue, atrExpanding });
+  printDecisionTree(decision.nodes);
+
+  if (decision.verdict === "none") {
     console.log(`  No signal — ${stateLabel.toLowerCase()}, waiting for band flip`);
     // No CSV row written — would flood the file every 5 minutes with no-signal noise
+  } else if (decision.verdict === "unshortable") {
+    console.log("🚫 SELL SIGNAL — spot mode can't short. Set TRADE_MODE=futures in .env to enable.");
+    writeCsvRow({ price, orderId: "BLOCKED", mode: "BLOCKED", notes: "NKB Sell — shorting unavailable in spot mode" });
+  } else if (decision.verdict === "blocked") {
+    console.log(`🚦 ENTRY BLOCKED at "${decision.blockedAt}" — ${decision.side.toUpperCase()} signal (${decision.note})`);
+    log.gateBlocks = log.gateBlocks || [];
+    log.gateBlocks.push({ timestamp: new Date().toISOString(), signal: decision.side.toUpperCase(), gate: decision.blockedAt, note: decision.note });
+    saveLog(log);
+  } else if (decision.verdict === "enter") {
+    // ── Final confirmation — every node in the tree above already passed;
+    // this is the explicit checkpoint between "all conditions align" and
+    // "an order actually fires," so it's never implicit in a chain of ifs.
+    console.log(`\n✅ ENTRY CONFIRMED — all ${decision.nodes.length} checks passed. Opening ${decision.positionSide.toUpperCase()}.`);
+    const signalNote = decision.side === "buy" ? "NKB Buy — bands flipped bullish" : "NKB Sell — bands flipped bearish";
+    await openPosition(decision.side, decision.positionSide, signalNote, 1.0, decision.nodes);
   }
 
   console.log("═══════════════════════════════════════════════════════════\n");
