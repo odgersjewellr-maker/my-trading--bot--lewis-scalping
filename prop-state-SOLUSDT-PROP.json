@@ -1,8 +1,8 @@
 {
-  "startedAt": "2026-07-02T10:28:31.341Z",
+  "startedAt": "2026-08-16T00:00:00.000Z",
   "initialBalance": 100000,
-  "status": "passed",
+  "status": "active",
   "dayDate": "2026-08-16",
-  "dayStartEquity": 111967.91747708562,
+  "dayStartEquity": 100000,
   "dayHalted": false
 }
