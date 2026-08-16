@@ -1,0 +1,87 @@
+name: Test — scale-out + RSI/ATR confluence (manual only)
+
+# Manual-dispatch-only smoke test for the decision-tree refactor, scale-out
+# exit, and RSI/ATR confluence gates added on this branch. Runs a dedicated
+# INSTANCE_ID (BTCUSDT-TEST5) so it never touches the 4 live books' state
+# files. No cron schedule — this never fires on its own. Paper trading only.
+# Delete this workflow once the feature has been reviewed and either merged
+# into a real book's config or dropped.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  run-test5:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: run-bot-BTCUSDT-TEST5
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - run: npm install
+
+      - name: Write .env
+        run: |
+          cat <<EOF > .env
+          BITGET_API_KEY=${{ secrets.BITGET_API_KEY }}
+          BITGET_SECRET_KEY=${{ secrets.BITGET_SECRET_KEY }}
+          BITGET_PASSPHRASE=${{ secrets.BITGET_PASSPHRASE }}
+          BITGET_BASE_URL=https://api.bitget.com
+          TRADE_MODE=futures
+          LEVERAGE=1
+          TRADE_SIZE_PCT=80
+          PORTFOLIO_VALUE_USD=1000
+          MAX_TRADES_PER_DAY=0
+          SYMBOL=BTCUSDT
+          INSTANCE_ID=BTCUSDT-TEST5
+          TIMEFRAME=15m
+          NKB_KERNEL=gaussian
+          NKB_BAND_MULT=3.0
+          NKB_BANDWIDTH=6.0
+          NKB_ATR_STOP_MULT=1.0
+          RISK_PCT=5
+          ADX_ENTRY_MIN=25
+          REGIME_GATE=chop+markov
+          RSI_ENTRY_GATE=true
+          ATR_EXPANSION_GATE=true
+          SCALE_OUT_ENABLED=true
+          SCALE_OUT_BANK_FRAC=0.7
+          SCALE_OUT_TP_MULT=1.0
+          PAPER_TRADING=true
+          PAPER_FEE_RATE=0.0008
+          EOF
+
+      - name: Run bot
+        run: node bot.js
+
+      - name: Persist state back to repo
+        run: |
+          rm -f .env
+          git config user.name "trading-bot"
+          git config user.email "actions@users.noreply.github.com"
+          for f in position-BTCUSDT-TEST5.json trades-BTCUSDT-TEST5.csv safety-check-log-BTCUSDT-TEST5.json nkb-state-BTCUSDT-TEST5.json portfolio-BTCUSDT-TEST5.json; do
+            [ -f "$f" ] && git add "$f"
+          done
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "BTCUSDT-TEST5 run $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          for i in 1 2 3 4 5; do
+            if git push; then
+              exit 0
+            fi
+            echo "Push rejected (attempt $i) — rebasing onto latest ${{ github.ref_name }}..."
+            git fetch origin ${{ github.ref_name }}
+            git rebase origin/${{ github.ref_name }}
+            sleep $((i * 2))
+          done
+          echo "::error::git push failed after retries"
+          exit 1
