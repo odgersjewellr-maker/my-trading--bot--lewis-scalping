@@ -1,0 +1,11 @@
+{
+  "trades": [],
+  "gateBlocks": [
+    {
+      "timestamp": "2026-08-16T09:58:52.540Z",
+      "signal": "BUY",
+      "gate": "regime",
+      "note": "CHOP(14,1H) 62.6 ≥ 61.8 | 20d ret 0.0% (sideways)"
+    }
+  ]
+}
