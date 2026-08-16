@@ -796,6 +796,11 @@
       "timestamp": "2026-08-15T22:55:57.349Z",
       "signal": "BUY",
       "note": "CHOP(14,1H) 56.4 < 61.8 | 20d ret -2.6% (sideways)"
+    },
+    {
+      "timestamp": "2026-08-16T05:54:06.863Z",
+      "signal": "BUY",
+      "note": "CHOP(14,1H) 61.9 ≥ 61.8 | 20d ret -2.6% (sideways)"
     }
   ]
 }
