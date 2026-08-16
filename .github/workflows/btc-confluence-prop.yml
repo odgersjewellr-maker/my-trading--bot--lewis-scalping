@@ -1,0 +1,115 @@
+name: BTC confluence prop challenge
+
+# Book 6-PROP — NKB + full 4-gate confluence stack + scale-out exit, running in
+# PROP MODE against Velotrade ($100k Classic 1-step: 10% target / 7% max-DD /
+# 4% daily limit / 30-min UTC day reset). Paper execution (paper-state) for the
+# first forward-evidence run on BTC before committing to a live challenge fee.
+#
+# Strategy description (shown on hedge dashboard):
+#   Neural Kernel Bands (NKB) on BTCUSDT 15m are the base signal — price closing
+#   beyond the 3σ Gaussian kernel band triggers a pending signal, which must hold
+#   for 2+ consecutive bars (anti-whipsaw). Four confluence gates are ALL required:
+#   1. ADX(14) ≥ 25        — trend strength: blocks ranging markets.
+#   2. Regime (chop+markov)— Choppiness Index < 61.8 on 1H AND 20-day Markov
+#                            return > ±5%: blocks sideways regimes.
+#   3. RSI(14) momentum    — RSI > 50 for longs, < 50 for shorts: trade with
+#                            the intermediate momentum, not against it.
+#   4. ATR expansion       — current ATR > its own 20-bar average: only enter
+#                            when volatility is expanding (conviction in the move).
+#   Exit: 70% of position banked at 1R (scale-out), runner held to NKB reversal
+#   with 3×ATR trailing stop. Stop locked to breakeven after scale-out.
+#   Backtested (BTC 8y): win rate 63.5%, PF 1.38, max DD 29.7%, 2y return 22%.
+#   BTC is the instrument the backtest was run on — highest validated confidence.
+#
+# Runs alongside Books 3 & 5 (SOL prop books). BTC diversifies instrument risk.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  run-btc-confluence-prop:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: run-bot-BTCUSDT-CONFLUENCE-PROP
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - run: npm install
+
+      - name: Write .env
+        run: |
+          cat <<EOF > .env
+          BITGET_API_KEY=${{ secrets.BITGET_API_KEY }}
+          BITGET_SECRET_KEY=${{ secrets.BITGET_SECRET_KEY }}
+          BITGET_PASSPHRASE=${{ secrets.BITGET_PASSPHRASE }}
+          BITGET_BASE_URL=https://api.bitget.com
+          TRADE_MODE=futures
+          LEVERAGE=1
+          PORTFOLIO_VALUE_USD=100000
+          MAX_TRADES_PER_DAY=0
+          MAX_TRADE_SIZE_USD=250000
+          SYMBOL=BTCUSDT
+          INSTANCE_ID=BTCUSDT-CONFLUENCE-PROP
+          TIMEFRAME=15m
+          NKB_KERNEL=gaussian
+          NKB_BAND_MULT=3.0
+          NKB_BANDWIDTH=6.0
+          NKB_ATR_STOP_MULT=1.0
+          RISK_PCT=5
+          ADX_ENTRY_MIN=25
+          REGIME_GATE=chop+markov
+          RSI_ENTRY_GATE=true
+          ATR_EXPANSION_GATE=true
+          SCALE_OUT_ENABLED=true
+          SCALE_OUT_BANK_FRAC=0.7
+          SCALE_OUT_TP_MULT=1.0
+          PAPER_TRADING=true
+          PAPER_FEE_RATE=0.0003
+          PROP_MODE=true
+          PROP_RISK_PCT=0.5
+          PROP_TARGET_PCT=10
+          PROP_MAX_DD_PCT=7
+          PROP_DD_GUARD=0.9
+          PROP_DAILY_LIMIT_PCT=4
+          PROP_DAILY_GUARD=0.7
+          PROP_LEV_CAP=2
+          PROP_SWAP_RATE=0.0005
+          PROP_DAY_RESET_MIN=30
+          EOF
+
+      - name: Run bot
+        run: node bot.js
+
+      - name: Persist state back to repo
+        run: |
+          rm -f .env
+          git config user.name "trading-bot"
+          git config user.email "actions@users.noreply.github.com"
+          for f in position-BTCUSDT-CONFLUENCE-PROP.json trades-BTCUSDT-CONFLUENCE-PROP.csv safety-check-log-BTCUSDT-CONFLUENCE-PROP.json nkb-state-BTCUSDT-CONFLUENCE-PROP.json portfolio-BTCUSDT-CONFLUENCE-PROP.json prop-state-BTCUSDT-CONFLUENCE-PROP.json; do
+            [ -f "$f" ] && git add "$f"
+          done
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "BTC-CONFLUENCE-PROP run $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          for i in 1 2 3 4 5; do
+            if git push; then
+              exit 0
+            fi
+            echo "Push rejected (attempt $i) — rebasing onto latest ${{ github.ref_name }}..."
+            git fetch origin ${{ github.ref_name }}
+            git rebase origin/${{ github.ref_name }}
+            sleep $((i * 2))
+          done
+          echo "::error::git push failed after retries"
+          exit 1
