@@ -54,6 +54,12 @@
       "signal": "SELL",
       "gate": "regime",
       "note": "20d ret 2.4% (sideways)"
+    },
+    {
+      "timestamp": "2026-08-17T20:49:43.414Z",
+      "signal": "SELL",
+      "gate": "regime",
+      "note": "20d ret 2.4% (sideways)"
     }
   ]
 }
