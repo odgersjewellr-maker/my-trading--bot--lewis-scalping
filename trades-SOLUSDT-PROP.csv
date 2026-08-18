@@ -1,2 +1,3 @@
 Date,Time (UTC),Exchange,Symbol,Side,Quantity,Price,Total USD,Fee (est.),Net Amount,Order ID,Mode,Notes
 2026-08-18,20:38:04,BitGet,SOLUSDT,BUY,2596.391016,77.03,199999.99996248,60.0000,199940.00,PAPER-1787085484502,PAPER,"NKB NKB Buy — bands flipped bullish | Portfolio: $99940.00"
+2026-08-18,20:57:41,BitGet,SOLUSDT,SELL,2596.391016,76.87,199999.99996248,60.0000,199940.00,PAPER-STOP,PAPER,"Trailing stop hit — P&L $-411.71 total (-0.21%) | Portfolio: $99468.41"
