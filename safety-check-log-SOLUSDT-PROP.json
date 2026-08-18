@@ -1,5 +1,40 @@
 {
-  "trades": [],
+  "trades": [
+    {
+      "timestamp": "2026-08-18T20:38:04.502Z",
+      "type": "entry",
+      "symbol": "SOLUSDT",
+      "side": "buy",
+      "quantity": 2596.391016,
+      "price": 77.03,
+      "sizeUSD": 199999.99996248,
+      "portfolioValue": 99940.00000001126,
+      "nkb": {
+        "kernelMA": 77.12187985688348,
+        "sigma": 0.14996127471890563,
+        "upperBand": 77.5717636810402,
+        "lowerBand": 76.67199603272677,
+        "state": 1
+      },
+      "decisionTree": [
+        {
+          "id": "signal",
+          "label": "NKB confirmed band flip (2 bars, volume, 4H MTF)",
+          "passed": true,
+          "detail": "BUY confirmed"
+        },
+        {
+          "id": "regime",
+          "label": "Regime gate [markov]",
+          "passed": true,
+          "detail": "20d ret 5.5% (trending)"
+        }
+      ],
+      "orderPlaced": true,
+      "orderId": "PAPER-1787085484502",
+      "paperTrading": true
+    }
+  ],
   "gateBlocks": [
     {
       "timestamp": "2026-08-16T15:43:03.566Z",
