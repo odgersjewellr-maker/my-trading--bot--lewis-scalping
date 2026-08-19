@@ -1,5 +1,58 @@
 {
-  "trades": [],
+  "trades": [
+    {
+      "timestamp": "2026-08-19T13:29:41.079Z",
+      "type": "entry",
+      "symbol": "SOLUSDT",
+      "side": "buy",
+      "quantity": 12.735609,
+      "price": 78.52,
+      "sizeUSD": 1000.0000186799999,
+      "portfolioValue": 999.199999985056,
+      "nkb": {
+        "kernelMA": 77.99994352194759,
+        "sigma": 0.15896220271266623,
+        "upperBand": 78.47683013008559,
+        "lowerBand": 77.52305691380958,
+        "state": 1
+      },
+      "decisionTree": [
+        {
+          "id": "signal",
+          "label": "NKB confirmed band flip (2 bars, volume, 4H MTF)",
+          "passed": true,
+          "detail": "BUY confirmed"
+        },
+        {
+          "id": "regime",
+          "label": "Regime gate [chop+markov]",
+          "passed": true,
+          "detail": "CHOP(14,1H) 35.9 < 61.8 | 20d ret 5.5% (trending)"
+        },
+        {
+          "id": "adx",
+          "label": "ADX entry gate",
+          "passed": true,
+          "detail": "ADX(14) 42.8 ≥ 25"
+        },
+        {
+          "id": "rsi",
+          "label": "RSI momentum gate",
+          "passed": true,
+          "detail": "RSI(14) 77.6 confirms long momentum (need >50)"
+        },
+        {
+          "id": "atr",
+          "label": "ATR expansion gate",
+          "passed": true,
+          "detail": "ATR(14) vs its 20-bar average: expanding"
+        }
+      ],
+      "orderPlaced": true,
+      "orderId": "PAPER-1787146181079",
+      "paperTrading": true
+    }
+  ],
   "gateBlocks": [
     {
       "timestamp": "2026-08-16T11:55:50.409Z",
