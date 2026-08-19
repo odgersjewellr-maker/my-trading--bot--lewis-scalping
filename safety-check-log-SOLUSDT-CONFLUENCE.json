@@ -63,6 +63,18 @@
       "reason": "scale-out 1R",
       "orderId": "PAPER-1787151098869",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-08-19T21:48:46.295Z",
+      "type": "pyramid",
+      "symbol": "SOLUSDT",
+      "side": "buy",
+      "quantity": 5.809424139529428,
+      "price": 86.64,
+      "sizeUSD": 503.3285074488296,
+      "pyramidNum": 1,
+      "orderId": "PAPER-1787176126295",
+      "paperTrading": true
     }
   ],
   "gateBlocks": [
