@@ -63,6 +63,20 @@
       "reason": "scale-out 1R",
       "orderId": "PAPER-1787151690442",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-08-19T21:21:31.189Z",
+      "type": "exit",
+      "symbol": "SOLUSDT",
+      "side": "sell",
+      "quantity": 752.6881719,
+      "price": 86.51,
+      "sizeUSD": 59003.22579524101,
+      "pnlUSD": 10344.444442478998,
+      "reason": "prop: target lock",
+      "orderPlaced": true,
+      "orderId": "PAPER-1787174491189",
+      "paperTrading": true
     }
   ],
   "gateBlocks": [
