@@ -84,6 +84,16 @@
       "symbol": "SOLUSDT",
       "costUSD": 99.455488747925,
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-08-19T01:45:39.549Z",
+      "type": "stop",
+      "symbol": "SOLUSDT",
+      "side": "long",
+      "price": 76.81357142857144,
+      "pnlUSD": -430.0957493321347,
+      "reason": "trailing stop hit",
+      "paperTrading": true
     }
   ],
   "gateBlocks": [
