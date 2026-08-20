@@ -297,6 +297,12 @@
       "signal": "BUY",
       "gate": "regime",
       "note": "CHOP(14,1H) 24.0 < 61.8 | 20d ret 1.4% (sideways)"
+    },
+    {
+      "timestamp": "2026-08-20T03:07:46.361Z",
+      "signal": "BUY",
+      "gate": "rsi",
+      "note": "RSI(14) 48.6 doesn't confirm long momentum (need >50)"
     }
   ]
 }
