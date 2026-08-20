@@ -321,6 +321,12 @@
       "signal": "BUY",
       "gate": "atr",
       "note": "ATR(14) vs its 20-bar average: contracting"
+    },
+    {
+      "timestamp": "2026-08-20T07:55:24.002Z",
+      "signal": "BUY",
+      "gate": "atr",
+      "note": "ATR(14) vs its 20-bar average: contracting"
     }
   ]
 }
