@@ -303,6 +303,12 @@
       "signal": "BUY",
       "gate": "rsi",
       "note": "RSI(14) 48.6 doesn't confirm long momentum (need >50)"
+    },
+    {
+      "timestamp": "2026-08-20T04:59:33.612Z",
+      "signal": "BUY",
+      "gate": "atr",
+      "note": "ATR(14) vs its 20-bar average: contracting"
     }
   ]
 }
