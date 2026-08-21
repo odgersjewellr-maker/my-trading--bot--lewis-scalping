@@ -434,6 +434,18 @@
       "orderPlaced": true,
       "orderId": "PAPER-1787195702685",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-08-21T07:15:31.196Z",
+      "type": "pyramid",
+      "symbol": "BTCUSDT",
+      "side": "buy",
+      "quantity": 0.0065582337880139745,
+      "price": 76355,
+      "sizeUSD": 500.75394088380705,
+      "pyramidNum": 1,
+      "orderId": "PAPER-1787296531196",
+      "paperTrading": true
     }
   ],
   "gateBlocks": [
