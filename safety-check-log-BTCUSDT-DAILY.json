@@ -1,0 +1,11 @@
+{
+  "trades": [],
+  "gateBlocks": [
+    {
+      "timestamp": "2026-08-21T01:55:26.116Z",
+      "signal": "BUY",
+      "gate": "adx",
+      "note": "ADX(14) 22.2 < 25"
+    }
+  ]
+}
