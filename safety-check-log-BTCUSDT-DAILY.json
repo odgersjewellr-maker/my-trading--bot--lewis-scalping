@@ -1,5 +1,46 @@
 {
-  "trades": [],
+  "trades": [
+    {
+      "timestamp": "2026-08-22T01:47:40.203Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "side": "buy",
+      "quantity": 0.009602,
+      "price": 77965,
+      "sizeUSD": 748.61993,
+      "portfolioValue": 999.401104056,
+      "nkb": {
+        "kernelMA": 66571.08409321411,
+        "sigma": 2455.538143744784,
+        "upperBand": 73937.69852444847,
+        "lowerBand": 59204.46966197976,
+        "state": 1
+      },
+      "decisionTree": [
+        {
+          "id": "signal",
+          "label": "NKB confirmed band flip (2 bars, volume, 4H MTF)",
+          "passed": true,
+          "detail": "BUY confirmed"
+        },
+        {
+          "id": "regime",
+          "label": "Regime gate [chop+markov]",
+          "passed": true,
+          "detail": "CHOP(14,1H) 59.9 < 61.8 | 20d ret 22.6% (trending)"
+        },
+        {
+          "id": "adx",
+          "label": "ADX entry gate",
+          "passed": true,
+          "detail": "ADX(14) 26.4 ≥ 25"
+        }
+      ],
+      "orderPlaced": true,
+      "orderId": "PAPER-1787363260203",
+      "paperTrading": true
+    }
+  ],
   "gateBlocks": [
     {
       "timestamp": "2026-08-21T01:55:26.116Z",
