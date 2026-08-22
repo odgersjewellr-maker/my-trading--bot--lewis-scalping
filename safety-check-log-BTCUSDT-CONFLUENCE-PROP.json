@@ -421,6 +421,12 @@
       "signal": "BUY",
       "gate": "adx",
       "note": "ADX(14) 23.9 < 25"
+    },
+    {
+      "timestamp": "2026-08-22T09:14:21.726Z",
+      "signal": "BUY",
+      "gate": "rsi",
+      "note": "RSI(14) 42.9 doesn't confirm long momentum (need >50)"
     }
   ]
 }
