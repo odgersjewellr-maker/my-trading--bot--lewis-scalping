@@ -1,14 +1,1 @@
-{
-  "side": "long",
-  "entryPrice": 76950.01,
-  "quantity": 0.014728,
-  "sizeUSD": 1133.31974728,
-  "stopLossPrice": 77060.73428571428,
-  "riskDist": 265.5400000000009,
-  "partialTaken": false,
-  "realizedPnl": 0,
-  "openedAt": "2026-08-22T09:56:47.616Z",
-  "orderId": "PAPER-1787392607616",
-  "stopOrderId": null,
-  "pyramided": 0
-}
+null
