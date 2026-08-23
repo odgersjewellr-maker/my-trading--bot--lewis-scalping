@@ -609,6 +609,16 @@
       "orderPlaced": true,
       "orderId": "PAPER-1787521303392",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-08-23T23:13:35.830Z",
+      "type": "stop",
+      "symbol": "BTCUSDT",
+      "side": "long",
+      "price": 77450.18285714285,
+      "pnlUSD": -2.5504072971429808,
+      "reason": "trailing stop hit",
+      "paperTrading": true
     }
   ],
   "gateBlocks": [
