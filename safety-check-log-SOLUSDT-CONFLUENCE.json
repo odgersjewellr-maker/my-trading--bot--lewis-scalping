@@ -408,6 +408,12 @@
       "signal": "BUY",
       "gate": "regime",
       "note": "CHOP(14,1H) 63.5 ≥ 61.8 | 20d ret 29.5% (trending)"
+    },
+    {
+      "timestamp": "2026-08-24T16:28:10.599Z",
+      "signal": "BUY",
+      "gate": "adx",
+      "note": "ADX(14) 19.2 < 25"
     }
   ]
 }
