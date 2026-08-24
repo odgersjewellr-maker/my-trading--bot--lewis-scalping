@@ -201,6 +201,18 @@
       "orderPlaced": true,
       "orderId": "PAPER-1787578807906",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-08-24T14:22:58.716Z",
+      "type": "partial",
+      "symbol": "BTCUSDT",
+      "side": "long",
+      "quantity": 0.8324273999999999,
+      "price": 79346.43,
+      "pnlUSD": 625.5275697299975,
+      "reason": "scale-out 1R",
+      "orderId": "PAPER-1787581378716",
+      "paperTrading": true
     }
   ],
   "gateBlocks": [
