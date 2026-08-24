@@ -149,6 +149,58 @@
       "pnlUSD": 3663.3414755085764,
       "reason": "trailing stop hit",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-08-24T13:40:07.907Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "side": "buy",
+      "quantity": 1.189182,
+      "price": 78594.98,
+      "sizeUSD": 93463.73550636,
+      "portfolioValue": 102976.68505530979,
+      "nkb": {
+        "kernelMA": 78467.14542857822,
+        "sigma": 319.02042272156854,
+        "upperBand": 79424.20669674293,
+        "lowerBand": 77510.08416041352,
+        "state": 1
+      },
+      "decisionTree": [
+        {
+          "id": "signal",
+          "label": "NKB confirmed band flip (2 bars, volume, 4H MTF)",
+          "passed": true,
+          "detail": "BUY confirmed"
+        },
+        {
+          "id": "regime",
+          "label": "Regime gate [chop+markov]",
+          "passed": true,
+          "detail": "CHOP(14,1H) 47.3 < 61.8 | 20d ret 21.2% (trending)"
+        },
+        {
+          "id": "adx",
+          "label": "ADX entry gate",
+          "passed": true,
+          "detail": "ADX(14) 29.2 ≥ 25"
+        },
+        {
+          "id": "rsi",
+          "label": "RSI momentum gate",
+          "passed": true,
+          "detail": "RSI(14) 58.9 confirms long momentum (need >50)"
+        },
+        {
+          "id": "atr",
+          "label": "ATR expansion gate",
+          "passed": true,
+          "detail": "ATR(14) vs its 20-bar average: expanding"
+        }
+      ],
+      "orderPlaced": true,
+      "orderId": "PAPER-1787578807906",
+      "paperTrading": true
     }
   ],
   "gateBlocks": [
