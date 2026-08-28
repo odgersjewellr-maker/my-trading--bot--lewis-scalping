@@ -1,0 +1,41 @@
+name: CI checks
+
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  correctness-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - run: npm install
+
+      - name: Syntax-check strategy/runtime files
+        run: |
+          for f in bot.js backtest.js backtest12m.js backtest-confluence.mjs backtest-scaleout.mjs dashboard.js server.js; do
+            echo "checking $f"
+            node --check "$f"
+          done
+
+      - name: Validate rules.json is well-formed
+        run: node -e "JSON.parse(require('fs').readFileSync('rules.json', 'utf8')); console.log('rules.json OK')"
+
+      - name: Config loads without a disabled guardrail
+        run: |
+          node -e "
+            import('./bot.js')
+              .then(() => console.log('bot.js config validation OK'))
+              .catch((e) => { console.error('bot.js failed to load:', e.message); process.exit(1); });
+          "
+
+      - name: Run backtest as a strategy-engine smoke test
+        run: node backtest.js
