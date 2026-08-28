@@ -159,9 +159,37 @@ export const CONFIG = {
   },
 };
 
+// ─── Config validation — fail loudly, not silently ──────────────────────────
+// A malformed numeric env var (typo, stray text, wrong format) makes
+// parseFloat/parseInt return NaN, and a NaN guardrail comparison (e.g.
+// `tradeSize > CONFIG.maxTradeSizeUSD`) is always false — that silently
+// disables the guardrail instead of erroring. Refuse to start rather than
+// run with a guardrail that looks configured but never fires.
+const NUMERIC_GUARDRAILS = [
+  "portfolioValue", "tradeSizePct", "riskPct", "adxEntryMin", "maxTradeSizeUSD",
+  "maxTradesPerDay", "paperFeeRate", "propRiskPct", "propTargetPct", "propMaxDdPct",
+  "propDdGuard", "propDailyLimitPct", "propDailyGuard", "propLevCap", "propSwapRate",
+  "propDayResetMin", "stopLossPct", "atrPeriod", "scaleOutBankFrac", "scaleOutTPMult",
+  "leverage",
+];
+for (const key of NUMERIC_GUARDRAILS) {
+  if (!Number.isFinite(CONFIG[key])) {
+    throw new Error(
+      `Invalid config: CONFIG.${key} parsed to ${CONFIG[key]} — check the matching env var for typos or non-numeric text.`,
+    );
+  }
+}
+
 // INSTANCE_ID lets multiple books trade the same symbol without sharing state
 // (e.g. the SOLUSDT live-paper book and the SOLUSDT-PROP challenge book).
-const FILE_KEY = process.env.INSTANCE_ID || CONFIG.symbol;
+// Sanitized to safe filename characters — INSTANCE_ID/SYMBOL feed straight
+// into on-disk file paths below, so strip anything that isn't alphanumeric,
+// dash, or underscore before it can affect where a file gets read/written.
+const FILE_KEY_RAW = process.env.INSTANCE_ID || CONFIG.symbol;
+const FILE_KEY = FILE_KEY_RAW.replace(/[^A-Za-z0-9_-]/g, "");
+if (!FILE_KEY) {
+  throw new Error(`INSTANCE_ID/SYMBOL produced an empty file key from "${FILE_KEY_RAW}"`);
+}
 export const LOG_FILE        = `safety-check-log-${FILE_KEY}.json`;
 export const POSITION_FILE   = `position-${FILE_KEY}.json`;
 export const PORTFOLIO_FILE  = `portfolio-${FILE_KEY}.json`;
