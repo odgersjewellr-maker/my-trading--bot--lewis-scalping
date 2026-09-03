@@ -1051,6 +1051,46 @@
       "pnlUSD": 0.263819068571326,
       "reason": "trailing stop hit",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-09-03T00:11:10.990Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "side": "sell",
+      "quantity": 0.014319,
+      "price": 77235,
+      "sizeUSD": 1105.927965,
+      "portfolioValue": 1105.025916522323,
+      "nkb": {
+        "kernelMA": 77254.50714855232,
+        "sigma": 128.61321419057663,
+        "upperBand": 77640.34679112406,
+        "lowerBand": 76868.66750598059,
+        "state": -1
+      },
+      "decisionTree": [
+        {
+          "id": "signal",
+          "label": "NKB confirmed band flip (2 bars, volume, 4H MTF)",
+          "passed": true,
+          "detail": "SELL confirmed"
+        },
+        {
+          "id": "shortable",
+          "label": "Shorting available",
+          "passed": true,
+          "detail": "futures mode"
+        },
+        {
+          "id": "regime",
+          "label": "Regime gate [chop+markov]",
+          "passed": true,
+          "detail": "CHOP(14,1H) 57.3 < 61.8 | 20d ret 21.9% (trending)"
+        }
+      ],
+      "orderPlaced": true,
+      "orderId": "PAPER-1788394270990",
+      "paperTrading": true
     }
   ],
   "gateBlocks": [
