@@ -500,6 +500,12 @@
       "signal": "BUY",
       "gate": "rsi",
       "note": "RSI(14) 43.3 doesn't confirm long momentum (need >50)"
+    },
+    {
+      "timestamp": "2026-09-03T13:43:42.645Z",
+      "signal": "BUY",
+      "gate": "regime",
+      "note": "CHOP(14,1H) 62.1 ≥ 61.8 | 20d ret 31.3% (trending)"
     }
   ]
 }
