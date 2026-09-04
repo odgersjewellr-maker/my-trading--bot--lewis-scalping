@@ -289,6 +289,16 @@
       "symbol": "BTCUSDT",
       "costUSD": 60.66192956292001,
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-09-04T13:28:38.681Z",
+      "type": "stop",
+      "symbol": "BTCUSDT",
+      "side": "long",
+      "price": 80875.08357142856,
+      "pnlUSD": -500.00006333143614,
+      "reason": "trailing stop hit",
+      "paperTrading": true
     }
   ],
   "gateBlocks": [
