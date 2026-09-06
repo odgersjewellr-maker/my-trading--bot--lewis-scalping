@@ -721,6 +721,12 @@
       "signal": "SELL",
       "gate": "adx",
       "note": "ADX(14) 9.9 < 25"
+    },
+    {
+      "timestamp": "2026-09-06T08:59:14.934Z",
+      "signal": "BUY",
+      "gate": "regime",
+      "note": "CHOP(14,1H) 64.4 ≥ 61.8 | 20d ret 26.4% (trending)"
     }
   ]
 }
