@@ -1485,6 +1485,16 @@
       "orderPlaced": true,
       "orderId": "PAPER-1789048565376",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-09-11T04:30:34.357Z",
+      "type": "stop",
+      "symbol": "BTCUSDT",
+      "side": "short",
+      "price": 77040.56071428572,
+      "pnlUSD": 1.6102355485713167,
+      "reason": "trailing stop hit",
+      "paperTrading": true
     }
   ],
   "gateBlocks": [
@@ -2139,6 +2149,11 @@
       "signal": "BUY",
       "gate": "regime",
       "note": "CHOP(14,1H) 63.9 ≥ 61.8 | 20d ret 8.5% (trending)"
+    },
+    {
+      "timestamp": "2026-09-11T04:30:34.359Z",
+      "signal": "re-entry short",
+      "note": "CHOP(14,1H) 55.4 < 61.8 | 20d ret 0.0% (sideways)"
     }
   ]
 }
