@@ -4134,6 +4134,37 @@
       "orderPlaced": true,
       "orderId": "PAPER-1789761383722",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-09-18T21:45:34.894Z",
+      "type": "stop",
+      "symbol": "SOLUSDT",
+      "side": "long",
+      "price": 113.3142857142857,
+      "pnlUSD": -7.51102476571435,
+      "reason": "trailing stop hit",
+      "paperTrading": true
+    },
+    {
+      "timestamp": "2026-09-18T21:45:34.896Z",
+      "type": "entry",
+      "symbol": "SOLUSDT",
+      "side": "buy",
+      "quantity": 11.627233,
+      "price": 113.18,
+      "sizeUSD": 1315.9702309400002,
+      "portfolioValue": 1314.917444235704,
+      "nkb": {
+        "kernelMA": 112.82427352169779,
+        "sigma": 0.5484166223685993,
+        "upperBand": 114.4695233888036,
+        "lowerBand": 111.17902365459199,
+        "state": 1
+      },
+      "decisionTree": null,
+      "orderPlaced": true,
+      "orderId": "PAPER-1789767934896",
+      "paperTrading": true
     }
   ]
 }
