@@ -799,6 +799,12 @@
       "signal": "BUY",
       "gate": "regime",
       "note": "CHOP(14,1H) 31.9 < 61.8 | 20d ret 3.7% (sideways)"
+    },
+    {
+      "timestamp": "2026-09-19T06:39:06.408Z",
+      "signal": "BUY",
+      "gate": "regime",
+      "note": "CHOP(14,1H) 58.4 < 61.8 | 20d ret 3.7% (sideways)"
     }
   ]
 }
