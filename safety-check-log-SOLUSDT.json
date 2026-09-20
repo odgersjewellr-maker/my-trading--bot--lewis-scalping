@@ -4175,6 +4175,34 @@
       "pnlUSD": -6.461419481428596,
       "reason": "trailing stop hit",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-09-20T17:05:44.890Z",
+      "type": "entry",
+      "symbol": "SOLUSDT",
+      "side": "buy",
+      "quantity": 11.854279,
+      "price": 110.29,
+      "sizeUSD": 1307.40843091,
+      "portfolioValue": 1306.3624909603807,
+      "nkb": {
+        "kernelMA": 108.91305647300143,
+        "sigma": 0.43604590577572083,
+        "upperBand": 110.22119419032859,
+        "lowerBand": 107.60491875567428,
+        "state": 1
+      },
+      "decisionTree": [
+        {
+          "id": "signal",
+          "label": "NKB confirmed band flip (2 bars, volume, 4H MTF)",
+          "passed": true,
+          "detail": "BUY confirmed"
+        }
+      ],
+      "orderPlaced": true,
+      "orderId": "PAPER-1789923944889",
+      "paperTrading": true
     }
   ]
 }
