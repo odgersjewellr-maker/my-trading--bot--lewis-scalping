@@ -835,6 +835,12 @@
       "signal": "BUY",
       "gate": "regime",
       "note": "CHOP(14,1H) 44.2 < 61.8 | 20d ret 3.0% (sideways)"
+    },
+    {
+      "timestamp": "2026-09-21T19:22:04.004Z",
+      "signal": "BUY",
+      "gate": "atr",
+      "note": "ATR(14) vs its 20-bar average: contracting"
     }
   ]
 }
