@@ -1641,6 +1641,37 @@
       "orderPlaced": true,
       "orderId": "PAPER-1790041571751",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-09-22T05:30:51.577Z",
+      "type": "stop",
+      "symbol": "BTCUSDT",
+      "side": "long",
+      "price": 85412.70071428572,
+      "pnlUSD": -3.2986761785714154,
+      "reason": "trailing stop hit",
+      "paperTrading": true
+    },
+    {
+      "timestamp": "2026-09-22T05:30:51.579Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "side": "buy",
+      "quantity": 0.012367,
+      "price": 85157,
+      "sizeUSD": 1053.1366189999999,
+      "portfolioValue": 1052.2716734153796,
+      "nkb": {
+        "kernelMA": 85629.51242053695,
+        "sigma": 191.11755937176622,
+        "upperBand": 86202.86509865226,
+        "lowerBand": 85056.15974242165,
+        "state": 1
+      },
+      "decisionTree": null,
+      "orderPlaced": true,
+      "orderId": "PAPER-1790055051579",
+      "paperTrading": true
     }
   ],
   "gateBlocks": [
