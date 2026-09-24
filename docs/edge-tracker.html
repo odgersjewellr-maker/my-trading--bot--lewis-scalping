@@ -1,0 +1,146 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="600">
+<title>Edge Tracker</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,'Segoe UI',Arial,sans-serif;background:#0b0e14;color:#e2e8f0;padding:22px 16px;max-width:1180px;margin:0 auto}
+h1{font-size:22px}h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#8b94a7;margin:30px 0 12px}
+.sub{color:#8b94a7;font-size:12.5px;margin-top:3px}.sub2{color:#8b94a7;font-size:12px;line-height:1.45}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-top:20px}
+.kpi{background:#141824;border:1px solid #232a3a;border-radius:11px;padding:13px 15px}
+.kpi .n{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums}.kpi .l{color:#8b94a7;font-size:11.5px;margin-top:2px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}
+.card{background:#141824;border:1px solid #232a3a;border-radius:11px;padding:15px 17px;display:flex;flex-direction:column}
+.ch{display:flex;align-items:flex-start;gap:8px}.cn{font-weight:600;font-size:14.5px}
+.src{color:#8b94a7;font-size:11.5px;margin:3px 0 10px}
+.badge{margin-left:auto;font-size:10px;padding:3px 8px;border-radius:5px;font-weight:600;white-space:nowrap}
+.s-fwd{background:#1e3a5f;color:#60a5fa}.s-need{background:#3a3016;color:#fbbf24}
+.ev{font-size:12.5px;line-height:1.5;color:#c3cbdb}.ev b{color:#e2e8f0}
+.pill{display:inline-block;font-size:10.5px;padding:2px 8px;border-radius:9px;font-weight:600;background:#12351f;color:#4ade80;margin-bottom:6px}
+ul.gates{list-style:none;margin-top:11px;border-top:1px solid #232a3a;padding-top:9px;font-size:12px}
+ul.gates li{padding:3px 0 3px 24px;text-indent:-24px;color:#9aa3b5;line-height:1.4}
+ul.gates li .ic{display:inline-block;text-indent:0;width:16px;margin-right:8px;text-align:center;font-weight:700}
+.ok .ic{color:#4ade80}.wip .ic{color:#60a5fa}.no .ic{color:#6b7280}
+.bar{height:6px;background:#232a3a;border-radius:3px;margin:8px 0 2px;overflow:hidden}.bar i{display:block;height:100%;background:#60a5fa}
+.warn{background:#2a2412;border:1px solid #4a3d16;border-radius:11px;padding:13px 16px;font-size:12.5px;line-height:1.55;color:#e5d6a8;margin-top:14px}
+.warn b{color:#fbbf24}
+.panel{background:#141824;border:1px solid #232a3a;border-radius:11px;padding:6px 16px 12px;overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{text-align:left;padding:8px;border-bottom:1px solid #1c2230;vertical-align:top}
+th{color:#8b94a7;font-weight:500;font-size:11px;text-transform:uppercase}
+details{margin-top:30px}summary{cursor:pointer;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#8b94a7;margin-bottom:12px}
+.foot{color:#6b7280;font-size:11.5px;margin-top:26px;line-height:1.6;border-top:1px solid #1c2230;padding-top:12px}
+.mono{font-family:ui-monospace,monospace;font-size:11.5px;color:#c3cbdb}
+</style></head><body>
+<h1>🎯 Edge Tracker</h1>
+<div class="sub">Verified edges only, tracked through the gates to live trading · isolated from the firm dashboard · updated 2026-09-24 · auto-refresh 10m</div>
+
+<div class="kpis">
+  <div class="kpi"><div class="n">5</div><div class="l">verified edges (passed out-of-sample)</div></div>
+  <div class="kpi"><div class="n" style="color:#60a5fa">2</div><div class="l">in forward paper test</div></div>
+  <div class="kpi"><div class="n" style="color:#fbbf24">3</div><div class="l">waiting for a paper book</div></div>
+  <div class="kpi"><div class="n" style="color:#8b94a7">0</div><div class="l">cleared for live</div></div>
+</div>
+
+<h2>Verified edges — path to live</h2>
+<div class="grid">
+
+  <div class="card">
+    <div class="ch"><span class="cn">NQ opening-window (09:45)</span><span class="badge s-fwd">FORWARD TEST</span></div>
+    <div class="src">futures · time-of-day · PC task <span class="mono">aee-pro/forward</span></div>
+    <div><span class="pill">BLIND HOLDOUT</span></div>
+    <div class="ev">Survived a blind 2021-26 holdout in the right cost regime (futures). The strongest evidence on the board. Forward paper: <b>$102,012 (+2.0%)</b>.</div>
+    <div class="bar"><i style="width:26%"></i></div><div class="sub2">Gate 5: 26 of 100 sessions (count as of 2026-09-01)</div>
+    <ul class="gates">
+      <li class="ok"><span class="ic">✓</span>Out-of-sample test passed (blind holdout)</li>
+      <li class="wip"><span class="ic">→</span>Forward paper record: 100 trades to verdict</li>
+      <li class="no"><span class="ic">○</span>Futures execution adapter (none in this repo)</li>
+      <li class="no"><span class="ic">○</span>Prop fit: strategy DD −9.7% vs 3% trailing account limit</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <div class="ch"><span class="cn">NKB daily · 2% risk + ADX≥25</span><span class="badge s-fwd">FORWARD TEST</span></div>
+    <div class="src">BTC daily trend · branch <span class="mono">1k-to-100k-strategies</span> · book <span class="mono">BTCUSDT-DAILY</span></div>
+    <div><span class="pill">WALK-FORWARD</span></div>
+    <div class="ev">Walk-forward OOS with fees over 5.9 years: <b>+44%/yr at 24% max DD (MAR 1.83)</b> vs BTC hold MAR ≈0.6. Only ~34 OOS trades, BTC only. Paper book: <b>$999 (−0.1%)</b>, long since 2026-08-22 with 1 pyramid add.</div>
+    <div class="bar"><i style="width:37%"></i></div><div class="sub2">Paper record: day 33 of the 60–90 day minimum</div>
+    <ul class="gates">
+      <li class="ok"><span class="ic">✓</span>Out-of-sample test passed (walk-forward, fees)</li>
+      <li class="ok"><span class="ic">✓</span>Execution + risk guardrails live in <span class="mono">bot.js</span> (BitGet, paper)</li>
+      <li class="wip"><span class="ic">→</span>60–90 day paper record on the validated config</li>
+      <li class="no"><span class="ic">○</span>ETH/SOL confirmation (tooled, not run)</li>
+      <li class="no"><span class="ic">○</span>Validate live-only extras: 4h filter, trailing stop, pyramiding, re-entry</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <div class="ch"><span class="cn">SimpleTrendFilter (150d SMA)</span><span class="badge s-need">NEEDS PAPER BOOK</span></div>
+    <div class="src">BTC+ETH daily trend · branch <span class="mono">trading-bot-architecture</span> · Freqtrade</div>
+    <div><span class="pill">UNSEEN ASSET + FORWARD WINDOW</span></div>
+    <div class="ev">Stable across SMA 100–300. Ran unchanged on ETH: +1117%, DD −68% vs −94% hold. Locked-rule window 2024-04 → 2025-09: <b>+29.8%, Sharpe 0.70, PF 1.95</b>, but it trailed buy-and-hold on raw return.</div>
+    <ul class="gates">
+      <li class="ok"><span class="ic">✓</span>Out-of-sample test passed (ETH + unseen window)</li>
+      <li class="no"><span class="ic">○</span>Freqtrade <span class="mono">dry_run</span> on a live feed (config ready)</li>
+      <li class="no"><span class="ic">○</span>Data refresh past 2025-09-08</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <div class="ch"><span class="cn">Multi-asset trend ensemble</span><span class="badge s-need">NEEDS PAPER BOOK</span></div>
+    <div class="src">crypto trend + vol cap · branch <span class="mono">london-newyork-direction-probability</span></div>
+    <div><span class="pill">TRAIN/TEST + UNSEEN ASSET</span></div>
+    <div class="ev">Untuned textbook params. BTC train 2010-19 → test 2020-26 → ETH as an unseen asset. Modern era: <b>+52% CAGR, −40% DD, Sharpe 1.29, monthly PF ≈3.0</b>. Win rate is low by design.</div>
+    <ul class="gates">
+      <li class="ok"><span class="ic">✓</span>Out-of-sample test passed (time split + ETH)</li>
+      <li class="no"><span class="ic">○</span>Re-run on exchange price feed (tested on PriceUSD, not exchange fills)</li>
+      <li class="no"><span class="ic">○</span>Paper book / execution wiring</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <div class="ch"><span class="cn">Candle-pattern momentum</span><span class="badge s-need">NEEDS PAPER BOOK</span></div>
+    <div class="src">BTC/SOL/ETH daily · branch <span class="mono">patent-trading-candles</span></div>
+    <div><span class="pill">TRAIN/TEST + UNSEEN ASSETS</span></div>
+    <div class="ev">70/30 split on BTC; ruleset ran unchanged on SOL (<b>PF 1.58</b>) and ETH (<b>PF 1.49</b>). 3-symbol book: PF 1.80, 375 trades, 6.7% DD. The inside-bar rule lost money on SOL, so run it on BTC only.</div>
+    <ul class="gates">
+      <li class="ok"><span class="ic">✓</span>Out-of-sample test passed (SOL + ETH)</li>
+      <li class="ok"><span class="ic">✓</span>Kill criteria pre-registered: DD &gt; 8% or PF &lt; 1.0 after 30 trades</li>
+      <li class="no"><span class="ic">○</span>Phase 0: 60–90 day paper at 10% sizing</li>
+    </ul>
+  </div>
+</div>
+
+<div class="warn"><b>⚠ Correlation warning before sizing anything live:</b> the four crypto edges are all long-biased trend following, so the same crypto-beta regime drives them. Treat them as <b>one bet</b>, not four: running them together does not diversify, and they will likely lose at the same time. Size the cluster as a single allocation. On 2021-26 BTC daily, the Edge Machine's stricter gauntlet <b>rejected</b> plain time-series momentum (holdout Sharpe 0.70, but PBO 0.75, rotation p=0.095). So these passes are real but weaker evidence than the NQ blind holdout.</div>
+
+<h2>Live-readiness gates (every edge must clear all of them)</h2>
+<div class="panel"><table>
+<tr><th>gate</th><th>what it means</th></tr>
+<tr><td>1 · Out-of-sample</td><td class="sub2">Passed a holdout, walk-forward, or unchanged run on an unseen asset or window. In-sample results don't count.</td></tr>
+<tr><td>2 · Forward paper</td><td class="sub2">60–90 days (or the edge's own trade-count gate) on the exact config that was validated, on a live feed.</td></tr>
+<tr><td>3 · Execution</td><td class="sub2">Venue adapter tested, real fees and slippage measured, and paper results reconciled against the backtest.</td></tr>
+<tr><td>4 · Guardrails</td><td class="sub2">Spend cap, daily trade cap, drawdown halt and kill criteria set before the first live order.</td></tr>
+<tr><td>5 · Correlation</td><td class="sub2">Sized alongside every other live edge; the correlated crypto-trend cluster gets one combined allocation.</td></tr>
+</table></div>
+
+<details>
+<summary>Not eligible for live (watch list and in-sample-only claims)</summary>
+<div class="panel"><table>
+<tr><th>item</th><th>status</th><th>why it's excluded</th></tr>
+<tr><td>Xsec alt momentum</td><td class="sub2">decayed</td><td class="sub2">Sharpe 1.51 / 1.48 / 1.19 in 2021-23, then inverted to −2.51 in 2026. Re-test in the next alt season.</td></tr>
+<tr><td>Funding-extreme fade</td><td class="sub2">regime-gated</td><td class="sub2">Timing is significant (shuffle p=0.005) but holdout Sharpe −1.52. Works only in high vol.</td></tr>
+<tr><td>Weekend reversion</td><td class="sub2">faint</td><td class="sub2">Just misses on DSR (0.77) and rotation p (0.065).</td></tr>
+<tr><td>NKB 4-gate confluence</td><td class="sub2">in-sample</td><td class="sub2">8y BTC: PF 1.38, but there was no holdout. The CONFLUENCE books are testing whether it transfers.</td></tr>
+<tr><td>Turtle Soup (regime-tuned)</td><td class="sub2">in-sample</td><td class="sub2">Tuned on the same folds it was scored on. The untuned default had PF 0.50.</td></tr>
+<tr><td>Daily-range bounce</td><td class="sub2">in-sample</td><td class="sub2">Best result from a grid optimiser on proxy data.</td></tr>
+<tr><td>London→NY sweep + reclaim</td><td class="sub2">unproven</td><td class="sub2">PF 0.85–1.19 standalone; lumpy and year-dependent.</td></tr>
+<tr><td>Opening Drive · causal-fusion · stablecoin/netflow · LLM forecast</td><td class="sub2">no verdict</td><td class="sub2">Never run on real data.</td></tr>
+<tr><td>1m/5m scalp (Valentini)</td><td class="sub2">negative</td><td class="sub2">Loses to fees on 1m and 5m. Paper-only.</td></tr>
+</table></div>
+</details>
+
+<div class="foot">
+An edge appears here only after it passes an out-of-sample test. It moves to live only after it clears all five gates; nothing has cleared them yet. The firm-wide research ledger stays on <span class="mono">docs/index.html</span>.<br>
+Sources: NQ figures from the firm dashboard (2026-09-01); BTC-DAILY from <span class="mono">portfolio-BTCUSDT-DAILY.json</span> / <span class="mono">trades-BTCUSDT-DAILY.csv</span>; other evidence from each edge's research branch write-up.
+</div>
+</body></html>

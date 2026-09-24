@@ -21,13 +21,11 @@ th{color:#8b94a7;font-weight:500;font-size:11px;text-transform:uppercase}
 .pos{color:#4ade80}.neg{color:#f87171}.warn{color:#fbbf24}.mut{color:#8b94a7}.mono{font-family:ui-monospace,monospace;font-size:11.5px;color:#c3cbdb}
 .pill{font-size:10.5px;padding:2px 8px;border-radius:9px;font-weight:600;white-space:nowrap}
 .p-kill{background:#3d1a19;color:#ff9d97}.p-warn{background:#3a3016;color:#fbbf24}.p-pass{background:#12351f;color:#4ade80}
-.p-info{background:#1e3a5f;color:#60a5fa}.p-mut{background:#2a2e38;color:#8b94a7}
-.note{color:#9aa3b5;font-size:12px;line-height:1.5;margin:10px 2px 2px}
 .panel{background:#141824;border:1px solid #232a3a;border-radius:11px;padding:6px 16px 12px;overflow-x:auto}
 .foot{color:#6b7280;font-size:11.5px;margin-top:26px;line-height:1.6;border-top:1px solid #1c2230;padding-top:12px}
 </style></head><body>
 <h1>🛰️ Firm Mission Control</h1>
-<div class="sub">Systematic trading firm · every experiment, verdict, and project in one place · generated 2026-09-01 21:11Z · edge tracker 2026-09-24 · auto-refresh 10m</div>
+<div class="sub">Systematic trading firm · every experiment, verdict, and project in one place · generated 2026-09-01 21:11Z · auto-refresh 10m</div>
 
 <h2>Live experiments</h2>
 <div class="grid">
@@ -67,34 +65,6 @@ th{color:#8b94a7;font-weight:500;font-size:11px;text-transform:uppercase}
     <div class="read">Measures real costs so Law-2 calls stop being assumed. PnL is pre-declared noise — it's a measuring instrument, not a book.</div>
   </div></div>
 
-<h2>Verified edge tracker — every edge that passed an out-of-sample test</h2>
-<div class="panel"><table>
-<tr><th>edge</th><th>evidence</th><th>out-of-sample result</th><th>deployed / next gate</th></tr>
-  <tr><td>NQ opening-window (09:45)<div class="sub2">futures · time-of-day</div></td><td><span class="pill p-pass">BLIND HOLDOUT</span></td><td class="sub2">Survived a blind 2021-26 holdout in the right cost regime (futures). The only edge that has passed a pre-registered blind test.</td><td class="sub2">Forward paper on PC · $102,012 (+2.0%, 26 sessions) · Gate 5: 100 trades to verdict</td></tr>
-  <tr><td>NKB daily · 2% risk + ADX≥25<div class="sub2">BTC daily trend · <span class="mono">1k-to-100k</span> branch</div></td><td><span class="pill p-pass">WALK-FORWARD</span></td><td class="sub2">Walk-forward OOS with fees, 5.9 yrs: <b>+44%/yr at 24% max DD (MAR 1.83)</b> vs baseline +18%/yr at 68% DD and BTC hold MAR ≈0.6. Only ~34 OOS trades; BTC only.</td><td class="sub2">BTC-DAILY paper book · $999 (−0.1%) · 1 entry + 1 pyramid since 2026-08-22 · next: ETH/SOL confirmation</td></tr>
-  <tr><td>SimpleTrendFilter (150d SMA)<div class="sub2">BTC+ETH daily trend · <span class="mono">trading-bot-architecture</span> branch</div></td><td><span class="pill p-pass">UNSEEN ASSET + FORWARD WINDOW</span></td><td class="sub2">Stable across SMA 100–300. Unchanged on ETH: +1117%, DD −68% vs −94% hold. Locked-rule forward window 2024-04→2025-09: <b>+29.8%, Sharpe 0.70, PF 1.95</b>, but trailed buy-and-hold on raw return.</td><td class="sub2">Not deployed · next: Freqtrade dry-run on live feed</td></tr>
-  <tr><td>Multi-asset trend ensemble<div class="sub2">crypto trend + vol cap · <span class="mono">london-newyork</span> branch</div></td><td><span class="pill p-pass">TRAIN/TEST + UNSEEN ASSET</span></td><td class="sub2">Untuned textbook params. BTC train 2010-19 → test 2020-26 → ETH as an unseen asset. Modern era: <b>+52% CAGR, −40% DD, Sharpe 1.29, monthly PF ≈3.0</b>. Win rate low by design.</td><td class="sub2">Not deployed · next: check on venue feed (PriceUSD ≠ exchange fills)</td></tr>
-  <tr><td>Candle-pattern momentum<div class="sub2">BTC/SOL/ETH daily · <span class="mono">patent-trading-candles</span> branch</div></td><td><span class="pill p-pass">TRAIN/TEST + UNSEEN ASSETS</span></td><td class="sub2">70/30 split on BTC; ruleset run unchanged on SOL (<b>PF 1.58</b>) and ETH (<b>PF 1.49</b>). 3-symbol book: PF 1.80, 375 trades, 6.7% DD. Inside-bar rule lost money on SOL, so run it on BTC only.</td><td class="sub2">Not deployed · Phase 0: 60–90 day paper, kill if DD &gt; 8% or PF &lt; 1.0 after 30 trades</td></tr></table>
-<div class="note"><b style="color:#fbbf24">⚠ Correlation warning:</b> the four crypto rows are all long-biased trend following, so they are driven by the same crypto-beta regime. Treat them as <b>one cluster</b>, not four separate edges: stacking them does not diversify, and they will fail together (see the Edge Machine synthesis). On 2021-26 BTC daily, the Edge Machine's stricter gauntlet <b>rejected</b> plain time-series momentum (holdout Sharpe 0.70, but PBO 0.75 and rotation p=0.095). So the walk-forward and unseen-asset passes above are real but <b>weaker</b> evidence than the NQ blind holdout.</div></div>
-
-<h2>Edge watch list — real structure, not tradeable now</h2>
-<div class="panel"><table>
-<tr><th>effect</th><th>status</th><th>why it's not verified</th></tr>
-  <tr><td>Xsec alt momentum</td><td><span class="pill p-warn">DECAYED</span></td><td class="sub2">Sharpe 1.51 / 1.48 / 1.19 in 2021-23, then went flat and inverted to −2.51 in 2026. Re-test in the next alt-season or dispersion regime.</td></tr>
-  <tr><td>Funding-extreme fade</td><td><span class="pill p-warn">REGIME-GATED</span></td><td class="sub2">Timing is significant (shuffle p=0.005, rotation p=0.015) but holdout Sharpe −1.52. Works only in high vol. Revisit only with a pre-registered regime split.</td></tr>
-  <tr><td>Weekend reversion</td><td><span class="pill p-warn">FAINT</span></td><td class="sub2">Positive OOS/holdout and PBO 0.14, but just misses on DSR (0.77) and rotation p (0.065).</td></tr>
-  <tr><td>Absorption fade</td><td><span class="pill p-kill">KILLED</span></td><td class="sub2">Real reversal pulse, but adverse-selection maker fills make the gross edge negative (−1.57 bp).</td></tr></table></div>
-
-<h2>Claimed but not verified — in-sample only</h2>
-<div class="panel"><table>
-<tr><th>strategy</th><th>headline</th><th>what's missing</th></tr>
-  <tr><td>NKB 4-gate confluence + scale-out</td><td class="sub2">8y BTC: 63.5% win, PF 1.38, 29.7% DD</td><td class="sub2">Full-history backtest with no holdout. SOL-CONFLUENCE and the two CONFLUENCE-PROP books are testing whether it transfers.</td></tr>
-  <tr><td>Turtle Soup (regime-tuned, R:R 3)</td><td class="sub2">PF 1.25–2.77 across BTC-daily folds</td><td class="sub2">Tuned on those same folds. The untuned default had PF 0.50.</td></tr>
-  <tr><td>Daily-range bounce</td><td class="sub2">59% return, Sharpe 1.10, PF 1.83</td><td class="sub2">Best result from a grid optimiser on proxy data. No out-of-sample test.</td></tr>
-  <tr><td>London→NY sweep + reclaim</td><td class="sub2">PF 0.85–1.19 standalone</td><td class="sub2">Lumpy and year-dependent. Only filtered sub-setups might survive; untested.</td></tr>
-  <tr><td>Opening Drive · causal-fusion · stablecoin-flow · exchange-netflow · LLM forecast</td><td class="sub2">engines built</td><td class="sub2">Never run on real data because Binance egress was blocked. No verdict yet.</td></tr>
-  <tr><td>1m/5m scalp (Valentini layers)</td><td class="sub2">−</td><td class="sub2">Negative edge on 30 days of 1m data. Recorded as paper-only; do not go live.</td></tr></table></div>
-
 <h2>Paper books (NKB · BitGet)</h2>
 <div class="panel"><table>
 <tr><th>book</th><th>value</th><th>return</th><th>note</th></tr>
@@ -129,7 +99,7 @@ th{color:#8b94a7;font-weight:500;font-size:11px;text-transform:uppercase}
   <tr><td>Firm HQ (verdicts, memory)</td><td class="mono">trading-firm (private)</td><td class="sub2">VERDICTS_INDEX, DECISION_LIBRARY, backtests</td></tr></table></div>
 
 <div class="foot">
-<b style="color:#9aa3b5">The firm's one rule:</b> show the honest read, not the green number. After a full research arc, the accessible crypto edge space is efficient (15 ideas, 0 survivors); the paper books are regime, not edge; the only edge that passed a <i>blind</i> holdout is the NQ opening-window futures survivor. Four crypto trend edges passed weaker out-of-sample tests (walk-forward or an unseen asset), but they are one correlated cluster, not four edges. This board exists to keep that honest — track everything, celebrate nothing unproven.<br>
+<b style="color:#9aa3b5">The firm's one rule:</b> show the honest read, not the green number. After a full research arc, the accessible crypto edge space is efficient (15 ideas, 0 survivors); the paper books are regime, not edge; the single genuinely-validated candidate is the NQ opening-window futures survivor. This board exists to keep that honest — track everything, celebrate nothing unproven.<br>
 Sources: FirmTree &amp; NQ read live-local; NKB books &amp; Edge Machine from repo state; HyroTrader demo pending its box's access. Regenerate: <span class="mono">node tools/firm-dashboard.mjs</span> → deploy to <span class="mono">my-trading--bot /docs/index.html</span>.
 </div>
 </body></html>
