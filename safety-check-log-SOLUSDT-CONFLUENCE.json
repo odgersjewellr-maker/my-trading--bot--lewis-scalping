@@ -752,6 +752,12 @@
       "signal": "BUY",
       "gate": "adx",
       "note": "ADX(14) 20.0 < 25"
+    },
+    {
+      "timestamp": "2026-09-27T22:25:00.690Z",
+      "signal": "BUY",
+      "gate": "adx",
+      "note": "ADX(14) 22.5 < 25"
     }
   ]
 }
