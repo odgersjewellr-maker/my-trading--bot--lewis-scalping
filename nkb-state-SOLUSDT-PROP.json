@@ -1,6 +1,6 @@
 {
-  "state": 1,
-  "pendingSignal": "BUY",
-  "pendingBars": 201,
-  "updatedAt": "2026-10-05T14:31:03.668Z"
+  "state": -1,
+  "pendingSignal": "SELL",
+  "pendingBars": 1,
+  "updatedAt": "2026-10-05T14:45:51.755Z"
 }
