@@ -2362,6 +2362,40 @@
       "pnlUSD": -1.8775524899998943,
       "reason": "trailing stop hit",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-10-06T10:11:11.450Z",
+      "type": "entry",
+      "symbol": "BTCUSDT",
+      "side": "buy",
+      "quantity": 0.012428,
+      "price": 86103.92,
+      "sizeUSD": 1070.09951776,
+      "portfolioValue": 1069.2048670131262,
+      "nkb": {
+        "kernelMA": 85806.73366769418,
+        "sigma": 212.58911711253324,
+        "upperBand": 86444.50101903178,
+        "lowerBand": 85168.96631635657,
+        "state": 1
+      },
+      "decisionTree": [
+        {
+          "id": "signal",
+          "label": "NKB confirmed band flip (2 bars, volume, 4H MTF)",
+          "passed": true,
+          "detail": "BUY confirmed"
+        },
+        {
+          "id": "regime",
+          "label": "Regime gate [chop+markov]",
+          "passed": true,
+          "detail": "CHOP(14,1H) 54.0 < 61.8 | 20d ret 11.4% (trending)"
+        }
+      ],
+      "orderPlaced": true,
+      "orderId": "PAPER-1791281471449",
+      "paperTrading": true
     }
   ],
   "gateBlocks": [
