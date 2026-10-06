@@ -951,6 +951,12 @@
       "signal": "BUY",
       "gate": "atr",
       "note": "ATR(14) vs its 20-bar average: contracting"
+    },
+    {
+      "timestamp": "2026-10-06T07:42:32.063Z",
+      "signal": "BUY",
+      "gate": "adx",
+      "note": "ADX(14) 18.9 < 25"
     }
   ]
 }
