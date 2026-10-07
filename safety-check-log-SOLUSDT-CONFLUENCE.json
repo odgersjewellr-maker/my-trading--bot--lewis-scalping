@@ -486,6 +486,64 @@
       "pnlUSD": 29.867612617999946,
       "reason": "trailing stop hit",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-10-07T13:41:00.536Z",
+      "type": "entry",
+      "symbol": "SOLUSDT",
+      "side": "sell",
+      "quantity": 9.622693,
+      "price": 115.9,
+      "sizeUSD": 1115.2701187,
+      "portfolioValue": 1114.3778602669174,
+      "nkb": {
+        "kernelMA": 116.99405837791568,
+        "sigma": 0.35940983583814107,
+        "upperBand": 118.0722878854301,
+        "lowerBand": 115.91582887040126,
+        "state": -1
+      },
+      "decisionTree": [
+        {
+          "id": "signal",
+          "label": "NKB confirmed band flip (2 bars, volume, 4H MTF)",
+          "passed": true,
+          "detail": "SELL confirmed"
+        },
+        {
+          "id": "shortable",
+          "label": "Shorting available",
+          "passed": true,
+          "detail": "futures mode"
+        },
+        {
+          "id": "regime",
+          "label": "Regime gate [chop+markov]",
+          "passed": true,
+          "detail": "CHOP(14,1H) 34.7 < 61.8 | 20d ret 24.1% (trending)"
+        },
+        {
+          "id": "adx",
+          "label": "ADX entry gate",
+          "passed": true,
+          "detail": "ADX(14) 54.7 ≥ 25"
+        },
+        {
+          "id": "rsi",
+          "label": "RSI momentum gate",
+          "passed": true,
+          "detail": "RSI(14) 20.0 confirms short momentum (need <50)"
+        },
+        {
+          "id": "atr",
+          "label": "ATR expansion gate",
+          "passed": true,
+          "detail": "ATR(14) vs its 20-bar average: expanding"
+        }
+      ],
+      "orderPlaced": true,
+      "orderId": "PAPER-1791380460536",
+      "paperTrading": true
     }
   ],
   "gateBlocks": [
