@@ -443,6 +443,13 @@
       "reason": "scale-out 1R",
       "orderId": "PAPER-1791388365307",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-10-08T06:26:53.264Z",
+      "type": "swap",
+      "symbol": "BTCUSDT",
+      "costUSD": 23.674960223775006,
+      "paperTrading": true
     }
   ],
   "gateBlocks": [
