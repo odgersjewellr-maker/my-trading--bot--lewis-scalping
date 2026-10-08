@@ -556,6 +556,16 @@
       "reason": "scale-out 1R",
       "orderId": "PAPER-1791457925436",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-10-08T22:44:04.422Z",
+      "type": "stop",
+      "symbol": "SOLUSDT",
+      "side": "short",
+      "price": 109.33285714285714,
+      "pnlUSD": 33.84438595142866,
+      "reason": "trailing stop hit",
+      "paperTrading": true
     }
   ],
   "gateBlocks": [
@@ -846,6 +856,11 @@
       "signal": "SELL",
       "gate": "adx",
       "note": "ADX(14) 19.7 < 25"
+    },
+    {
+      "timestamp": "2026-10-08T22:44:04.423Z",
+      "signal": "re-entry short",
+      "note": "CHOP(14,1H) 29.7 < 61.8 | 20d ret -2.3% (sideways)"
     }
   ]
 }
