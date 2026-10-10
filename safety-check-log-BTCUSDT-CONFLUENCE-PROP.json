@@ -1057,6 +1057,12 @@
       "signal": "BUY",
       "gate": "adx",
       "note": "ADX(14) 23.4 < 25"
+    },
+    {
+      "timestamp": "2026-10-10T07:04:47.201Z",
+      "signal": "BUY",
+      "gate": "regime",
+      "note": "CHOP(14,1H) 55.1 < 61.8 | 20d ret 1.5% (sideways)"
     }
   ]
 }
