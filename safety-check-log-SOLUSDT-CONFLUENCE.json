@@ -861,6 +861,12 @@
       "timestamp": "2026-10-08T22:44:04.423Z",
       "signal": "re-entry short",
       "note": "CHOP(14,1H) 29.7 < 61.8 | 20d ret -2.3% (sideways)"
+    },
+    {
+      "timestamp": "2026-10-15T01:37:14.936Z",
+      "signal": "SELL",
+      "gate": "adx",
+      "note": "ADX(14) 9.9 < 25"
     }
   ]
 }
