@@ -51,6 +51,16 @@
       "pyramidNum": 1,
       "orderId": "PAPER-1790138425861",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-10-30T05:40:08.140Z",
+      "type": "stop",
+      "symbol": "BTCUSDT",
+      "side": "long",
+      "price": 79532.93785714285,
+      "pnlUSD": -13.968012906329289,
+      "reason": "trailing stop hit",
+      "paperTrading": true
     }
   ],
   "gateBlocks": [
