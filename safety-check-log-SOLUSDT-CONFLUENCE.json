@@ -969,6 +969,18 @@
       "orderPlaced": true,
       "orderId": "PAPER-1793591475669",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-11-02T11:55:40.496Z",
+      "type": "partial",
+      "symbol": "SOLUSDT",
+      "side": "short",
+      "quantity": 8.861595399999999,
+      "price": 94.05,
+      "pnlUSD": 13.115161192000034,
+      "reason": "scale-out 1R",
+      "orderId": "PAPER-1793620540496",
+      "paperTrading": true
     }
   ],
   "gateBlocks": [
