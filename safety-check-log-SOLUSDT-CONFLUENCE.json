@@ -1322,6 +1322,12 @@
       "signal": "SELL",
       "gate": "rsi",
       "note": "RSI(14) 58.5 doesn't confirm short momentum (need <50)"
+    },
+    {
+      "timestamp": "2026-11-10T10:40:33.782Z",
+      "signal": "SELL",
+      "gate": "adx",
+      "note": "ADX(14) 21.0 < 25"
     }
   ]
 }
