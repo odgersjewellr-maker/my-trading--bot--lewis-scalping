@@ -1328,6 +1328,12 @@
       "signal": "SELL",
       "gate": "adx",
       "note": "ADX(14) 21.0 < 25"
+    },
+    {
+      "timestamp": "2026-11-11T10:38:35.150Z",
+      "signal": "SELL",
+      "gate": "regime",
+      "note": "CHOP(14,1H) 67.3 ≥ 61.8 | 20d ret -24.1% (trending)"
     }
   ]
 }
