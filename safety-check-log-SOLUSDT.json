@@ -6301,6 +6301,18 @@
       "orderPlaced": true,
       "orderId": "PAPER-1794418972276",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-11-14T02:21:26.595Z",
+      "type": "pyramid",
+      "symbol": "SOLUSDT",
+      "side": "sell",
+      "quantity": 10.942160638114602,
+      "price": 76.24,
+      "sizeUSD": 834.2303270498572,
+      "pyramidNum": 1,
+      "orderId": "PAPER-1794622886594",
+      "paperTrading": true
     }
   ]
 }
