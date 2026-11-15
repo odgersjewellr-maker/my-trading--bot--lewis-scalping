@@ -1216,6 +1216,12 @@
       "signal": "SELL",
       "gate": "atr",
       "note": "ATR(14) vs its 20-bar average: contracting"
+    },
+    {
+      "timestamp": "2026-11-15T17:52:22.045Z",
+      "signal": "SELL",
+      "gate": "atr",
+      "note": "ATR(14) vs its 20-bar average: contracting"
     }
   ]
 }
