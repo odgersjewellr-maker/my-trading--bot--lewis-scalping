@@ -6313,6 +6313,16 @@
       "pyramidNum": 1,
       "orderId": "PAPER-1794622886594",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-11-17T11:18:21.656Z",
+      "type": "stop",
+      "symbol": "SOLUSDT",
+      "side": "short",
+      "price": 72.01857142857142,
+      "pnlUSD": 311.12404208804094,
+      "reason": "trailing stop hit",
+      "paperTrading": true
     }
   ]
 }
