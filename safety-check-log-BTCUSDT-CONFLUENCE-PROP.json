@@ -600,6 +600,13 @@
       "orderPlaced": true,
       "orderId": "PAPER-1795125161529",
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-11-20T02:41:30.432Z",
+      "type": "swap",
+      "symbol": "BTCUSDT",
+      "costUSD": 48.109600330595,
+      "paperTrading": true
     }
   ],
   "gateBlocks": [
