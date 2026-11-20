@@ -607,6 +607,18 @@
       "symbol": "BTCUSDT",
       "costUSD": 48.109600330595,
       "paperTrading": true
+    },
+    {
+      "timestamp": "2026-11-20T18:42:04.837Z",
+      "type": "partial",
+      "symbol": "BTCUSDT",
+      "side": "short",
+      "quantity": 1.0907869,
+      "price": 58841.63,
+      "pnlUSD": 3132.936318442,
+      "reason": "scale-out 1R",
+      "orderId": "PAPER-1795200124837",
+      "paperTrading": true
     }
   ],
   "gateBlocks": [
